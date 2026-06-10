@@ -10,6 +10,7 @@ from typing_extensions import TypedDict
 # 무한 루프 방지 상수
 MAX_ITERATIONS = 5
 COACH_MAX_ITERATIONS = 3
+MAX_REPLAN = 2
 
 
 class AppState(TypedDict):
