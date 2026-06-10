@@ -1,212 +1,290 @@
-# RAGAS 기반 갭 분석 품질 평가 — faithfulness / answer_relevancy / context_recall
+# RAGAS 0.4.x 기반 갭 분석 에이전트 품질 평가 — faithfulness / answer_relevancy
+#
+# 평가 기준:
+#   user_input        : "직군 X에 지원. 보유 스킬 Y. 갭 분석해줘."
+#   retrieved_contexts: 에이전트가 실제로 사용한 공고 텍스트 (ToolMessage 수집)
+#   response          : 에이전트가 생성한 최종 갭 분석 리포트
+#
+# Faithfulness     : 리포트의 각 주장이 공고 근거에 기반하는가? (환각 탐지)
+# Answer Relevancy : 리포트가 "갭 분석" 질문에 실제로 답하는가?
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from src.analysis.gap_analyzer import GapAnalysisResult
-    from src.storage.chroma_client import ChromaClient
-
-
-# ── 결과 모델 ────────────────────────────────────────────────────
-@dataclass
-class MetricScore:
-    name: str
-    score: float    # 0.0 ~ 1.0
-    description: str = ""
+from dotenv import load_dotenv
+load_dotenv()
 
 
 @dataclass
-class ExperimentResult:
-    experiment_name: str
-    job_title: str
-    owner: str
-    metrics: list[MetricScore] = field(default_factory=list)
+class RagasScore:
+    job_family: str
+    portfolio_skills: list[str]
+    faithfulness: float
+    answer_relevancy: float
+    n_contexts: int       # 에이전트가 사용한 공고 텍스트 수
+
+    def avg(self) -> float:
+        return round((self.faithfulness + self.answer_relevancy) / 2, 3)
+
+
+@dataclass
+class EvalReport:
+    samples: list[RagasScore] = field(default_factory=list)
     error: str | None = None
 
-    def avg_score(self) -> float:
-        if not self.metrics:
+    def avg_faithfulness(self) -> float:
+        if not self.samples:
             return 0.0
-        return sum(m.score for m in self.metrics) / len(self.metrics)
+        return round(sum(s.faithfulness for s in self.samples) / len(self.samples), 3)
 
+    def avg_answer_relevancy(self) -> float:
+        if not self.samples:
+            return 0.0
+        return round(sum(s.answer_relevancy for s in self.samples) / len(self.samples), 3)
 
-@dataclass
-class ComparisonReport:
-    strategy_a: ExperimentResult
-    strategy_b: ExperimentResult
-
-    def winner(self) -> str:
-        if self.strategy_a.avg_score() >= self.strategy_b.avg_score():
-            return self.strategy_a.experiment_name
-        return self.strategy_b.experiment_name
-
-
-# ── RAGAS 데이터셋 변환 ──────────────────────────────────────────
-def gap_result_to_ragas_sample(
-    gap_result: "GapAnalysisResult",
-    chroma: "ChromaClient",
-) -> dict:
-    """GapAnalysisResult → RAGAS SingleTurnSample 생성용 dict.
-
-    - user_input : 분석 질문
-    - response   : LLM이 생성한 갭 분석 요약 (있는 기술 + 없는 기술)
-    - retrieved_contexts : Chroma에서 가져온 근거 문장 목록
-    - reference  : 정답 — 공고에서 요구하는 기술명 목록 (쉼표 구분)
-    """
-    # 질문
-    user_input = (
-        f"What skills does {gap_result.owner} have for the {gap_result.job_title} role, "
-        f"and what is missing?"
-    )
-
-    # 응답 — 갭 분석 결과 텍스트 요약
-    have_names    = [s.skill for s in gap_result.have]
-    missing_names = [s.skill for s in gap_result.missing]
-    response = (
-        f"{gap_result.owner} has: {', '.join(have_names) or 'none'}. "
-        f"Missing for {gap_result.job_title}: {', '.join(missing_names) or 'none'}. "
-        f"Match rate: {gap_result.match_rate:.0%}."
-    )
-
-    # 컨텍스트 — 보유 기술의 Chroma 근거 문장
-    contexts: list[str] = []
-    for skill in gap_result.have[:5]:  # 상위 5개만 (비용 절감)
-        evidence = skill.evidence or ""
-        if not evidence:
-            try:
-                hits = chroma.search_evidence(skill.skill, n=1)
-                evidence = hits[0] if hits else ""
-            except Exception:
-                pass
-        if evidence:
-            contexts.append(evidence)
-
-    if not contexts:
-        contexts = [f"No evidence found in portfolio for {gap_result.job_title}."]
-
-    # 정답 — 전체 기술 목록 (보유 + 부족)
-    all_skills = have_names + missing_names
-    reference = ", ".join(all_skills) if all_skills else "No skills data available."
-
-    return {
-        "user_input": user_input,
-        "response": response,
-        "retrieved_contexts": contexts,
-        "reference": reference,
-    }
-
-
-# ── 단일 실험 평가 ────────────────────────────────────────────────
-def evaluate_strategy(
-    experiment_name: str,
-    gap_result: "GapAnalysisResult",
-    chroma: "ChromaClient",
-    llm=None,
-    embeddings=None,
-) -> ExperimentResult:
-    """단일 GapAnalysisResult에 대해 RAGAS 지표를 측정한다.
-
-    ANTHROPIC_API_KEY 없으면 점수를 산출할 수 없어 스킵한다.
-    """
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        print("[skip] ANTHROPIC_API_KEY 없음 — RAGAS 평가 건너뜀")
-        return ExperimentResult(
-            experiment_name=experiment_name,
-            job_title=gap_result.job_title,
-            owner=gap_result.owner,
-            error="ANTHROPIC_API_KEY 미설정",
+    def summary(self) -> str:
+        return (
+            f"샘플 수: {len(self.samples)}\n"
+            f"Faithfulness:      {self.avg_faithfulness():.3f}\n"
+            f"Answer Relevancy:  {self.avg_answer_relevancy():.3f}\n"
+            f"평균:              {(self.avg_faithfulness() + self.avg_answer_relevancy()) / 2:.3f}"
         )
+
+
+# ── verify_skills 근거 검색 품질 평가 (옵션 A) ───────────────────
+
+def _build_evidence_samples(
+    job_family: str,
+    portfolio_skills: list[str],
+    owner: str,
+    graph,
+) -> list[dict]:
+    """verify_skills 툴 호출 결과를 RAGAS SingleTurnSample 목록으로 변환.
+
+    평가 단위: 부족한 스킬 1개 = 샘플 1개
+      user_input        : "Is {skill} required for {job_family}?"
+      retrieved_contexts: verify_skills가 가져온 공고 원문 텍스트
+      response          : 에이전트가 생성한 reason (스킬이 필요한 이유)
+
+    이 방식은 RAG가 실제로 하는 일(근거 검색)을 직접 측정하므로
+    갭 분석 전체를 평가하는 것보다 Faithfulness 지표에 맞다.
+    """
+    from src.agent.supervisor import run_analysis
+    from langchain_core.messages import ToolMessage
+
+    final_report, messages = run_analysis(
+        graph,
+        job_title=job_family,
+        owner=owner,
+        portfolio_skills=portfolio_skills,
+        return_state=True,
+    )
+    if not final_report:
+        return []
+
+    # verify_skills 결과에서 스킬별 evidence 수집
+    skill_evidence: dict[str, list[str]] = {}
+    for msg in messages:
+        if not isinstance(msg, ToolMessage) or getattr(msg, "name", None) != "verify_skills":
+            continue
+        try:
+            content = json.loads(msg.content)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for skill, skill_data in content.items():
+            if not isinstance(skill_data, dict):
+                continue
+            texts = []
+            for ev in skill_data.get("evidence", []):
+                if isinstance(ev, dict) and "text" in ev and len(ev["text"]) > 30:
+                    company = ev.get("company", "")
+                    prefix = f"[{company}] " if company else ""
+                    texts.append(f"{prefix}{ev['text'][:400]}")
+            if texts:
+                skill_evidence[skill] = texts
+
+    # final_report의 missing_required에서 reason 수집 → response
+    reason_by_skill: dict[str, str] = {}
+    for item in final_report.get("missing_required", []):
+        if isinstance(item, dict) and item.get("skill") and item.get("reason"):
+            reason_by_skill[item["skill"]] = item["reason"]
+
+    # 샘플 조립 — evidence가 있는 스킬만
+    samples: list[dict] = []
+    for skill, contexts in skill_evidence.items():
+        response = reason_by_skill.get(skill, f"{skill} is required for the {job_family} role.")
+        samples.append({
+            "user_input": f"Is {skill} required for the {job_family} role?",
+            "retrieved_contexts": contexts[:5],
+            "response": response,
+        })
+
+    return samples
+
+
+def _report_to_natural_text(report_json: str) -> str:
+    """final_report JSON을 RAGAS claim 추출에 적합한 자연어 문장으로 변환.
+
+    수치(match_rate 등)는 제외한다 — 컨텍스트에서 직접 지지되지 않아 faithfulness를
+    왜곡한다. 대신 스킬별 이유(reason)와 요약(summary)만 포함한다.
+    """
+    try:
+        report = json.loads(report_json)
+    except (json.JSONDecodeError, TypeError):
+        return report_json[:1500]
+
+    lines: list[str] = []
+    job_title = report.get("job_title", "")
+    summary = report.get("summary", "")
+    if summary:
+        lines.append(f"{job_title} 직무 갭 분석: {summary}")
+
+    have = report.get("have_required", [])
+    if have:
+        lines.append(f"보유 필수 기술: {', '.join(have)}")
+
+    for item in report.get("missing_required", []):
+        if isinstance(item, dict):
+            skill = item.get("skill", "")
+            reason = item.get("reason", "")
+            priority = item.get("priority", "")
+            if skill and reason:
+                # "출처: X, Y" 형태를 "(required by X, Y)" 형태로 변환해 영문 컨텍스트와 매칭
+                import re
+                source_match = re.search(r"출처:\s*([^)]+)", reason)
+                source_note = f" (required by {source_match.group(1).strip()})" if source_match else ""
+                lines.append(f"The {skill} skill is required for this role and is missing from the portfolio.{source_note} {reason}")
+
+    coaching = report.get("coaching", [])
+    if coaching:
+        lines.append("권장 학습 방향: " + " ".join(str(c) for c in coaching[:3]))
+
+    return "\n".join(lines) if lines else report_json[:1000]
+
+
+# ── RAGAS 평가 실행 ──────────────────────────────────────────────
+
+def run_ragas_eval(
+    test_cases: list[dict],
+    graph,
+) -> EvalReport:
+    """에이전트 갭 분석 품질을 RAGAS로 측정.
+
+    test_cases 형식:
+        [{"job_family": "AI/LLM Engineer", "skills": ["Python", "LangChain"], "owner": "테스트"}]
+    """
+    if not os.getenv("OPENAI_API_KEY"):
+        return EvalReport(error="OPENAI_API_KEY 미설정")
 
     try:
-        from ragas import EvaluationDataset, SingleTurnSample, evaluate
-        from ragas.metrics.collections import (
-            answer_relevancy,
-            context_recall,
-            faithfulness,
-        )
+        from ragas import evaluate
+        from ragas.dataset_schema import EvaluationDataset, SingleTurnSample
+        from ragas.metrics import answer_relevancy, faithfulness
+        from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-        sample_dict = gap_result_to_ragas_sample(gap_result, chroma)
-        sample = SingleTurnSample(**sample_dict)
-        dataset = EvaluationDataset(samples=[sample])
+        raw_samples: list[dict] = []
+        meta: list[dict] = []
 
-        metrics = [faithfulness, answer_relevancy, context_recall]
-        eval_result = evaluate(
+        for tc in test_cases:
+            job_family = tc["job_family"]
+            skills = tc["skills"]
+            owner = tc.get("owner", "평가용")
+
+            print(f"  에이전트 실행: {job_family} (보유 스킬: {', '.join(skills)})")
+            # 스킬별 evidence 품질 평가 방식 (옵션 A)
+            # 각 부족 스킬에 대해 "Is X required?" → evidence → reason 구조로 평가
+            skill_samples = _build_evidence_samples(job_family, skills, owner, graph)
+            if not skill_samples:
+                print(f"  [skip] {job_family} — evidence 없음")
+                continue
+
+            print(f"    → 스킬 샘플 {len(skill_samples)}개")
+            for s in skill_samples:
+                raw_samples.append(s)
+                meta.append({
+                    "job_family": job_family,
+                    "skills": skills,
+                    "n_ctx": len(s["retrieved_contexts"]),
+                })
+
+        if not raw_samples:
+            return EvalReport(error="유효한 샘플 없음")
+
+        print(f"\nRAGAS 평가 실행 ({len(raw_samples)}개 샘플)...")
+        dataset = EvaluationDataset(samples=[SingleTurnSample(**s) for s in raw_samples])
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+        result = evaluate(
             dataset=dataset,
-            metrics=metrics,
+            metrics=[faithfulness, answer_relevancy],
             llm=llm,
             embeddings=embeddings,
             show_progress=False,
             raise_exceptions=False,
         )
 
+        df = result.to_pandas()
         scores = []
-        result_dict = eval_result.to_pandas().iloc[0].to_dict()
-        metric_meta = {
-            "faithfulness":      "LLM 응답이 컨텍스트에 근거하는 비율",
-            "answer_relevancy":  "응답이 질문에 관련된 정도",
-            "context_recall":    "정답 내용이 컨텍스트에 포함된 비율",
-        }
-        for metric_name, description in metric_meta.items():
-            raw = result_dict.get(metric_name)
-            score = float(raw) if raw is not None and str(raw) != "nan" else 0.0
-            scores.append(MetricScore(
-                name=metric_name,
-                score=round(score, 4),
-                description=description,
+        for i, row in df.iterrows():
+            scores.append(RagasScore(
+                job_family=meta[i]["job_family"],
+                portfolio_skills=meta[i]["skills"],
+                faithfulness=round(float(row.get("faithfulness") or 0), 3),
+                answer_relevancy=round(float(row.get("answer_relevancy") or 0), 3),
+                n_contexts=meta[i]["n_ctx"],
             ))
 
-        return ExperimentResult(
-            experiment_name=experiment_name,
-            job_title=gap_result.job_title,
-            owner=gap_result.owner,
-            metrics=scores,
-        )
+        return EvalReport(samples=scores)
 
     except Exception as e:
-        return ExperimentResult(
-            experiment_name=experiment_name,
-            job_title=gap_result.job_title,
-            owner=gap_result.owner,
-            error=str(e),
-        )
+        return EvalReport(error=str(e))
 
 
-# ── 두 전략 비교 ─────────────────────────────────────────────────
-def run_comparison(
-    result_a: "GapAnalysisResult",
-    result_b: "GapAnalysisResult",
-    chroma: "ChromaClient",
-    name_a: str = "전략 A",
-    name_b: str = "전략 B",
-) -> ComparisonReport:
-    """두 GapAnalysisResult를 같은 RAGAS 지표로 비교한다.
-    예: Claude Haiku 기반 추출 vs 파인튜닝 모델 기반 추출.
-    """
-    exp_a = evaluate_strategy(name_a, result_a, chroma)
-    exp_b = evaluate_strategy(name_b, result_b, chroma)
-    return ComparisonReport(strategy_a=exp_a, strategy_b=exp_b)
+# ── CLI 실행 ─────────────────────────────────────────────────────
+if __name__ == "__main__":
+    from src.storage.chroma_client import ChromaClient
+    from src.storage.neo4j_client import Neo4jClient
+    from src.agent.supervisor import create_supervisor_graph
 
+    from openai import OpenAI
+    neo4j = Neo4jClient()
+    chroma = ChromaClient()
+    openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if os.getenv("OPENAI_API_KEY") else None
+    graph = create_supervisor_graph(neo4j, chroma, openai_client)
 
-# ── 결과 포맷팅 ──────────────────────────────────────────────────
-def to_markdown_table(results: list[ExperimentResult]) -> str:
-    """ExperimentResult 목록을 마크다운 테이블로 변환한다 (README·모델카드용)."""
-    if not results:
-        return "(결과 없음)"
+    # Software Engineer: 127개로 가장 많은 데이터 보유 → 신뢰도 높음
+    test_cases = [
+        {
+            "job_family": "Software Engineer",
+            "skills": ["Python", "Java", "SQL", "Git", "Docker"],
+            "owner": "평가_SE",
+        },
+        {
+            "job_family": "Software Engineer",
+            "skills": ["Python", "React", "TypeScript", "AWS", "PostgreSQL", "Redis"],
+            "owner": "평가_SE2",
+        },
+        {
+            "job_family": "Data Engineer",
+            "skills": ["Python", "SQL", "PostgreSQL", "Docker", "AWS"],
+            "owner": "평가_DE",
+        },
+    ]
 
-    metric_names = [m.name for m in results[0].metrics] if results[0].metrics else []
+    print("=== 갭 분석 에이전트 RAGAS 평가 (Software Engineer 중심) ===\n")
+    report = run_ragas_eval(test_cases, graph)
 
-    header = "| 실험 | " + " | ".join(metric_names) + " | 평균 |"
-    sep    = "|" + "|".join(["---"] * (len(metric_names) + 2)) + "|"
+    if report.error:
+        print(f"오류: {report.error}")
+    else:
+        print("\n=== 결과 ===")
+        print(report.summary())
+        print("\n[케이스별]")
+        for s in report.samples:
+            print(f"  {s.job_family} (보유: {', '.join(s.portfolio_skills[:3])}...)")
+            print(f"    Faithfulness={s.faithfulness:.3f} | AnswerRelevancy={s.answer_relevancy:.3f} | 컨텍스트={s.n_contexts}개")
 
-    rows = [header, sep]
-    for r in results:
-        if r.error:
-            row = f"| {r.experiment_name} | " + " | ".join(["N/A"] * len(metric_names)) + f" | Error: {r.error} |"
-        else:
-            score_cells = " | ".join(f"{m.score:.3f}" for m in r.metrics)
-            row = f"| {r.experiment_name} | {score_cells} | {r.avg_score():.3f} |"
-        rows.append(row)
-
-    return "\n".join(rows)
+    neo4j.close()

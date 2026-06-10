@@ -13,9 +13,9 @@ if TYPE_CHECKING:
 
 # ── Cypher 쿼리 ──────────────────────────────────────────────────
 _JOB_SKILLS_QUERY = """
-MATCH (j:Job {normalized_title: $job_title})-[r:REQUIRES|PREFERS]->(s:Skill)
-RETURN s.name AS skill, type(r) AS importance, r.weight AS weight, s.category AS category
-ORDER BY r.weight DESC
+MATCH (:JobFamily {name: $job_family})<-[:INSTANCE_OF]-(jp)-[r:REQUIRES|PREFERS]->(s:Skill)
+RETURN s.name AS skill, type(r) AS importance, count(jp) AS weight
+ORDER BY weight DESC
 LIMIT 30
 """
 
@@ -26,36 +26,63 @@ RETURN s.name AS skill, r.confidence AS confidence, r.evidence AS evidence
 
 
 def create_tools(neo4j: "Neo4jClient", chroma: "ChromaClient") -> list:
-    """클라이언트를 클로저로 받아 툴 목록을 생성한다."""
+    """Gap 에이전트용 툴 목록 생성."""
 
     @tool
     def gap_analysis(
-        job_title: Annotated[str, "분석할 직무명 (예: AI Engineer, Backend Engineer)"],
+        job_family: Annotated[str, "분석할 직군명. 반드시 아래 중 하나: Software Engineer / Data Engineer / Data Analyst / Data Scientist / AI/LLM Engineer / ML Engineer / DevOps/SRE / Security Engineer / Frontend Engineer / Architect"],
         portfolio_skills: Annotated[list[str], "보유 기술 목록 (이력서에서 추출된 스킬명)"],
+        owner: Annotated[str, "지원자 이름 — Neo4j에서 최신 confidence를 조회하는 데 사용"],
     ) -> dict:
-        """직무 요구 스킬과 보유 스킬을 비교해 갭과 매칭률을 계산한다."""
+        """직군 요구 스킬과 보유 스킬을 비교해 갭과 매칭률을 계산한다.
+
+        confidence 분류:
+          high / medium → have_required  (증명된 보유 스킬)
+          low           → unverified_required  (보유하나 근거 약함)
+          없음          → missing_required
+        """
         try:
-            rows = neo4j.execute_query(_JOB_SKILLS_QUERY, job_title=job_title)
+            rows = neo4j.execute_query(_JOB_SKILLS_QUERY, job_family=job_family)
             if not rows:
-                return {"error": f"'{job_title}' 직무 데이터 없음"}
+                return {"error": f"'{job_family}' 직군 데이터 없음. 유효한 직군명인지 확인하세요."}
 
             required = [r for r in rows if r["importance"] == "REQUIRES"]
             preferred = [r for r in rows if r["importance"] == "PREFERS"]
             portfolio_lower = {s.lower() for s in portfolio_skills}
 
-            have_req = [r for r in required if r["skill"].lower() in portfolio_lower]
+            # Neo4j에서 최신 confidence 조회 (GitHub 업데이트 반영)
+            demonstrated = {
+                s.name.lower(): s.confidence
+                for s in neo4j.get_portfolio_demonstrated_skills(owner)
+            }
+
+            have_req: list = []
+            unverified_req: list = []
+            for r in required:
+                skill_lower = r["skill"].lower()
+                if skill_lower in portfolio_lower:
+                    conf = demonstrated.get(skill_lower, "medium")
+                    if conf == "low":
+                        unverified_req.append(r)
+                    else:
+                        have_req.append(r)
+
             missing_req = [r for r in required if r["skill"].lower() not in portfolio_lower]
             have_pref = [r for r in preferred if r["skill"].lower() in portfolio_lower]
             missing_pref = [r for r in preferred if r["skill"].lower() not in portfolio_lower]
 
+            # match_rate: have_required / 전체 required (unverified는 제외)
             match_rate = len(have_req) / len(required) if required else 0.0
 
             return {
-                "job_title": job_title,
+                "job_family": job_family,
                 "match_rate": round(match_rate, 2),
                 "required_total": len(required),
                 "have_required": [r["skill"] for r in have_req],
-                # weight 내림차순 정렬 유지 — 상위가 verify_skills 우선 대상
+                "unverified_required": [
+                    {"skill": r["skill"], "weight": r.get("weight") or 1}
+                    for r in unverified_req
+                ],
                 "missing_required": [
                     {"skill": r["skill"], "weight": r.get("weight") or 1}
                     for r in missing_req
@@ -103,25 +130,19 @@ def create_tools(neo4j: "Neo4jClient", chroma: "ChromaClient") -> list:
         1. Neo4j에서 해당 스킬을 REQUIRES하는 공고 ID를 조회
         2. Chroma에서 해당 공고의 요건 텍스트를 직접 fetch (유사도 검색 아님)
         3. Chroma에 청크가 없으면 BM25 키워드 exact match로 fallback
-
-        vector_search를 반복 호출하는 것보다 정확하고 빠르다.
         """
         results: dict = {}
         try:
-            for skill in skill_names[:5]:  # 최대 5개
-                # Step 1: Neo4j → 이 스킬을 REQUIRES하는 공고 source_id
+            for skill in skill_names[:5]:
                 posting_ids = neo4j.get_postings_requiring_skill(skill, limit=3)
 
                 if posting_ids:
-                    # Step 2: Neo4j-guided hybrid — source_id + section_type 메타 필터
-                    # BM25(exact keyword) + Dense 모두 해당 공고 안에서만 검색
                     chunks = chroma.search(
                         skill,
                         n_results=2,
                         source_ids=posting_ids,
                         section_type="required",
                     )
-                    # required 섹션 없으면 섹션 제한 없이 재시도
                     if not chunks:
                         chunks = chroma.search(skill, n_results=2, source_ids=posting_ids)
                     if chunks:
@@ -139,7 +160,6 @@ def create_tools(neo4j: "Neo4jClient", chroma: "ChromaClient") -> list:
                         }
                         continue
 
-                # Step 3: fallback — Neo4j 미등록, section_type 필터만 적용
                 chunks = chroma.search(skill, n_results=2, section_type="required")
                 if chunks:
                     results[skill] = {
@@ -155,25 +175,39 @@ def create_tools(neo4j: "Neo4jClient", chroma: "ChromaClient") -> list:
                         ],
                     }
                 else:
-                    results[skill] = {
-                        "method": "graph_only",
-                        "posting_count": 0,
-                        "evidence": [],
-                    }
+                    results[skill] = {"method": "graph_only", "posting_count": 0, "evidence": []}
         except Exception as e:
             return {"error": str(e)}
         return results
 
     @tool
     def skill_unlock(
-        skill_names: Annotated[list[str], "추가 보유 시 효과를 계산할 스킬 목록"],
+        skill_names: Annotated[list[str], "추가 보유 시 효과를 계산할 스킬 목록 (최대 3개, missing_required 확정 후 1회만 호출)"],
     ) -> dict:
-        """해당 스킬들을 모두 보유했을 때 지원 가능한 공고 수를 반환한다."""
+        """해당 스킬들을 모두 보유했을 때 지원 가능한 공고 수를 반환한다.
+
+        missing_required 상위 3개 스킬을 묶음으로 1회만 호출한다.
+        개별 스킬로 반복 호출하지 않는다.
+        """
         try:
-            count = neo4j.get_skill_unlock_count(skill_names)
-            return {"skills": skill_names, "accessible_postings": count}
+            count = neo4j.get_skill_unlock_count(skill_names[:3])
+            return {"skills": skill_names[:3], "accessible_postings": count}
         except Exception as e:
             return {"error": str(e)}
+
+    @tool
+    def posting_trend(
+        skill_name: Annotated[str, "트렌드를 조회할 스킬명"],
+    ) -> dict:
+        """최근 30일 vs 이전 30일 공고 등장 횟수를 비교해 수요 트렌드를 반환한다.
+
+        missing_required 중 우선순위 판단이 필요한 스킬에만 호출한다.
+        모든 스킬에 반복 호출하지 않는다.
+        """
+        try:
+            return neo4j.get_skill_trend(skill_name)
+        except Exception as e:
+            return {"skill": skill_name, "recent_count": 0, "prev_count": 0, "delta_pct": 0.0, "error": str(e)}
 
     @tool
     def market_insights(
@@ -194,13 +228,13 @@ def create_tools(neo4j: "Neo4jClient", chroma: "ChromaClient") -> list:
 
     @tool
     def graph_query(
-        job_title: Annotated[str, "직무명 (정규화된 형태, 예: AI Engineer)"],
+        job_family: Annotated[str, "직군명. 반드시 아래 중 하나: Software Engineer / Data Engineer / Data Analyst / Data Scientist / AI/LLM Engineer / ML Engineer / DevOps/SRE / Security Engineer / Frontend Engineer / Architect"],
     ) -> list[dict]:
-        """Neo4j에서 직무별 필수·우대 기술과 가중치를 조회한다."""
+        """Neo4j에서 직군별 필수·우대 기술과 가중치를 조회한다."""
         try:
-            rows = neo4j.execute_query(_JOB_SKILLS_QUERY, job_title=job_title)
+            rows = neo4j.execute_query(_JOB_SKILLS_QUERY, job_family=job_family)
             if not rows:
-                return [{"note": f"'{job_title}' 직무 데이터 없음"}]
+                return [{"note": f"'{job_family}' 직군 데이터 없음"}]
             return rows
         except Exception as e:
             return [{"error": str(e)}]
@@ -215,4 +249,39 @@ def create_tools(neo4j: "Neo4jClient", chroma: "ChromaClient") -> list:
         answer: str = interrupt({"question": question})
         return answer
 
-    return [gap_analysis, verify_skills, vector_search, skill_unlock, market_insights, graph_query, ask_human]
+    return [gap_analysis, verify_skills, vector_search, skill_unlock, posting_trend,
+            market_insights, graph_query, ask_human]
+
+
+def create_coach_tools(chroma: "ChromaClient") -> list:
+    """Coach 에이전트 전용 툴 목록 생성."""
+
+    @tool
+    def verify_suggestion(
+        skill: Annotated[str, "검증할 스킬명"],
+        suggestion_text: Annotated[str, "검증할 이력서 개선 제안 텍스트"],
+    ) -> dict:
+        """제안이 실제 채용공고 요건에 근거하는지 증거 텍스트를 가져온다.
+
+        LLM이 이 증거를 보고 제안의 구체성과 공고 정합성을 스스로 판단한다.
+        이 툴은 데이터만 반환하며, 판단은 하지 않는다.
+        """
+        try:
+            results = chroma.search(skill, n_results=2, section_type="required")
+            if not results:
+                return {
+                    "skill": skill,
+                    "evidence": "",
+                    "company": "",
+                    "note": "해당 스킬의 공고 텍스트 없음 — 제안을 더 일반적으로 작성하세요.",
+                }
+            return {
+                "skill": skill,
+                "evidence": results[0]["original_text"][:400],
+                "company": results[0].get("company", ""),
+                "section_type": results[0].get("section_type", ""),
+            }
+        except Exception as e:
+            return {"skill": skill, "evidence": "", "error": str(e)}
+
+    return [verify_suggestion]

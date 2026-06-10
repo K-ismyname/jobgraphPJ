@@ -11,7 +11,6 @@ from src.storage.neo4j_client import Neo4jClient
 
 class SkillGap(BaseModel):
     skill: str
-    category: str
     have_it: bool
     confidence: Literal["high", "medium", "low"] | None  # have_it=False면 None
     evidence: str | None
@@ -30,7 +29,9 @@ class GapAnalysisResult(BaseModel):
 
 
 GAP_QUERY = """
-MATCH (j:Job {normalized_title: $job_title})-[r:REQUIRES]->(required:Skill)
+MATCH (:JobFamily {name: $job_family})<-[:INSTANCE_OF]-(jp:JobPosting)-[:REQUIRES]->(required:Skill)
+
+WITH required, count(jp) AS job_demand
 
 OPTIONAL MATCH (me:PortfolioItem {owner: $owner})-[d:DEMONSTRATES]->(required)
 
@@ -39,15 +40,14 @@ WHERE EXISTS {
     MATCH (:PortfolioItem {owner: $owner})-[:DEMONSTRATES]->(related)
 }
 
-WITH required, d, r, collect(DISTINCT related.name) AS related_i_have
+WITH required, job_demand, d, collect(DISTINCT related.name) AS related_i_have
 RETURN
     required.name         AS skill,
-    required.category     AS category,
     d IS NOT NULL         AS i_have_it,
     d.confidence          AS confidence,
     d.evidence            AS evidence,
     related_i_have        AS related_skills,
-    r.weight              AS job_demand
+    job_demand
 ORDER BY i_have_it ASC, job_demand DESC
 """
 
@@ -55,11 +55,11 @@ ORDER BY i_have_it ASC, job_demand DESC
 def run_gap_analysis(
     neo4j: Neo4jClient,
     chroma: ChromaClient | None = None,
-    job_title: str = "AI Engineer",
+    job_family: str = "AI/LLM Engineer",
     owner: str = "",
 ) -> GapAnalysisResult:
     """GAP_QUERY 실행 → Pydantic 변환 → Chroma evidence로 보강."""
-    rows = neo4j.execute_query(GAP_QUERY, job_title=job_title, owner=owner)
+    rows = neo4j.execute_query(GAP_QUERY, job_family=job_family, owner=owner)
 
     have: list[SkillGap] = []
     missing: list[SkillGap] = []
@@ -71,13 +71,12 @@ def run_gap_analysis(
 
         # missing 기술에 Neo4j evidence 없으면 Chroma에서 보강
         if not have_it and not evidence and chroma:
-            snippets = chroma.search_evidence(row["skill"], n=1)
-            if snippets:
-                evidence = snippets[0][:200]
+            results = chroma.search(row["skill"], n_results=1, section_type="required")
+            if results:
+                evidence = results[0]["original_text"][:200]
 
         gap = SkillGap(
             skill=row["skill"],
-            category=row.get("category") or "tool",
             have_it=have_it,
             confidence=row.get("confidence") if have_it else None,
             evidence=evidence,
@@ -92,7 +91,7 @@ def run_gap_analysis(
     top_missing = sorted(missing, key=lambda s: s.job_demand, reverse=True)[:3]
 
     return GapAnalysisResult(
-        job_title=job_title,
+        job_title=job_family,
         owner=owner,
         match_rate=match_rate,
         have=have,

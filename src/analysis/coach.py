@@ -43,9 +43,9 @@ def generate_coaching(
 
     section_contexts: dict[str, str] = {}
     for skill_gap in top_missing:
-        snippets = chroma.search_evidence(skill_gap.skill, n=1)
-        if snippets:
-            section_contexts[skill_gap.skill] = snippets[0][:300]
+        results = chroma.search(skill_gap.skill, n_results=1, section_type="required")
+        if results:
+            section_contexts[skill_gap.skill] = results[0]["original_text"][:300]
 
     salary_lines = ""
     if salary_result:
@@ -89,13 +89,19 @@ def _build_prompt(
         for i, s in enumerate(top_missing)
     ])
     have_list = ", ".join(s.skill for s in gap_result.have[:5])
+    # GitHub로 확인된 스킬 — 재증명 제안 불필요
+    github_verified = [s.skill for s in gap_result.have if s.confidence == "high"]
+    github_section = (
+        f"\n[GitHub 검증 완료 — 재증명 제안 불필요]: {', '.join(github_verified)}"
+        if github_verified else ""
+    )
     salary_section = f"\n\n[연봉 영향 기술]\n{salary_context}" if salary_context else ""
     first_missing = top_missing[0].skill if top_missing else "기술"
 
     return f"""다음 갭 분석 결과를 보고 이력서 개선 제안을 생성하세요.
 
 [현재 매칭률] {gap_result.match_rate:.0%} ({len(gap_result.have)}/{len(gap_result.have) + len(gap_result.missing)} 기술 보유)
-[보유 기술] {have_list}
+[보유 기술] {have_list}{github_section}
 
 [우선 보완 필요 기술]
 {missing_lines}{salary_section}
