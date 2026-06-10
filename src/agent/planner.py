@@ -4,8 +4,9 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Literal
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import RemoveMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from pydantic import BaseModel, Field
 
 from src.agent.state import AppState
@@ -98,6 +99,13 @@ def create_planner_node(openai_client):
             steps = skeleton
             reason = "LLM 실패로 기본 조사 계획 사용"
 
-        return {"plan": {"steps": steps, "reason": reason}}
+        updates: dict = {"plan": {"steps": steps, "reason": reason}}
+        # replan 진입 시 이전 라운드의 누적 메시지를 비운다.
+        # messages·coach_messages는 add_messages(append-only) reducer라,
+        # 클리어하지 않으면 replan마다 gap 대화·coach 시드가 쌓여 Coach 출력이 오염된다.
+        if (state.get("critic_report") or {}).get("needs_replan"):
+            updates["messages"] = [RemoveMessage(id=REMOVE_ALL_MESSAGES)]
+            updates["coach_messages"] = [RemoveMessage(id=REMOVE_ALL_MESSAGES)]
+        return updates
 
     return planner_node
