@@ -18,6 +18,10 @@ def mock_clients():
     neo4j = MagicMock()
     neo4j.execute_query.return_value = []
     neo4j.get_portfolio_demonstrated_skills.return_value = []
+    # Market 노드가 호출하는 메서드 — 직렬화 가능한 값으로 mock (MagicMock 반환 방지)
+    neo4j.get_job_distribution.return_value = []
+    neo4j.get_top_skills.return_value = []
+    neo4j.get_location_distribution.return_value = []
     chroma = MagicMock()
     chroma.search.return_value = []
     openai = MagicMock()
@@ -34,22 +38,29 @@ class TestCreateSupervisorGraph:
 
     @requires_api_key
     def test_graph_has_gap_loop_nodes(self, mock_clients) -> None:
-        """Gap 루프 노드(call_model, tools, generate)가 모두 존재한다."""
+        """Gap 루프 노드(call_model, tools, synthesizer)가 모두 존재한다."""
         neo4j, chroma, openai = mock_clients
         graph = create_supervisor_graph(neo4j, chroma, openai)
         node_names = set(graph.get_graph().nodes.keys())
-        assert "call_model" in node_names
-        assert "tools"      in node_names
-        assert "generate"   in node_names
+        assert "call_model"  in node_names
+        assert "tools"       in node_names
+        assert "synthesizer" in node_names
 
     @requires_api_key
-    def test_graph_has_pipeline_nodes(self, mock_clients) -> None:
-        """resume/github/coach 파이프라인 노드가 모두 존재한다."""
+    def test_graph_has_plan_execute_nodes(self, mock_clients) -> None:
+        """Plan-and-Execute 노드가 모두 존재한다."""
+        neo4j, chroma, openai = mock_clients
+        graph = create_supervisor_graph(neo4j, chroma, openai)
+        names = set(graph.get_graph().nodes.keys())
+        for n in ("planner", "profile", "retrieval", "market", "critic", "synthesizer"):
+            assert n in names, f"'{n}' 노드 누락"
+
+    @requires_api_key
+    def test_graph_has_coach_nodes(self, mock_clients) -> None:
+        """Coach 파이프라인 노드가 모두 존재한다."""
         neo4j, chroma, openai = mock_clients
         graph = create_supervisor_graph(neo4j, chroma, openai)
         node_names = set(graph.get_graph().nodes.keys())
-        assert "resume"           in node_names
-        assert "github"           in node_names
         assert "coach_call_model" in node_names
         assert "finalize_coach"   in node_names
 

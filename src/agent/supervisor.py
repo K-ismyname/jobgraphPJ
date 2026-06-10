@@ -1,4 +1,4 @@
-# 단일 평면 StateGraph — Resume → [GitHub →] Gap 루프 → Supervisor 판단 → Coach 루프
+# Plan-and-Execute StateGraph — Planner → Executor(병렬) → Gap 루프 → Synthesizer → Critic → Replan/Coach
 from __future__ import annotations
 
 import json
@@ -10,8 +10,9 @@ from langchain_core.messages import ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import tools_condition
+from langgraph.types import Send
 
-from src.agent.state import COACH_MAX_ITERATIONS, MAX_ITERATIONS, AppState
+from src.agent.state import COACH_MAX_ITERATIONS, MAX_ITERATIONS, MAX_REPLAN, AppState
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -98,64 +99,65 @@ def _make_coach_tools_node(coach_tools_list: list):
     return coach_tools_node
 
 
-def create_supervisor_graph(
-    neo4j: "Neo4jClient",
-    chroma: "ChromaClient",
-    openai_client: "OpenAI",
-):
-    """단일 평면 StateGraph를 생성한다.
+# Plan의 병렬 가능 step(profile/retrieval/market)만 Send로 펼친다. gap은 의존성 때문에 제외.
+_PARALLEL_AGENTS = ("profile", "retrieval", "market")
 
-    구조:
-      START → resume → [github_url?] → github → call_model (Gap 루프)
-                                     → call_model (Gap 루프)
-      Gap 루프: call_model ↔ tools → generate
-      Supervisor 판단: match_rate ≥ 80% → END, 그 외 → Coach 루프
-      Coach 루프: coach_call_model ↔ coach_tools → finalize_coach → END
 
-    GitHub이 항상 Gap 분석 전에 실행되므로, gap_analysis 툴이 Neo4j에서
-    최신 confidence를 조회할 때 GitHub 업데이트가 반영되어 있다.
+def executor_dispatch(state: AppState) -> list:
+    """Plan에 포함된 병렬 가능 agent를 Send로 fan-out한다."""
+    plan = state.get("plan") or {}
+    steps = plan.get("steps") or []
+    present = [s["agent"] for s in steps if s["agent"] in _PARALLEL_AGENTS]
+    return [Send(agent, state) for agent in present]
+
+
+def route_after_critic(state: AppState) -> str:
+    """Critic 판정으로 재계획(planner) 또는 코칭(coach_call_model)으로 분기.
+
+    상한 체크는 critic_node의 decide_replan이 이미 needs_replan에 반영했으므로,
+    여기서는 needs_replan만 보고 분기한다(이중 카운트 방지).
+    """
+    report = state.get("critic_report") or {}
+    if report.get("needs_replan"):
+        print(f"[critic] 재계획 (replan_count={state.get('replan_count', 0)})")
+        return "planner"
+    return "coach_call_model"
+
+
+def create_supervisor_graph(neo4j, chroma, openai_client):
+    """Plan-and-Execute + Critic 그래프.
+
+    START → planner → (Send)[profile ∥ retrieval ∥ market] → seed_gap → call_model↔tools
+          → synthesizer → critic → (replan→planner | coach) → coach_loop → END
     """
     from src.agent.tools import create_tools, create_coach_tools
     from src.agent.nodes import create_nodes, create_coach_nodes
-    from src.agent.resume_agent import create_resume_node
-    from src.agent.github_agent import create_github_node
+    from src.agent.planner import create_planner_node
+    from src.agent.profile_agent import create_profile_node
+    from src.agent.retrieval_agent import create_retrieval_node
+    from src.agent.market_agent import create_market_node
+    from src.agent.critic import create_critic_node
 
     gap_tools = create_tools(neo4j, chroma)
     coach_tools = create_coach_tools(chroma)
-
     call_model, generate_report = create_nodes(gap_tools, neo4j, chroma)
     coach_call_model, finalize_coach = create_coach_nodes(coach_tools)
-
     tools_node = _make_tools_node(gap_tools)
     coach_tools_node = _make_coach_tools_node(coach_tools)
 
-    resume_node = create_resume_node(neo4j, openai_client)
-    github_node = create_github_node(neo4j)
-
-    # ── 라우팅 함수 ──────────────────────────────────────────────
-
-    def route_after_resume(state: AppState) -> str:
-        """GitHub URL이 있으면 GitHub을 먼저 실행 → confidence 업데이트 후 Gap 분석."""
-        return "github" if state.get("github_url") else "call_model"
+    planner_node = create_planner_node(openai_client)
+    profile_node = create_profile_node(neo4j, openai_client)
+    retrieval_node = create_retrieval_node(neo4j, chroma)
+    market_node = create_market_node(neo4j)
+    critic_node = create_critic_node(openai_client)
 
     def route_gap_loop(state: AppState) -> str:
-        """Gap 루프 상한(5회) 초과 시 generate로 강제 이동."""
         if state.get("iteration", 0) >= MAX_ITERATIONS:
-            return "generate"
+            return "synthesizer"
         routing = tools_condition(state)
-        return "generate" if routing == END else routing
-
-    def route_after_generate(state: AppState) -> str:
-        """Supervisor 중간 판단 — match_rate 기반으로 코칭 필요 여부 결정."""
-        gap = state.get("gap_result") or {}
-        match_rate = gap.get("match_rate", 0.0)
-        if match_rate >= 0.8:
-            print(f"[supervisor] match_rate={match_rate:.0%} ≥ 80% → 코칭 불필요, 바로 종료")
-            return "__end__"
-        return "coach_call_model"
+        return "synthesizer" if routing == END else routing
 
     def route_coach_loop(state: AppState) -> str:
-        """Coach 루프 상한(3회) 초과 또는 도구 호출 없으면 finalize_coach로."""
         if state.get("coach_iteration", 0) >= COACH_MAX_ITERATIONS:
             return "finalize_coach"
         last = (list(state.get("coach_messages") or [None]))[-1]
@@ -163,41 +165,52 @@ def create_supervisor_graph(
             return "coach_tools"
         return "finalize_coach"
 
-    # ── 그래프 조립 ──────────────────────────────────────────────
-    workflow = StateGraph(AppState)
+    # gap 루프 진입 전 messages 시드(기존 resume_node가 하던 역할)
+    def seed_gap(state: AppState) -> dict:
+        from langchain_core.messages import HumanMessage
+        skills = state.get("resume_skills") or []
+        skills_str = ", ".join(skills) if skills else "없음 (공고 데이터만 사용)"
+        user_msg = (
+            f"직무 '{state['job_family']}'에 대해 갭 분석을 해주세요.\n"
+            f"지원자 이름: {state['owner']}\n보유 스킬: {skills_str}"
+        )
+        return {"messages": [HumanMessage(content=user_msg)], "iteration": 0, "seen_source_ids": []}
 
-    workflow.add_node("resume",           resume_node)
-    workflow.add_node("github",           github_node)
+    workflow = StateGraph(AppState)
+    workflow.add_node("planner",          planner_node)
+    workflow.add_node("profile",          profile_node)
+    workflow.add_node("retrieval",        retrieval_node)
+    workflow.add_node("market",           market_node)
+    workflow.add_node("seed_gap",         seed_gap)
     workflow.add_node("call_model",       call_model)
     workflow.add_node("tools",            tools_node)
-    workflow.add_node("generate",         generate_report)
+    workflow.add_node("synthesizer",      generate_report)   # gap_result + coach 시드 생성
+    workflow.add_node("critic",           critic_node)
     workflow.add_node("coach_call_model", coach_call_model)
     workflow.add_node("coach_tools",      coach_tools_node)
     workflow.add_node("finalize_coach",   finalize_coach)
 
-    workflow.add_edge(START, "resume")
-    workflow.add_conditional_edges(
-        "resume",
-        route_after_resume,
-        {"github": "github", "call_model": "call_model"},
-    )
-    workflow.add_edge("github", "call_model")
-    workflow.add_conditional_edges(
-        "call_model",
-        route_gap_loop,
-        {"tools": "tools", "generate": "generate"},
-    )
+    workflow.add_edge(START, "planner")
+    # Executor: planner 이후 병렬 fan-out
+    workflow.add_conditional_edges("planner", executor_dispatch,
+                                   ["profile", "retrieval", "market"])
+    # 병렬 노드는 모두 seed_gap으로 모인다(barrier → reduce)
+    workflow.add_edge("profile",   "seed_gap")
+    workflow.add_edge("retrieval", "seed_gap")
+    workflow.add_edge("market",    "seed_gap")
+    # Gap 루프
+    workflow.add_conditional_edges("call_model", route_gap_loop,
+                                   {"tools": "tools", "synthesizer": "synthesizer"})
+    workflow.add_edge("seed_gap", "call_model")
     workflow.add_edge("tools", "call_model")
-    workflow.add_conditional_edges(
-        "generate",
-        route_after_generate,
-        {"coach_call_model": "coach_call_model", "__end__": END},
-    )
-    workflow.add_conditional_edges(
-        "coach_call_model",
-        route_coach_loop,
-        {"coach_tools": "coach_tools", "finalize_coach": "finalize_coach"},
-    )
+    # Synthesizer → Critic
+    workflow.add_edge("synthesizer", "critic")
+    # Critic → replan(planner) | coach
+    workflow.add_conditional_edges("critic", route_after_critic,
+                                   {"planner": "planner", "coach_call_model": "coach_call_model"})
+    # Coach 루프
+    workflow.add_conditional_edges("coach_call_model", route_coach_loop,
+                                   {"coach_tools": "coach_tools", "finalize_coach": "finalize_coach"})
     workflow.add_edge("coach_tools", "coach_call_model")
     workflow.add_edge("finalize_coach", END)
 
@@ -239,6 +252,12 @@ def run_supervisor(
         "github_result": None,
         "coaching_result": None,
         "final_report": None,
+        "plan": None,
+        "replan_count": 0,
+        "profile_result": None,
+        "retrieved_context": [],
+        "market_result": None,
+        "critic_report": None,
     }
     result = graph.invoke(initial, config)
     return result.get("final_report") or {}
@@ -272,6 +291,12 @@ def run_analysis(
         "github_result": None,
         "coaching_result": None,
         "final_report": None,
+        "plan": None,
+        "replan_count": 0,
+        "profile_result": None,
+        "retrieved_context": [],
+        "market_result": None,
+        "critic_report": None,
     }
     result = graph.invoke(initial, config)
     gap_result = result.get("gap_result") or {}

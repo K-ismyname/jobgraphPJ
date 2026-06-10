@@ -93,6 +93,9 @@ def create_critic_node(openai_client):
             "unsupported_claims": unsupported,
             "needs_replan": decide_replan(faithful, replan_count),
         }
-        return {"critic_report": report}
+        result = {"critic_report": report}
+        if report["needs_replan"]:
+            result["replan_count"] = replan_count + 1
+        return result
 
     return critic_node
