@@ -43,3 +43,15 @@ class AppState(TypedDict):
     github_result: dict | None
     coaching_result: dict | None
     final_report: dict | None
+
+    # ── Plan-and-Execute (멀티 에이전트 코어) ──
+    plan: dict | None
+    replan_count: int
+
+    # ── Executor 산출 (병렬 노드가 각자 채움) ──
+    profile_result: dict | None
+    retrieved_context: list[dict]
+    market_result: dict | None
+
+    # ── Critic 검증 ──
+    critic_report: dict | None
