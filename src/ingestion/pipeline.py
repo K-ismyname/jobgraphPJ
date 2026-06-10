@@ -1,0 +1,193 @@
+# 원본 공고 JSON → 전처리 → 스킬 추출 → Neo4j 적재 파이프라인
+from __future__ import annotations
+
+import json
+import os
+import time
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+load_dotenv(ROOT / ".env")
+
+from openai import OpenAI
+
+from src.ingestion.preprocessor import preprocess_file
+from src.extraction.skill_extractor import extract_skills_from_posting
+from src.extraction.normalizer import normalize_skill
+from src.storage.neo4j_client import Neo4jClient
+from src.storage.chroma_client import ChromaClient
+
+
+def _normalize_skills(skills: dict) -> dict:
+    """추출된 스킬 name 필드에 normalize_skill() 적용 + 같은 공고 내 중복 제거."""
+    for group in ("required", "preferred"):
+        seen: set[str] = set()
+        deduped: list[dict] = []
+        for s in skills.get(group, []):
+            s["name"] = normalize_skill(s["name"])
+            if s["name"] not in seen:
+                seen.add(s["name"])
+                deduped.append(s)
+        skills[group] = deduped
+    return skills
+
+_DEFAULT_RAW = ROOT / "data" / "raw" / "jobs_data_analytics.json"
+_DEFAULT_PROCESSED = ROOT / "data" / "processed" / "jobs_da_processed.json"
+_DEFAULT_WITH_SKILLS = ROOT / "data" / "processed" / "jobs_da_with_skills.json"
+
+
+def _get_openai() -> OpenAI:
+    key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        raise EnvironmentError("OPENAI_API_KEY 환경변수가 필요합니다.")
+    return OpenAI(api_key=key)
+
+
+def _save_json(data: list[dict], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def step_preprocess(
+    raw_path: Path = _DEFAULT_RAW,
+    processed_path: Path = _DEFAULT_PROCESSED,
+    *,
+    force: bool = False,
+) -> list[dict]:
+    """Step 1: raw JSON → 텍스트 정제 + 섹션 분리."""
+    if not force and processed_path.exists():
+        print(f"[skip] 전처리 파일 존재: {processed_path}")
+        with open(processed_path, encoding="utf-8") as f:
+            return json.load(f)
+    print("=== Step 1: 전처리 ===")
+    return preprocess_file(raw_path, processed_path)
+
+
+def step_extract_skills(
+    jobs: list[dict],
+    output_path: Path = _DEFAULT_WITH_SKILLS,
+) -> list[dict]:
+    """Step 2: 전처리 공고 → LLM 스킬 추출. 기추출 공고는 스킵."""
+    openai = _get_openai()
+
+    already: dict[str, dict] = {}
+    if output_path.exists():
+        with open(output_path, encoding="utf-8") as f:
+            for j in json.load(f):
+                already[j["id"]] = j
+
+    pending = [j for j in jobs if j["id"] not in already]
+    print(f"\n=== Step 2: 스킬 추출 (신규 {len(pending)}개 / 전체 {len(jobs)}개) ===")
+
+    for i, job in enumerate(pending):
+        try:
+            skills = _normalize_skills(extract_skills_from_posting(job, openai))
+            job["skills"] = skills
+            already[job["id"]] = job
+            req_n = len(skills.get("required", []))
+            pref_n = len(skills.get("preferred", []))
+            print(f"  [{i+1}/{len(pending)}] {job['title'][:45]:<45} req={req_n} pref={pref_n}")
+        except Exception as e:
+            print(f"  [{i+1}/{len(pending)}] {job['title'][:45]:<45} 오류: {e}")
+
+        if (i + 1) % 10 == 0:
+            _save_json(list(already.values()), output_path)
+
+        time.sleep(0.3)
+
+    _save_json(list(already.values()), output_path)
+    extracted = [j for j in already.values() if "skills" in j]
+    print(f"스킬 추출 완료: {len(extracted)}/{len(already)}개 → {output_path}")
+    return list(already.values())
+
+
+def step_ingest_chroma(jobs: list[dict]) -> None:
+    """Step 4: Chroma에 공고 섹션 텍스트 적재 (Contextual Hybrid 인덱싱).
+
+    섹션 파싱 성공 시 required/preferred 별도 문서, 실패 시 text_clean fallback.
+    """
+    chroma = ChromaClient()
+    ingestible = [j for j in jobs if j.get("text_clean") or j.get("required_section")]
+    print(f"\n=== Step 4: Chroma 적재 ({len(ingestible)}개) ===")
+
+    total_docs = 0
+    for job in ingestible:
+        try:
+            added = chroma.ingest_posting(job)
+            total_docs += added
+        except Exception as e:
+            print(f"  [오류] {job.get('title', '?')}: {e}")
+
+    print(f"Chroma 적재 완료: 문서 {total_docs}개 (컬렉션 총 {chroma.count()}개)")
+
+
+def step_ingest(jobs: list[dict]) -> None:
+    """Step 3: Neo4j에 공고·스킬·관계 적재."""
+    openai = _get_openai()
+    neo4j = Neo4jClient()
+
+    try:
+        neo4j.setup_constraints()
+        neo4j.load_skill_seeds()
+
+        ingestible = [j for j in jobs if "skills" in j]
+        print(f"\n=== Step 3: Neo4j 적재 ({len(ingestible)}개) ===")
+
+        success = 0
+        for job in ingestible:
+            try:
+                neo4j.ingest_posting(job, openai)
+                success += 1
+            except Exception as e:
+                print(f"  [오류] {job.get('title', '?')}: {e}")
+
+        print(f"적재 완료: {success}/{len(ingestible)}개")
+    finally:
+        neo4j.close()
+
+
+def run_pipeline(
+    raw_path: str | Path = _DEFAULT_RAW,
+    processed_path: str | Path = _DEFAULT_PROCESSED,
+    with_skills_path: str | Path = _DEFAULT_WITH_SKILLS,
+    *,
+    limit: int | None = None,
+    force_preprocess: bool = False,
+    skip_ingest: bool = False,
+) -> None:
+    """전체 파이프라인 실행.
+
+    Args:
+        limit: 처리할 공고 수 상한 (테스트용)
+        force_preprocess: 기존 전처리 파일이 있어도 재생성
+        skip_ingest: Step 3(Neo4j 적재) 건너뜀 (스킬 추출만 실행할 때)
+    """
+    jobs = step_preprocess(Path(raw_path), Path(processed_path), force=force_preprocess)
+
+    if limit:
+        jobs = jobs[:limit]
+        print(f"(limit={limit})")
+
+    jobs = step_extract_skills(jobs, Path(with_skills_path))
+
+    if not skip_ingest:
+        step_ingest(jobs)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="DA 채용공고 수집 파이프라인")
+    parser.add_argument("--limit", type=int, default=None, help="처리할 공고 수 상한 (테스트용)")
+    parser.add_argument("--force-preprocess", action="store_true", help="전처리 재실행")
+    parser.add_argument("--skip-ingest", action="store_true", help="Neo4j 적재 건너뜀")
+    args = parser.parse_args()
+
+    run_pipeline(
+        limit=args.limit,
+        force_preprocess=args.force_preprocess,
+        skip_ingest=args.skip_ingest,
+    )
