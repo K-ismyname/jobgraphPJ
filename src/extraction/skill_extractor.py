@@ -7,18 +7,6 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 
-# ── 채용공고용 모델 ──────────────────────────────────────────────
-class ExtractedSkill(BaseModel):
-    raw: str = Field(description="공고에 적힌 원문 표현")
-    category: Literal["language", "framework", "database", "cloud", "tool", "concept"]
-    importance: Literal["required", "preferred"]
-
-
-class JobSkills(BaseModel):
-    job_title: str
-    skills: list[ExtractedSkill]
-
-
 # ── 이력서용 모델 ────────────────────────────────────────────────
 class DemonstratedSkill(BaseModel):
     name: str = Field(description="정규화된 기술명")
@@ -55,35 +43,6 @@ def _chat(client: OpenAI, prompt: str, max_tokens: int = 1024) -> str:
     )
     raw = resp.choices[0].message.content or ""
     return raw.strip().replace("```json", "").replace("```", "").strip()
-
-
-# ── 채용공고 기술 추출 ───────────────────────────────────────────
-def extract_skills(job: dict, client: OpenAI | None = None) -> JobSkills:
-    """공고 description에서 기술스택 추출."""
-    if client is None:
-        client = _get_client()
-
-    prompt = f"""다음 채용공고에서 기술 요구사항을 추출하세요.
-
-공고 제목: {job['title']}
-공고 내용:
-{job['description']}
-
-각 기술에 대해 원문 표현(raw), 카테고리(category), 중요도(importance)를 판단하세요.
-반드시 아래 JSON 스키마로만 응답하고, 다른 텍스트는 출력하지 마세요.
-
-{{
-  "job_title": "공고 제목",
-  "skills": [
-    {{"raw": "Python", "category": "language", "importance": "required"}},
-    ...
-  ]
-}}
-
-category는 language/framework/database/cloud/tool/concept 중 하나.
-importance는 required(필수)/preferred(우대) 중 하나."""
-
-    return JobSkills(**json.loads(_chat(client, prompt, max_tokens=1024)))
 
 
 # ── 이력서 기술 추출 ─────────────────────────────────────────────
@@ -131,22 +90,22 @@ def extract_skills_from_resume(
 # ── 전처리된 채용공고 스킬 추출 ──────────────────────────────────────
 def extract_skills_from_posting(
     job: dict, client: OpenAI | None = None
-) -> dict[str, list[dict]]:
-    """전처리된 공고에서 required/preferred 스킬 추출.
+) -> dict[str, list[str]]:
+    """전처리된 공고에서 required/preferred 스킬명 추출.
 
     Returns:
-        {"required": [{"raw", "name", "category"}, ...], "preferred": [...]}
+        {"required": ["Python", "RAG", ...], "preferred": ["Docker", ...]}
     """
     if client is None:
         client = _get_client()
 
-    required_text = job.get("required_section") or ""
+    required_text = job.get("required_section") or job.get("bullet_section") or ""
     preferred_text = job.get("preferred_section") or ""
 
     if required_text:
         context_req = required_text[:2000]
         context_pref = preferred_text[:800] if preferred_text else "(없음)"
-        prompt = f"""다음 채용공고 섹션에서 기술스택을 추출하세요.
+        prompt = f"""다음 채용공고 섹션에서 기술명만 추출하세요.
 
 공고 제목: {job.get('title', '')}
 
@@ -158,21 +117,17 @@ def extract_skills_from_posting(
 
 아래 JSON 형식으로만 응답하세요. 다른 텍스트 없이:
 {{
-  "required": [
-    {{"raw": "Python 3.x", "name": "Python", "category": "language"}}
-  ],
-  "preferred": [
-    {{"raw": "MLflow experience", "name": "MLflow", "category": "tool"}}
-  ]
+  "required": ["Python", "PostgreSQL", "Docker"],
+  "preferred": ["Kubernetes", "Terraform"]
 }}
 
 규칙:
-- name: 표준 기술명 (React.js → React, PyTorch → PyTorch)
-- category: language / framework / database / cloud / tool / concept 중 하나
-- 기술이 아닌 연차·학위 조건은 제외"""
+- 기술명은 표준 표기로 정규화 (React.js → React, LangChain → LangChain)
+- 연차·학위·소프트스킬(커뮤니케이션 등)은 제외
+- 기술이 아닌 도메인 지식(금융, 의료 등)도 제외"""
     else:
-        full_text = (job.get("text_clean") or job.get("description") or "")[:3000]
-        prompt = f"""다음 채용공고에서 기술 요구사항을 추출하세요.
+        full_text = (job.get("text_clean") or "")[:3000]
+        prompt = f"""다음 채용공고에서 요구하는 기술명만 추출하세요.
 
 공고 제목: {job.get('title', '')}
 내용:
@@ -180,21 +135,16 @@ def extract_skills_from_posting(
 
 아래 JSON 형식으로만 응답하세요. 다른 텍스트 없이:
 {{
-  "required": [
-    {{"raw": "Python 3.x", "name": "Python", "category": "language"}}
-  ],
-  "preferred": [
-    {{"raw": "Docker experience", "name": "Docker", "category": "tool"}}
-  ]
+  "required": ["Python", "PostgreSQL", "Docker"],
+  "preferred": ["Kubernetes", "Terraform"]
 }}
 
 규칙:
-- name: 표준 기술명 (React.js → React, PyTorch → PyTorch)
-- category: language / framework / database / cloud / tool / concept 중 하나
+- 기술명은 표준 표기로 정규화 (React.js → React)
 - 명시적 필수 조건은 required, 우대/선호는 preferred
-- 기술이 아닌 연차·학위 조건은 제외"""
+- 연차·학위·소프트스킬·도메인 지식은 제외"""
 
-    result = json.loads(_chat(client, prompt, max_tokens=1200))
+    result = json.loads(_chat(client, prompt, max_tokens=800))
     return {
         "required": result.get("required", []),
         "preferred": result.get("preferred", []),
