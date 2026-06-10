@@ -108,6 +108,9 @@ def executor_dispatch(state: AppState) -> list:
     plan = state.get("plan") or {}
     steps = plan.get("steps") or []
     present = [s["agent"] for s in steps if s["agent"] in _PARALLEL_AGENTS]
+    if not present:
+        # 불변식: 최소 retrieval은 항상 실행한다(빈 fan-out으로 그래프가 무성 정지하는 것 방지).
+        present = ["retrieval"]
     return [Send(agent, state) for agent in present]
 
 

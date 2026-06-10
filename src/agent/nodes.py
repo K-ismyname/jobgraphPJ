@@ -184,7 +184,10 @@ def create_coach_nodes(coach_tools: list["BaseTool"]):
                 coaching_dict = {"raw": raw, "error": "JSON 파싱 실패"}
 
         gap_raw = state.get("gap_result") or {}
-        github_raw = state.get("github_result")
+        # GitHub confidence 보강 결과는 Profile 노드가 profile_result.github_changes에 쓴다
+        # (구 github_node 제거됨). 변경이 있으면 최종 리포트에 surface한다.
+        github_changes = (state.get("profile_result") or {}).get("github_changes")
+        github_raw = {"changes": github_changes} if github_changes else state.get("github_result")
 
         return {
             "coaching_result": coaching_dict,
