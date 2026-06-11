@@ -240,8 +240,15 @@ def run_supervisor(
       1. resume_skills 주입 (RAGAS eval용)
       2. pdf_path — PDF 파싱 후 스킬 추출
       3. resume_text — 텍스트 직접 입력 후 스킬 추출
-      4. 없음 — Neo4j 기존 포트폴리오 로드
+      4. 없음 — 입력 가드가 차단 (분석할 소스 없음)
     """
+    # 입력 가드: 분석 재료가 하나도 없으면 그래프를 돌리지 않고 안내 반환
+    if not (resume_skills or pdf_path or resume_text or github_url):
+        return {
+            "error": "no_input",
+            "message": "분석하려면 이력서 스킬·PDF·이력서 텍스트·GitHub 중 최소 하나가 필요합니다.",
+        }
+
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     initial: AppState = {
         "job_family": job_family,
