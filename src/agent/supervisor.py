@@ -211,6 +211,9 @@ def create_supervisor_graph(neo4j, chroma, openai_client):
                                    {"tools": "tools", "synthesizer": "synthesizer"})
     workflow.add_edge("tools", "call_model")
     # Synthesizer → Critic → Coach (v3 단계1은 재검색 루프 없음)
+    # 주의: 단계1에서 critic은 사실상 pass-through 스텁. retrieval 노드를 제거해
+    #       retrieved_context가 항상 비어 있어 근거 검증이 무의미하고, needs_replan도
+    #       무시된다(critic→coach 직결). 다음 단계에서 길 B 등급화로 재작성 예정.
     workflow.add_edge("synthesizer", "critic")
     workflow.add_edge("critic", "coach_call_model")
     # Coach 루프
