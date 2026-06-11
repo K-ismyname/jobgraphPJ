@@ -14,10 +14,15 @@ def create_resume_evaluator(openai_client) -> Callable[["AppState"], dict]:
 
     def evaluate(state: "AppState") -> dict:
         if state.get("resume_skills"):
-            skills = [
-                {"skill": s, "evidence": "이력서 주입 스킬", "source": "resume", "level_hint": None}
-                for s in state["resume_skills"]
-            ]
+            if state.get("pdf_path") or state.get("resume_text"):
+                print("[resume_eval] resume_skills 주입됨 — pdf_path/resume_text는 무시")
+            seen: set[str] = set()
+            skills = []
+            for s in state["resume_skills"]:
+                if s in seen:  # 정확한 중복 제거 (순서 유지)
+                    continue
+                seen.add(s)
+                skills.append({"skill": s, "evidence": "이력서 주입 스킬", "source": "resume", "level_hint": None})
             return {"resume_eval": {"skills": skills}}
 
         text = None
@@ -26,10 +31,11 @@ def create_resume_evaluator(openai_client) -> Callable[["AppState"], dict]:
                 text = extract_pdf_text(state["pdf_path"])
             except Exception as e:
                 print(f"[resume_eval] PDF 실패: {e}")
-        elif state.get("resume_text"):
+        # PDF가 없거나·실패·공백이면 resume_text로 fallback
+        if not (text and text.strip()) and state.get("resume_text"):
             text = state["resume_text"]
 
-        if not text:
+        if not (text and text.strip()):
             return {"resume_eval": {"skills": []}}
 
         try:
