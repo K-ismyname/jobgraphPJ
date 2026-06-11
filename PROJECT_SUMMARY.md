@@ -95,8 +95,8 @@
 - **임베딩**: OpenAI `text-embedding-3-small`
 - **스킬 추출**: GPT-4o-mini (ingestion 시 1회성)
 
-> CLAUDE.md에는 Claude Haiku/Sonnet 사용 예정으로 적혀 있으나,
-> 실제 구현은 OpenAI로 진행됨. 환경변수는 `OPENAI_API_KEY`.
+> LLM은 OpenAI 단일 공급자로 통일 (gpt-4o-mini 기본, gpt-4o 복잡 추론).
+> 환경변수는 `OPENAI_API_KEY`.
 
 ---
 
@@ -222,4 +222,4 @@ LANGFUSE_PUBLIC_KEY=   # 선택 (트레이싱)
 LANGFUSE_SECRET_KEY=
 ```
 
-> CLAUDE.md의 `ANTHROPIC_API_KEY`는 현재 미사용. 실제 코드는 `OPENAI_API_KEY`로 동작.
+> LLM 호출은 전부 `OPENAI_API_KEY` 사용 (단일 공급자).
