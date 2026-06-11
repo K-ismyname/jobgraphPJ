@@ -1,4 +1,4 @@
-# Plan-and-Execute StateGraph — Planner → Executor(병렬) → Gap 루프 → Synthesizer → Critic → Replan/Coach
+# v3 단계1 StateGraph — 평가자 병렬(이력서∥GitHub) → 합의 → Gap 루프 → Synthesizer → Critic → Coach
 from __future__ import annotations
 
 import json
@@ -127,18 +127,25 @@ def route_after_critic(state: AppState) -> str:
     return "coach_call_model"
 
 
-def create_supervisor_graph(neo4j, chroma, openai_client):
-    """Plan-and-Execute + Critic 그래프.
+def evaluator_dispatch(state: AppState) -> list[Send]:
+    """입력에 있는 소스의 평가자만 Send로 fan-out."""
+    sends = []
+    if state.get("resume_skills") or state.get("pdf_path") or state.get("resume_text"):
+        sends.append(Send("resume_eval", state))
+    if state.get("github_url"):
+        sends.append(Send("github_eval", state))
+    if not sends:
+        sends.append(Send("resume_eval", state))   # 최소 하나 보장
+    return sends
 
-    START → planner → (Send)[profile ∥ retrieval ∥ market] → seed_gap → call_model↔tools
-          → synthesizer → critic → (replan→planner | coach) → coach_loop → END
-    """
+
+def create_supervisor_graph(neo4j, chroma, openai_client):
+    """v3 단계1: 평가자 병렬 → 합의 → Gap 적합도 → Critic → Coach."""
     from src.agent.tools import create_tools, create_coach_tools
     from src.agent.nodes import create_nodes, create_coach_nodes
-    from src.agent.planner import create_planner_node
-    from src.agent.profile_agent import create_profile_node
-    from src.agent.retrieval_agent import create_retrieval_node
-    from src.agent.market_agent import create_market_node
+    from src.agent.evaluators.resume_eval import create_resume_evaluator
+    from src.agent.evaluators.github_eval import create_github_evaluator
+    from src.agent.consensus import create_consensus_node
     from src.agent.critic import create_critic_node
 
     gap_tools = create_tools(neo4j, chroma)
@@ -148,10 +155,9 @@ def create_supervisor_graph(neo4j, chroma, openai_client):
     tools_node = _make_tools_node(gap_tools)
     coach_tools_node = _make_coach_tools_node(coach_tools)
 
-    planner_node = create_planner_node(openai_client)
-    profile_node = create_profile_node(neo4j, openai_client)
-    retrieval_node = create_retrieval_node(neo4j, chroma)
-    market_node = create_market_node(neo4j)
+    resume_eval = create_resume_evaluator(openai_client)
+    github_eval = create_github_evaluator()
+    consensus_node = create_consensus_node()
     critic_node = create_critic_node(openai_client)
 
     def route_gap_loop(state: AppState) -> str:
@@ -168,22 +174,23 @@ def create_supervisor_graph(neo4j, chroma, openai_client):
             return "coach_tools"
         return "finalize_coach"
 
-    # gap 루프 진입 전 messages 시드(기존 resume_node가 하던 역할)
+    # 합의 결과(보유 스킬 + 검증상태)를 Gap 루프 진입 메시지로 시드
     def seed_gap(state: AppState) -> dict:
         from langchain_core.messages import HumanMessage
-        skills = state.get("resume_skills") or []
-        skills_str = ", ".join(skills) if skills else "없음 (공고 데이터만 사용)"
+        consensus = state.get("consensus") or {}
+        held = ", ".join(f"{s}({d['verification']})" for s, d in consensus.items()) or "없음"
         user_msg = (
-            f"직무 '{state['job_family']}'에 대해 갭 분석을 해주세요.\n"
-            f"지원자 이름: {state['owner']}\n보유 스킬: {skills_str}"
+            f"직무 '{state['job_family']}'에 대해 적합도 분석을 해주세요.\n"
+            f"지원자: {state['owner']}\n"
+            f"보유 스킬(검증상태 포함): {held}\n"
+            f"각 스킬을 직무 요구 수준과 비교해 적합도와 갭을 산출하세요."
         )
         return {"messages": [HumanMessage(content=user_msg)], "iteration": 0, "seen_source_ids": []}
 
     workflow = StateGraph(AppState)
-    workflow.add_node("planner",          planner_node)
-    workflow.add_node("profile",          profile_node)
-    workflow.add_node("retrieval",        retrieval_node)
-    workflow.add_node("market",           market_node)
+    workflow.add_node("resume_eval",      resume_eval)
+    workflow.add_node("github_eval",      github_eval)
+    workflow.add_node("consensus",        consensus_node)
     workflow.add_node("seed_gap",         seed_gap)
     workflow.add_node("call_model",       call_model)
     workflow.add_node("tools",            tools_node)
@@ -193,24 +200,19 @@ def create_supervisor_graph(neo4j, chroma, openai_client):
     workflow.add_node("coach_tools",      coach_tools_node)
     workflow.add_node("finalize_coach",   finalize_coach)
 
-    workflow.add_edge(START, "planner")
-    # Executor: planner 이후 병렬 fan-out
-    workflow.add_conditional_edges("planner", executor_dispatch,
-                                   ["profile", "retrieval", "market"])
-    # 병렬 노드는 모두 seed_gap으로 모인다(barrier → reduce)
-    workflow.add_edge("profile",   "seed_gap")
-    workflow.add_edge("retrieval", "seed_gap")
-    workflow.add_edge("market",    "seed_gap")
+    # 평가자 병렬 fan-out → 합의 barrier
+    workflow.add_conditional_edges(START, evaluator_dispatch, ["resume_eval", "github_eval"])
+    workflow.add_edge("resume_eval", "consensus")
+    workflow.add_edge("github_eval", "consensus")
+    workflow.add_edge("consensus", "seed_gap")
+    workflow.add_edge("seed_gap", "call_model")
     # Gap 루프
     workflow.add_conditional_edges("call_model", route_gap_loop,
                                    {"tools": "tools", "synthesizer": "synthesizer"})
-    workflow.add_edge("seed_gap", "call_model")
     workflow.add_edge("tools", "call_model")
-    # Synthesizer → Critic
+    # Synthesizer → Critic → Coach (v3 단계1은 재검색 루프 없음)
     workflow.add_edge("synthesizer", "critic")
-    # Critic → replan(planner) | coach
-    workflow.add_conditional_edges("critic", route_after_critic,
-                                   {"planner": "planner", "coach_call_model": "coach_call_model"})
+    workflow.add_edge("critic", "coach_call_model")
     # Coach 루프
     workflow.add_conditional_edges("coach_call_model", route_coach_loop,
                                    {"coach_tools": "coach_tools", "finalize_coach": "finalize_coach"})
@@ -261,6 +263,7 @@ def run_supervisor(
         "retrieved_context": [],
         "market_result": None,
         "critic_report": None,
+        "resume_eval": None, "github_eval": None, "consensus": None, "fit_result": None,
     }
     result = graph.invoke(initial, config)
     return result.get("final_report") or {}
@@ -300,6 +303,7 @@ def run_analysis(
         "retrieved_context": [],
         "market_result": None,
         "critic_report": None,
+        "resume_eval": None, "github_eval": None, "consensus": None, "fit_result": None,
     }
     result = graph.invoke(initial, config)
     gap_result = result.get("gap_result") or {}

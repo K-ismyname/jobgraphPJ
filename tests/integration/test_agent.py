@@ -47,13 +47,13 @@ class TestCreateSupervisorGraph:
         assert "synthesizer" in node_names
 
     @requires_api_key
-    def test_graph_has_plan_execute_nodes(self, mock_clients) -> None:
-        """Plan-and-Execute 노드가 모두 존재한다."""
+    def test_graph_has_v3_nodes(self, mock_clients) -> None:
+        """v3 단계1 노드(평가자·합의·synthesizer·critic)가 모두 존재한다."""
         neo4j, chroma, openai = mock_clients
         graph = create_supervisor_graph(neo4j, chroma, openai)
         names = set(graph.get_graph().nodes.keys())
-        for n in ("planner", "profile", "retrieval", "market", "critic", "synthesizer"):
-            assert n in names, f"'{n}' 노드 누락"
+        for n in ("resume_eval", "github_eval", "consensus", "synthesizer", "critic"):
+            assert n in names, f"'{n}' 누락"
 
     @requires_api_key
     def test_graph_has_coach_nodes(self, mock_clients) -> None:
