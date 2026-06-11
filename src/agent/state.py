@@ -56,3 +56,9 @@ class AppState(TypedDict):
 
     # ── Critic 검증 ──
     critic_report: dict | None
+
+    # ── v3: 다중 소스 평가 ──
+    resume_eval: dict | None     # {"skills": [{skill, evidence, source, level_hint}]}
+    github_eval: dict | None
+    consensus: dict | None       # {skill: {verification, evidences, flags?}}
+    fit_result: dict | None      # 적합도 + 신뢰도 (Gap 산출)
