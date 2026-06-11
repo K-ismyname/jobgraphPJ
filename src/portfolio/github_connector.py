@@ -100,3 +100,17 @@ def parse_github_username(url: str) -> str:
         return username
     except (ValueError, IndexError):
         raise ValueError(f"유효하지 않은 GitHub URL: {url}")
+
+
+def parse_github_repo(url: str) -> tuple[str, str | None]:
+    """github.com/owner/repo[/blob/...] → (owner, repo). 레포 조각 없으면 (owner, None)."""
+    parts = url.rstrip("/").split("/")
+    try:
+        idx = parts.index("github.com")
+        owner = parts[idx + 1]
+        if not owner:
+            raise ValueError
+    except (ValueError, IndexError):
+        raise ValueError(f"유효하지 않은 GitHub URL: {url}")
+    repo = parts[idx + 2] if len(parts) > idx + 2 and parts[idx + 2] else None
+    return owner, repo
