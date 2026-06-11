@@ -35,7 +35,7 @@ def build_consensus(evaluator_outputs: list[dict]) -> dict:
         else:
             status = "Claimed"
         result: dict = {"verification": status, "evidences": evidences}
-        if status == "Claimed" and "github" not in sources:
+        if status == "Claimed":  # Claimed는 정의상 실증 소스(github/deploy)가 없음
             result["flags"] = ["코드 미확인 — 주장만"]
         consensus[skill] = result
     return consensus
