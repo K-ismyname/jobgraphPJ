@@ -276,17 +276,16 @@ def create_coach_nodes(coach_tools: list["BaseTool"]):
                 coaching_dict = {"raw": raw, "error": "JSON 파싱 실패"}
 
         gap_raw = state.get("gap_result") or {}
-        # GitHub confidence 보강 결과는 Profile 노드가 profile_result.github_changes에 쓴다
-        # (구 github_node 제거됨). 변경이 있으면 최종 리포트에 surface한다.
-        github_changes = (state.get("profile_result") or {}).get("github_changes")
-        github_raw = {"changes": github_changes} if github_changes else state.get("github_result")
+        # 4개 소스(이력서·포폴·GitHub·배포) 교차검증 결과를 신뢰도 축 산출물로 surface한다.
+        from src.agent.consensus import build_verification_summary
+        verification = build_verification_summary(state.get("consensus") or {})
 
         return {
             "coaching_result": coaching_dict,
             "final_report": {
-                "gap": gap_raw,
+                "gap": gap_raw,            # 적합도 축 (match_rate) + 신뢰도(confidence) + advice + skills
+                "verification": verification,  # 신뢰도 축 — 스킬별 검증 등급 + 뒷받침 소스
                 "coaching": coaching_dict,
-                "github": github_raw,
             },
         }
 

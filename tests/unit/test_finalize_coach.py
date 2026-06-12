@@ -1,4 +1,4 @@
-# finalize_coach가 GitHub 보강 결과(profile_result.github_changes)를 final_report에 surface하는지 검증
+# finalize_coach가 consensus 기반 검증 요약을 final_report에 surface하는지 검증
 import os
 
 import pytest
@@ -12,24 +12,32 @@ requires_key = pytest.mark.skipif(
 
 
 @requires_key
-def test_github_changes_surfaced_to_report():
-    """profile_result.github_changes가 있으면 final_report.github에 노출된다."""
+def test_verification_summary_surfaced_to_report():
+    """consensus가 final_report.verification에 검증 요약으로 노출된다 (죽은 github 필드 대체)."""
     _, finalize = create_coach_nodes([])
     out = finalize({
         "coach_messages": [AIMessage(content='{"summary":"x","suggestions":[]}')],
         "gap_result": {"match_rate": 0.5},
-        "profile_result": {"github_changes": {"LangChain": "medium→high"}},
+        "consensus": {
+            "React": {"verification": "Verified", "evidences": [{"source": "github"}]},
+            "Docker": {"verification": "Claimed", "evidences": [{"source": "resume"}]},
+        },
     })
-    assert out["final_report"]["github"] == {"changes": {"LangChain": "medium→high"}}
+    fr = out["final_report"]
+    assert "github" not in fr            # 죽은 v1 필드 제거됨
+    assert fr["verification"]["counts"] == {"Verified": 1, "Corroborated": 0, "Claimed": 1}
+    assert fr["verification"]["skills"][0]["skill"] == "React"   # Verified 우선 정렬
+    assert fr["gap"] == {"match_rate": 0.5} and "coaching" in fr
 
 
 @requires_key
-def test_no_github_changes_is_none():
-    """GitHub 변경이 없으면 final_report.github는 None이다."""
+def test_empty_consensus_summary():
+    """consensus 없으면 빈 검증 요약."""
     _, finalize = create_coach_nodes([])
     out = finalize({
         "coach_messages": [AIMessage(content="{}")],
         "gap_result": {},
-        "profile_result": {"github_changes": {}},
     })
-    assert out["final_report"]["github"] is None
+    summary = out["final_report"]["verification"]
+    assert summary["counts"] == {"Verified": 0, "Corroborated": 0, "Claimed": 0}
+    assert summary["skills"] == []

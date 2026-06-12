@@ -41,6 +41,28 @@ def build_consensus(evaluator_outputs: list[dict]) -> dict:
     return consensus
 
 
+# 검증 등급 강한 순 (요약 정렬용)
+_GRADE_RANK = {"Verified": 0, "Corroborated": 1, "Claimed": 2}
+
+
+def build_verification_summary(consensus: dict) -> dict:
+    """consensus를 최종 리포트용 검증 요약으로 정리한다 (신뢰도 축 산출물).
+
+    {"counts": {Verified, Corroborated, Claimed}, "skills": [{skill, verification, sources}]}
+    skills는 강한 검증(Verified) 순으로 정렬.
+    """
+    counts = {"Verified": 0, "Corroborated": 0, "Claimed": 0}
+    skills: list[dict] = []
+    for skill, info in (consensus or {}).items():
+        grade = (info or {}).get("verification")
+        sources = sorted({e.get("source") for e in (info or {}).get("evidences", []) if e.get("source")})
+        skills.append({"skill": skill, "verification": grade, "sources": sources})
+        if grade in counts:
+            counts[grade] += 1
+    skills.sort(key=lambda s: (_GRADE_RANK.get(s["verification"], 9), s["skill"]))
+    return {"counts": counts, "skills": skills}
+
+
 def create_consensus_node() -> Callable[["AppState"], dict]:
     """합의 노드 팩토리. 평가자 결과를 합쳐 consensus에 쓴다."""
     def consensus_node(state: "AppState") -> dict:

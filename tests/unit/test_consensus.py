@@ -74,3 +74,18 @@ def test_consensus_node_includes_deploy_as_verified():
     }
     out = node(state)["consensus"]
     assert out["React"]["verification"] == "Verified"   # deploy = 실증 소스
+
+
+def test_build_verification_summary():
+    from src.agent.consensus import build_verification_summary
+    consensus = {
+        "Docker": {"verification": "Claimed", "evidences": [{"source": "resume"}]},
+        "React": {"verification": "Verified", "evidences": [{"source": "github"}, {"source": "deploy"}]},
+        "Python": {"verification": "Corroborated", "evidences": [{"source": "resume"}, {"source": "portfolio"}]},
+    }
+    out = build_verification_summary(consensus)
+    assert out["counts"] == {"Verified": 1, "Corroborated": 1, "Claimed": 1}
+    # 강한 검증 우선 정렬: Verified → Corroborated → Claimed
+    assert out["skills"][0]["skill"] == "React"
+    assert out["skills"][0]["sources"] == ["deploy", "github"]   # 정렬된 소스
+    assert out["skills"][-1]["skill"] == "Docker"
