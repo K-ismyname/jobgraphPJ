@@ -8,13 +8,13 @@ from pydantic import BaseModel, Field
 
 # ── Jobs Request ────────────────────────────────────────────────
 class JobsQuery(BaseModel):
-    job_title: str = "AI Engineer"
+    job_family: str = "AI/LLM Engineer"   # 유효 직군명 (Neo4j JobFamily)
     skills: list[str] | None = None   # 이 기술을 필수로 하는 공고만
     days: int = Field(30, ge=1, le=365)
 
 
 class TrendingSkillsQuery(BaseModel):
-    job_title: str = "AI Engineer"
+    job_family: str = "AI/LLM Engineer"   # 유효 직군명 (Neo4j JobFamily)
     top_n: int = Field(10, ge=1, le=50)
 
 
@@ -46,7 +46,7 @@ class JobSummary(BaseModel):
 
 
 class JobsResponse(BaseModel):
-    job_title: str
+    job_family: str
     total: int
     jobs: list[JobSummary]
 
@@ -59,7 +59,7 @@ class TrendingSkill(BaseModel):
 
 
 class TrendingSkillsResponse(BaseModel):
-    job_title: str
+    job_family: str
     skills: list[TrendingSkill]
     generated_at: str
 

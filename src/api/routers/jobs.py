@@ -22,23 +22,27 @@ from src.storage.neo4j_client import Neo4jClient
 
 router = APIRouter()
 
+# v3 스키마: 직군 노드는 JobFamily, REQUIRES/PREFERS는 JobPosting에 붙음
 JOBS_QUERY = """
-MATCH (p:JobPosting)-[:INSTANCE_OF]->(j:Job {normalized_title: $job_title})
+MATCH (p:JobPosting)-[:INSTANCE_OF]->(:JobFamily {name: $job_family})
 WHERE p.is_active = true
   AND p.posted_at >= datetime() - duration({days: $days})
-OPTIONAL MATCH (j)-[:REQUIRES]->(req:Skill)
-OPTIONAL MATCH (j)-[:PREFERS]->(pref:Skill)
-WITH p, j, collect(DISTINCT req.name) AS required, collect(DISTINCT pref.name) AS preferred
+OPTIONAL MATCH (p)-[:REQUIRES]->(req:Skill)
+OPTIONAL MATCH (p)-[:PREFERS]->(pref:Skill)
+WITH p, collect(DISTINCT req.name) AS required, collect(DISTINCT pref.name) AS preferred
 WHERE size($skills) = 0 OR ALL(s IN $skills WHERE s IN required)
 RETURN p, required, preferred
 ORDER BY p.posted_at DESC
 LIMIT 50
 """
 
+# 직군 내에서 공고에 요구된 빈도 순 — s.frequency(전역) 대신 직군 단위 count
 TRENDING_QUERY = """
-MATCH (j:Job {normalized_title: $job_title})-[:REQUIRES]->(s:Skill)
-RETURN s.name AS name, s.category AS category, s.frequency AS frequency
-ORDER BY s.frequency DESC
+MATCH (p:JobPosting)-[:INSTANCE_OF]->(:JobFamily {name: $job_family})
+MATCH (p)-[:REQUIRES]->(s:Skill)
+WITH s, count(DISTINCT p) AS frequency
+RETURN s.name AS name, s.category AS category, frequency
+ORDER BY frequency DESC
 LIMIT $top_n
 """
 
@@ -52,7 +56,7 @@ async def list_jobs(
     try:
         rows = neo4j.execute_query(
             JOBS_QUERY,
-            job_title=query.job_title,
+            job_family=query.job_family,
             days=query.days,
             skills=query.skills or [],
         )
@@ -74,7 +78,7 @@ async def list_jobs(
         )
         for r in rows
     ]
-    return JobsResponse(job_title=query.job_title, total=len(jobs), jobs=jobs)
+    return JobsResponse(job_family=query.job_family, total=len(jobs), jobs=jobs)
 
 
 @router.get("/trending-skills", response_model=TrendingSkillsResponse)
@@ -86,7 +90,7 @@ async def trending_skills(
     try:
         rows = neo4j.execute_query(
             TRENDING_QUERY,
-            job_title=query.job_title,
+            job_family=query.job_family,
             top_n=query.top_n,
         )
     except Exception as e:
@@ -102,7 +106,7 @@ async def trending_skills(
         for i, r in enumerate(rows)
     ]
     return TrendingSkillsResponse(
-        job_title=query.job_title,
+        job_family=query.job_family,
         skills=skills,
         generated_at=datetime.now(timezone.utc).isoformat(),
     )

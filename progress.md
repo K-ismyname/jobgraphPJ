@@ -692,3 +692,27 @@ FastAPI `/portfolio`가 구 직접 파이프라인(run_gap_analysis/generate_coa
 ### 남은 백로그(같은 불일치)
 
 - `jobs.py`의 `JOBS_QUERY`·`TRENDING_QUERY`도 동일하게 `(:Job {normalized_title})`를 써서 죽어 있음. 이번 범위(salary) 밖이라 미수정 — 다음 작업 후보.
+
+---
+
+## [2026-06-13] /jobs·/jobs/trending-skills도 v3 JobFamily 스키마로 재배선
+
+salary와 동일한 v1 스키마 불일치로 죽어 있던 나머지 두 공고 엔드포인트를 살림.
+
+### 문제
+
+- `JOBS_QUERY`·`TRENDING_QUERY`가 `(:Job {normalized_title})`와 `(Job)-[:REQUIRES]`를 가정 → 빈 결과.
+- 실제는 `JobFamily` + `(JobPosting)-[:REQUIRES|PREFERS]->(Skill)`. 기본값도 `"AI Engineer"`(없는 직군).
+
+### 작업 (TDD)
+
+1. 통합 테스트(`tests/integration/test_jobs_router.py`) — TestClient+실 Neo4j로 Software Engineer 공고/트렌드 검증, 현재 빨강.
+2. `JOBS_QUERY`: `JobFamily` 매칭 + `(p)-[:REQUIRES|PREFERS]` 로 재작성.
+3. `TRENDING_QUERY`: 전역 `s.frequency` 대신 **직군 내 공고 count**(`count(DISTINCT p)`)로 빈도 산출 — 직군별 트렌드 의미에 맞게.
+4. `schemas.py`(JobsQuery/JobsResponse/TrendingSkillsQuery/TrendingSkillsResponse) `job_title`→`job_family`, 기본값 `"AI/LLM Engineer"`.
+
+### 검증
+
+- 통합 2 통과, 단위 122 유지. `/jobs` 200(50건)·기술필터 동작, `/jobs/trending-skills` 200(Python 34·PostgreSQL 28·Docker 26…), OpenAPI에 `job_title` 잔재 없음.
+
+이로써 jobs 라우터 3개 엔드포인트(`/jobs`·`/jobs/trending-skills`·`/jobs/salary`) 전부 v3 스키마로 정합 완료.
