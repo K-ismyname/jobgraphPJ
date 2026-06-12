@@ -1,4 +1,4 @@
-# 특정 GitHub 레포(README + 언어 + 의존성/설정 파일)에서 스킬 증거를 추출하는 평가자 (코드 modality)
+# 지정 GitHub 레포에서 대상 직군의 스킬을 코드 근거로 검증하는 평가자 (코드 modality)
 from __future__ import annotations
 
 import os
@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Callable
 
 import httpx
 
-from src.portfolio.github_connector import parse_github_repo, _SKILL_KEYWORDS
+from src.portfolio.github_connector import parse_github_repo
+from src.extraction.normalizer import SKILL_ALIASES
 
 if TYPE_CHECKING:
     from src.agent.state import AppState
@@ -28,16 +29,44 @@ def _word_match(keyword: str, text: str) -> bool:
     return re.search(pattern, text) is not None
 
 
+def _manifest_match(keyword: str, text: str) -> bool:
+    """의존성/설정 소스 매칭. 단어 경계 매칭에 더해, 알려진 설정파일 파일명을 신호로 잡는다
+    ('docker'가 'Dockerfile' 파일명에 붙어 있어도 인식하도록).
+
+    파일명을 '.'/'-'로 나눈 첫 토큰이 keyword와 같을 때만 매칭한다('go'→go.mod 등).
+    'dockerfile'처럼 구분자 없는 합성어는 keyword+'file'로 따로 허용한다.
+    이로써 'c'→cargo.toml, 'do'→dockerfile 같은 prefix 오탐을 막는다."""
+    if _word_match(keyword, text):
+        return True
+    for manifest in _PRESENCE_MANIFESTS:
+        first_token = re.split(r"[.\-]", manifest, maxsplit=1)[0]
+        if (first_token == keyword or manifest == keyword + "file") and _word_match(manifest, text):
+            return True
+    return False
+
+
+def _keywords_for(skill: str) -> list[str]:
+    """스킬명 + 같은 정규화명을 갖는 별칭들을 매칭 키워드로 (예: PostgreSQL → postgres)."""
+    canon = skill.lower()
+    kws = {canon}
+    for alias, mapped in SKILL_ALIASES.items():
+        if mapped.lower() == canon:
+            kws.add(alias.lower())
+    return list(kws)
+
+
 def _skills_from_sources(
     owner: str, repo: str, lang_text: str, readme_text: str, manifest_text: str,
+    vocab: list[str],
 ) -> list[dict[str, str]]:
-    """세 소스(주 언어·README·의존성/설정파일)에서 스킬을 찾아 출처를 명시한 증거로 만든다."""
+    """대상 직군 스킬(vocab)을 주 언어·README·의존성파일에서 찾아 출처를 명시한 증거로 만든다."""
     lang_l, readme_l, manifest_l = lang_text.lower(), readme_text.lower(), manifest_text.lower()
     skills: list[dict[str, str]] = []
-    for skill_name, keywords in _SKILL_KEYWORDS.items():
-        in_lang = any(_word_match(kw, lang_l) for kw in keywords)
-        in_readme = any(_word_match(kw, readme_l) for kw in keywords)
-        in_manifest = any(_word_match(kw, manifest_l) for kw in keywords)
+    for skill_name in vocab:
+        kws = _keywords_for(skill_name)
+        in_lang = any(_word_match(kw, lang_l) for kw in kws)
+        in_readme = any(_word_match(kw, readme_l) for kw in kws)
+        in_manifest = any(_manifest_match(kw, manifest_l) for kw in kws)
         if not (in_lang or in_readme or in_manifest):
             continue
         where: list[str] = []
@@ -56,8 +85,8 @@ def _skills_from_sources(
     return skills
 
 
-def create_github_evaluator() -> Callable[["AppState"], dict]:
-    """GitHub 평가자 팩토리. 지정된 레포의 언어·README·의존성 파일에서 스킬을 추출한다."""
+def create_github_evaluator(neo4j) -> Callable[["AppState"], dict]:
+    """GitHub 평가자 팩토리. 대상 직군의 스킬 집합을 레포 코드 근거로 검증한다."""
     def evaluate(state: "AppState") -> dict:
         url = state.get("github_url")
         if not url:
@@ -69,6 +98,11 @@ def create_github_evaluator() -> Callable[["AppState"], dict]:
             return {"github_eval": {"skills": []}}
         if not repo:
             print(f"[github_eval] 레포 미지정 (계정 주소만): {url}")
+            return {"github_eval": {"skills": []}}
+
+        vocab = neo4j.get_job_family_skills(state.get("job_family") or "")
+        if not vocab:
+            print(f"[github_eval] 직군 스킬 어휘 없음 (job_family={state.get('job_family')!r})")
             return {"github_eval": {"skills": []}}
 
         token = os.getenv("GITHUB_TOKEN")
@@ -97,7 +131,7 @@ def create_github_evaluator() -> Callable[["AppState"], dict]:
         except Exception as e:
             print(f"[github_eval] README 조회 실패: {e}")
 
-        # 의존성/설정 파일 (루트만 확인 — 하위 폴더는 범위 밖)
+        # 의존성/설정 파일 (루트만 확인)
         manifest_parts: list[str] = []
         try:
             root = httpx.get(f"{base}/contents", headers=headers, timeout=10).json()
@@ -105,7 +139,7 @@ def create_github_evaluator() -> Callable[["AppState"], dict]:
                 root = []
             present = [it["name"] for it in root if it["name"].lower() in _ALL_MANIFESTS]
             for name in present:
-                manifest_parts.append(name)  # 파일명 자체가 신호 (Dockerfile → Docker)
+                manifest_parts.append(name)
                 if name.lower() in _TEXT_MANIFESTS:
                     body = httpx.get(f"{base}/contents/{name}", headers=raw_headers, timeout=10)
                     if body.status_code == 200:
@@ -114,7 +148,7 @@ def create_github_evaluator() -> Callable[["AppState"], dict]:
             print(f"[github_eval] 의존성 파일 조회 실패: {e}")
         manifest_text = " ".join(manifest_parts)
 
-        skills = _skills_from_sources(owner, repo, lang_text, readme_text, manifest_text)
+        skills = _skills_from_sources(owner, repo, lang_text, readme_text, manifest_text, vocab)
         return {"github_eval": {"skills": skills}}
 
     return evaluate
