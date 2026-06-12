@@ -10,6 +10,7 @@ SKILL_ALIASES: dict[str, str] = {
     "javascript": "JavaScript", "js": "JavaScript",
     "vue.js": "Vue.js", "vuejs": "Vue.js", "vue": "Vue.js",
     "next.js": "Next.js", "nextjs": "Next.js",
+    "tailwind": "Tailwind CSS", "tailwindcss": "Tailwind CSS",
     # Backend / General
     "golang": "Go",
     "spring boot": "Spring Boot", "springboot": "Spring Boot",
