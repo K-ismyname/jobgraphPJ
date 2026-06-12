@@ -349,6 +349,32 @@ class Neo4jClient:
             for r in rows
         ]
 
+    def list_job_families(self) -> list[str]:
+        """등록된 직군명 목록 (유효성 검증·선택지 노출용)."""
+        try:
+            rows = self.execute_query(
+                "MATCH (j:JobFamily) RETURN j.name AS name ORDER BY j.posting_count DESC"
+            )
+            return [r["name"] for r in rows if r.get("name")]
+        except Exception as e:
+            print(f"[neo4j] 직군 목록 조회 실패: {e}")
+            return []
+
+    def get_job_family_skills(self, job_family: str) -> list[str]:
+        """직군의 상위 요구/우대 스킬명 (gap_analysis와 동일 패턴, 공고수 빈도순)."""
+        query = """
+        MATCH (:JobFamily {name: $job_family})<-[:INSTANCE_OF]-(jp)-[r:REQUIRES|PREFERS]->(s:Skill)
+        RETURN s.name AS skill, count(jp) AS weight
+        ORDER BY weight DESC
+        LIMIT 30
+        """
+        try:
+            rows = self.execute_query(query, job_family=job_family)
+            return [r["skill"] for r in rows if r.get("skill")]
+        except Exception as e:
+            print(f"[neo4j] 직군 스킬 조회 실패: {e}")
+            return []
+
     def update_portfolio_confidence(self, owner: str, changes: dict[str, str]) -> None:
         """confidence 레벨을 업데이트한다. changes: {"LangChain": "medium → high"}."""
         query = """
