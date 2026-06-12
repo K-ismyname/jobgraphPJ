@@ -357,7 +357,7 @@ if __name__ == "__main__":
         print(f"  {e.source} → {e.target}")
 
     print("\n=== Supervisor 실행 ===")
-    report = run_supervisor(graph, job_family="AI/LLM Engineer", owner="김지원")
+    report = run_supervisor(graph, job_family="AI/LLM Engineer", owner="김지원", neo4j=neo4j)
 
     import json as _json
     print("\n=== 최종 리포트 ===")

@@ -12,6 +12,7 @@ from src.extraction.normalizer import SKILL_ALIASES
 
 if TYPE_CHECKING:
     from src.agent.state import AppState
+    from src.storage.neo4j_client import Neo4jClient
 
 # 본문을 읽어 패키지명을 매칭할 의존성 파일 (소문자)
 _TEXT_MANIFESTS = {
@@ -85,7 +86,7 @@ def _skills_from_sources(
     return skills
 
 
-def create_github_evaluator(neo4j) -> Callable[["AppState"], dict]:
+def create_github_evaluator(neo4j: "Neo4jClient") -> Callable[["AppState"], dict]:
     """GitHub 평가자 팩토리. 대상 직군의 스킬 집합을 레포 코드 근거로 검증한다."""
     def evaluate(state: "AppState") -> dict:
         url = state.get("github_url")
