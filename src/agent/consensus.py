@@ -44,6 +44,6 @@ def build_consensus(evaluator_outputs: list[dict]) -> dict:
 def create_consensus_node() -> Callable[["AppState"], dict]:
     """합의 노드 팩토리. 평가자 결과를 합쳐 consensus에 쓴다."""
     def consensus_node(state: "AppState") -> dict:
-        outputs = [state[k] for k in ("resume_eval", "github_eval", "portfolio_eval") if state.get(k)]
+        outputs = [state[k] for k in ("resume_eval", "github_eval", "portfolio_eval", "deploy_eval") if state.get(k)]
         return {"consensus": build_consensus(outputs)}
     return consensus_node

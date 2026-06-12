@@ -64,3 +64,13 @@ def test_consensus_node_includes_portfolio():
     out = node(state)["consensus"]
     # resume + portfolio 두 소스 → Corroborated
     assert out["Docker"]["verification"] == "Corroborated"
+
+
+def test_consensus_node_includes_deploy_as_verified():
+    from src.agent.consensus import create_consensus_node
+    node = create_consensus_node()
+    state = {
+        "deploy_eval": {"skills": [{"skill": "React", "evidence": "배포", "source": "deploy", "level_hint": "실무"}]},
+    }
+    out = node(state)["consensus"]
+    assert out["React"]["verification"] == "Verified"   # deploy = 실증 소스

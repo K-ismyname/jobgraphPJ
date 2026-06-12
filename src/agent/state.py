@@ -24,6 +24,7 @@ class AppState(TypedDict):
     pdf_path: str | None
     portfolio_path: str | None   # 포트폴리오 PDF 경로 (멀티모달 평가자 입력)
     github_url: str | None
+    deploy_url: str | None       # 배포 URL (작동 실증 평가자 입력)
 
     # ── Resume Agent ─────────────────────────────────────────────
     resume_skills: list[str]
@@ -61,5 +62,6 @@ class AppState(TypedDict):
     resume_eval: dict | None     # {"skills": [{skill, evidence, source, level_hint}]}
     github_eval: dict | None
     portfolio_eval: dict | None
+    deploy_eval: dict | None
     consensus: dict | None       # {skill: {verification, evidences, flags?}}
     fit_result: dict | None      # 적합도 + 신뢰도 (Gap 산출)
