@@ -28,3 +28,8 @@ def get_uploads(request: Request) -> dict[str, str]:
 def get_reports(request: Request) -> dict[str, object]:
     """report_id → ReportResponse 매핑."""
     return request.app.state.reports
+
+
+def get_graph(request: Request):
+    """v3 supervisor 그래프 (openai 키 없으면 None)."""
+    return request.app.state.graph

@@ -9,6 +9,7 @@ from openai import OpenAI
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from src.agent.supervisor import create_supervisor_graph
 from src.api.routers import jobs as jobs_router
 from src.api.routers import portfolio as portfolio_router
 from src.storage.chroma_client import ChromaClient
@@ -25,6 +26,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     )
     app.state.uploads: dict[str, str] = {}   # report_id → PDF 텍스트
     app.state.reports: dict = {}             # report_id → ReportResponse
+    # v3 그래프는 1회 빌드해 재사용 (openai 키 없으면 None — /analyze가 503)
+    app.state.graph = (
+        create_supervisor_graph(app.state.neo4j, app.state.chroma, app.state.openai)
+        if app.state.openai else None
+    )
 
     yield
 
