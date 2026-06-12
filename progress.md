@@ -559,3 +559,31 @@ AI/LLM 전용으로 잠겨 있던 후보 스킬 추출을 10개 직군 어디든
 - synthesizer의 fit_score/confidence_level이 LLM 임의값 — 결정적 계산으로 전환은 별도 작업.
 - "Backend Engineer" 직군 분리(현재 Software Engineer 포함), 분야 자동 추천(역방향).
 - run_supervisor 호출부(CLI·API)에 neo4j 실제 배선 — 필요 시 연결.
+
+---
+
+## [2026-06-12] 포트폴리오 멀티모달 평가자 (v3 단계 2)
+
+이력서·GitHub 텍스트 평가자에 더해 **포트폴리오 PDF를 vision으로 분석하는 평가자**를 추가. 4개 소스 설계(이력서·포폴·GitHub·배포)의 세 번째 소스. subagent-driven으로 Task 1~4 실행.
+설계: `docs/superpowers/specs/2026-06-11-agent-v3-fit-assessment-design.md` §4-1
+
+### 작업 절차
+
+1. **의존성·기반** — PyMuPDF(fitz) 설치+requirements, AppState에 `portfolio_path`(입력)·`portfolio_eval`(평가) 필드, 합의 노드가 `portfolio_eval`도 모으도록.
+2. **포트폴리오 평가자**(`evaluators/portfolio_eval.py`) — PyMuPDF로 PDF 앞 8페이지를 PNG 렌더(dpi=220) → gpt-4o-mini vision(detail=high)으로 페이지별 스킬 추출(다이어그램·스크린샷·텍스트 근거) → 정규화 중복제거. 출력 `source:"portfolio"`. 순수함수(`_skills_from_vision`/`_merge_skills`)와 가드만 단위 테스트, vision은 스모크.
+3. **그래프 배선** — 디스패처(portfolio_path 있으면 Send)·노드·consensus 엣지·`run_supervisor` 파라미터. 기존 두 평가자와 대칭.
+
+### 발생 문제
+
+- 단위 테스트 작성 시 `_render_pdf_pages`가 렌더 예외 시 `doc.close()`를 못 해 fitz 문서 누수 → 리뷰 지적으로 `try/finally` 보강.
+- Task 3 subagent가 로그인 오류로 커밋 직전 중단 → 컨트롤러가 변경 검증 후 직접 커밋.
+
+### 해결·검증 결과
+
+- 단위 114 통과(신규 4개). 각 Task TDD + 2단계 리뷰.
+- **실데이터 스모크(이가희 포트폴리오 PDF):** vision으로 37개 스킬 추출(Python·PyTorch·React·Next.js·Supabase 등, source=portfolio·where=text/diagram).
+- 합의 노드가 portfolio를 비검증 소스로 처리 → 이력서와 겹치면 Corroborated(교차검증)로 신뢰도 상승.
+
+### 비범위 (v3 단계 3)
+
+- 배포 URL 평가자(`deploy_eval.py`) — 웹 분석(HTML+스크린샷), source="deploy"(Verified 승격).
