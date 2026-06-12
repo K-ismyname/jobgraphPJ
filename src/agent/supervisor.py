@@ -12,7 +12,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import tools_condition
 from langgraph.types import Send
 
-from src.agent.state import COACH_MAX_ITERATIONS, MAX_ITERATIONS, MAX_REPLAN, AppState
+from src.agent.state import COACH_MAX_ITERATIONS, MAX_ITERATIONS, AppState
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -97,34 +97,6 @@ def _make_coach_tools_node(coach_tools_list: list):
         return {"coach_messages": new_messages}
 
     return coach_tools_node
-
-
-# Plan의 병렬 가능 step(profile/retrieval/market)만 Send로 펼친다. gap은 의존성 때문에 제외.
-_PARALLEL_AGENTS = ("profile", "retrieval", "market")
-
-
-def executor_dispatch(state: AppState) -> list:
-    """Plan에 포함된 병렬 가능 agent를 Send로 fan-out한다."""
-    plan = state.get("plan") or {}
-    steps = plan.get("steps") or []
-    present = [s["agent"] for s in steps if s["agent"] in _PARALLEL_AGENTS]
-    if not present:
-        # 불변식: 최소 retrieval은 항상 실행한다(빈 fan-out으로 그래프가 무성 정지하는 것 방지).
-        present = ["retrieval"]
-    return [Send(agent, state) for agent in present]
-
-
-def route_after_critic(state: AppState) -> str:
-    """Critic 판정으로 재계획(planner) 또는 코칭(coach_call_model)으로 분기.
-
-    상한 체크는 critic_node의 decide_replan이 이미 needs_replan에 반영했으므로,
-    여기서는 needs_replan만 보고 분기한다(이중 카운트 방지).
-    """
-    report = state.get("critic_report") or {}
-    if report.get("needs_replan"):
-        print(f"[critic] 재계획 (replan_count={state.get('replan_count', 0)})")
-        return "planner"
-    return "coach_call_model"
 
 
 def evaluator_dispatch(state: AppState) -> list[Send]:
