@@ -52,7 +52,7 @@ class TestCreateSupervisorGraph:
         neo4j, chroma, openai = mock_clients
         graph = create_supervisor_graph(neo4j, chroma, openai)
         names = set(graph.get_graph().nodes.keys())
-        for n in ("resume_eval", "github_eval", "portfolio_eval", "consensus", "synthesizer", "critic"):
+        for n in ("resume_eval", "github_eval", "portfolio_eval", "deploy_eval", "consensus", "synthesizer", "critic"):
             assert n in names, f"'{n}' 누락"
 
     @requires_api_key

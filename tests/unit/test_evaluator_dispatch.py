@@ -25,3 +25,10 @@ def test_portfolio_path_dispatches_portfolio():
                                 "pdf_path": None, "resume_text": None,
                                 "portfolio_path": "p.pdf"})
     assert "portfolio_eval" in [s.node for s in sends]
+
+
+def test_deploy_url_dispatches_deploy():
+    sends = evaluator_dispatch({"resume_skills": [], "github_url": None,
+                                "pdf_path": None, "resume_text": None,
+                                "portfolio_path": None, "deploy_url": "https://x.com"})
+    assert "deploy_eval" in [s.node for s in sends]

@@ -108,6 +108,8 @@ def evaluator_dispatch(state: AppState) -> list[Send]:
         sends.append(Send("github_eval", state))
     if state.get("portfolio_path"):
         sends.append(Send("portfolio_eval", state))
+    if state.get("deploy_url"):
+        sends.append(Send("deploy_eval", state))
     if not sends:
         sends.append(Send("resume_eval", state))   # 최소 하나 보장
     return sends
@@ -120,6 +122,7 @@ def create_supervisor_graph(neo4j, chroma, openai_client):
     from src.agent.evaluators.resume_eval import create_resume_evaluator
     from src.agent.evaluators.github_eval import create_github_evaluator
     from src.agent.evaluators.portfolio_eval import create_portfolio_evaluator
+    from src.agent.evaluators.deploy_eval import create_deploy_evaluator
     from src.agent.consensus import create_consensus_node
     from src.agent.critic import create_critic_node
 
@@ -133,6 +136,7 @@ def create_supervisor_graph(neo4j, chroma, openai_client):
     resume_eval = create_resume_evaluator(openai_client)
     github_eval = create_github_evaluator(neo4j)
     portfolio_eval = create_portfolio_evaluator(openai_client)
+    deploy_eval = create_deploy_evaluator(neo4j)
     consensus_node = create_consensus_node()
     critic_node = create_critic_node(openai_client)
 
@@ -167,6 +171,7 @@ def create_supervisor_graph(neo4j, chroma, openai_client):
     workflow.add_node("resume_eval",      resume_eval)
     workflow.add_node("github_eval",      github_eval)
     workflow.add_node("portfolio_eval",   portfolio_eval)
+    workflow.add_node("deploy_eval",      deploy_eval)
     workflow.add_node("consensus",        consensus_node)
     workflow.add_node("seed_gap",         seed_gap)
     workflow.add_node("call_model",       call_model)
@@ -179,10 +184,11 @@ def create_supervisor_graph(neo4j, chroma, openai_client):
 
     # 평가자 병렬 fan-out → 합의 barrier
     workflow.add_conditional_edges(START, evaluator_dispatch,
-                                   ["resume_eval", "github_eval", "portfolio_eval"])
+                                   ["resume_eval", "github_eval", "portfolio_eval", "deploy_eval"])
     workflow.add_edge("resume_eval", "consensus")
     workflow.add_edge("github_eval", "consensus")
     workflow.add_edge("portfolio_eval", "consensus")
+    workflow.add_edge("deploy_eval", "consensus")
     workflow.add_edge("consensus", "seed_gap")
     workflow.add_edge("seed_gap", "call_model")
     # Gap 루프
@@ -212,6 +218,7 @@ def run_supervisor(
     github_url: str | None = None,
     resume_skills: list[str] | None = None,
     portfolio_path: str | None = None,
+    deploy_url: str | None = None,
     neo4j: "Neo4jClient | None" = None,
 ) -> dict:
     """Supervisor 그래프를 실행하고 final_report를 반환한다.
@@ -245,6 +252,7 @@ def run_supervisor(
         "owner": owner,
         "pdf_path": pdf_path,
         "portfolio_path": portfolio_path,
+        "deploy_url": deploy_url,
         "github_url": github_url,
         "resume_skills": resume_skills or [],
         "resume_text": resume_text,
@@ -264,7 +272,7 @@ def run_supervisor(
         "retrieved_context": [],
         "market_result": None,
         "critic_report": None,
-        "resume_eval": None, "github_eval": None, "portfolio_eval": None, "consensus": None, "fit_result": None,
+        "resume_eval": None, "github_eval": None, "portfolio_eval": None, "deploy_eval": None, "consensus": None, "fit_result": None,
     }
     result = graph.invoke(initial, config)
     return result.get("final_report") or {}
@@ -286,6 +294,7 @@ def run_analysis(
         "owner": owner,
         "pdf_path": None,
         "portfolio_path": None,
+        "deploy_url": None,
         "github_url": None,
         "resume_skills": portfolio_skills or [],
         "resume_text": None,
@@ -305,7 +314,7 @@ def run_analysis(
         "retrieved_context": [],
         "market_result": None,
         "critic_report": None,
-        "resume_eval": None, "github_eval": None, "portfolio_eval": None, "consensus": None, "fit_result": None,
+        "resume_eval": None, "github_eval": None, "portfolio_eval": None, "deploy_eval": None, "consensus": None, "fit_result": None,
     }
     result = graph.invoke(initial, config)
     gap_result = result.get("gap_result") or {}
