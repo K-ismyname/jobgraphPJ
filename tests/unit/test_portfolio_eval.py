@@ -4,6 +4,7 @@ from src.agent.evaluators.portfolio_eval import (
     create_portfolio_evaluator,
     _skills_from_vision,
     _merge_skills,
+    _partition_pages,
 )
 
 
@@ -34,3 +35,16 @@ def test_merge_skills_dedupes_by_normalized_name():
     merged = _merge_skills(alls)
     names = [s["skill"] for s in merged]
     assert names == ["react.js", "Docker"]   # 첫 등장(react.js) 유지, React 제거
+
+
+def test_partition_pages_routes_text_and_image():
+    # 텍스트가 충분한 페이지는 누적, 빈약/공백 페이지는 vision 대상 인덱스로
+    page_texts = [
+        "프로젝트 상세 설명이 충분히 긴 텍스트 페이지입니다. " * 3,  # 텍스트
+        "",                                                      # 이미지(빈 텍스트)
+        "   ",                                                   # 이미지(공백만)
+        "또 다른 텍스트 페이지 내용이 길게 들어 있습니다. " * 3,      # 텍스트
+    ]
+    text, image_pages = _partition_pages(page_texts)
+    assert image_pages == [1, 2]
+    assert "프로젝트 상세" in text and "또 다른" in text
