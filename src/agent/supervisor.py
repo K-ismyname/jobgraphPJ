@@ -233,6 +233,7 @@ def run_supervisor(
     resume_text: str | None = None,
     github_url: str | None = None,
     resume_skills: list[str] | None = None,
+    neo4j: "Neo4jClient | None" = None,
 ) -> dict:
     """Supervisor 그래프를 실행하고 final_report를 반환한다.
 
@@ -248,6 +249,16 @@ def run_supervisor(
             "error": "no_input",
             "message": "분석하려면 이력서 스킬·PDF·이력서 텍스트·GitHub 중 최소 하나가 필요합니다.",
         }
+
+    # 직군 검증: 유효하지 않은 job_family면 그래프 실행 없이 안내 (LLM 환각 방지)
+    if neo4j is not None:
+        valid = neo4j.list_job_families()
+        if valid and job_family not in valid:
+            return {
+                "error": "invalid_job_family",
+                "message": f"유효하지 않은 직군 '{job_family}'. 가능: {', '.join(valid)}",
+                "valid_job_families": valid,
+            }
 
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     initial: AppState = {
