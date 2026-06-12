@@ -16,6 +16,18 @@ from dataclasses import dataclass, field
 from dotenv import load_dotenv
 load_dotenv()
 
+from src.agent.evaluators.github_eval import _keywords_for, _word_match
+
+
+def _evidence_mentions_skill(skill: str, text: str) -> bool:
+    """근거 텍스트가 해당 스킬(별칭 포함)을 실제로 언급하는지.
+
+    faithfulness는 response의 주장이 retrieved_contexts에서 지지되는지 측정한다.
+    그 스킬을 언급조차 않는 근거를 컨텍스트로 주면 측정이 무의미해지므로 걸러낸다.
+    """
+    text_l = text.lower()
+    return any(_word_match(kw, text_l) for kw in _keywords_for(skill))
+
 
 @dataclass
 class RagasScore:
@@ -99,26 +111,25 @@ def _build_evidence_samples(
             texts = []
             for ev in skill_data.get("evidence", []):
                 if isinstance(ev, dict) and "text" in ev and len(ev["text"]) > 30:
+                    # 그 스킬을 실제 언급하는 근거만 — 무관한 공고 텍스트는 faithfulness를 왜곡
+                    if not _evidence_mentions_skill(skill, ev["text"]):
+                        continue
                     company = ev.get("company", "")
                     prefix = f"[{company}] " if company else ""
                     texts.append(f"{prefix}{ev['text'][:400]}")
             if texts:
                 skill_evidence[skill] = texts
 
-    # final_report의 missing_required에서 reason 수집 → response
-    reason_by_skill: dict[str, str] = {}
-    for item in final_report.get("missing_required", []):
-        if isinstance(item, dict) and item.get("skill") and item.get("reason"):
-            reason_by_skill[item["skill"]] = item["reason"]
-
-    # 샘플 조립 — evidence가 있는 스킬만
+    # 샘플 조립 — evidence가 있는 스킬만.
+    # response는 에이전트의 핵심 판정(이 스킬이 부족한 '필수' 스킬이다)을 영어 사실 진술로
+    # 표현한다. faithfulness는 이 판정이 공고 근거(영어)에서 지지되는지 = 환각 여부를 측정한다.
+    # 한국어 reason(일반 지식 서술)은 영어 근거와 언어·형식이 어긋나 측정을 왜곡하므로 쓰지 않는다.
     samples: list[dict] = []
     for skill, contexts in skill_evidence.items():
-        response = reason_by_skill.get(skill, f"{skill} is required for the {job_family} role.")
         samples.append({
             "user_input": f"Is {skill} required for the {job_family} role?",
             "retrieved_contexts": contexts[:5],
-            "response": response,
+            "response": f"{skill} is a required skill for the {job_family} role.",
         })
 
     return samples

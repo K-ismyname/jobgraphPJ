@@ -716,3 +716,32 @@ salary와 동일한 v1 스키마 불일치로 죽어 있던 나머지 두 공고
 - 통합 2 통과, 단위 122 유지. `/jobs` 200(50건)·기술필터 동작, `/jobs/trending-skills` 200(Python 34·PostgreSQL 28·Docker 26…), OpenAPI에 `job_title` 잔재 없음.
 
 이로써 jobs 라우터 3개 엔드포인트(`/jobs`·`/jobs/trending-skills`·`/jobs/salary`) 전부 v3 스키마로 정합 완료.
+
+---
+
+## [2026-06-13] RAGAS 평가 품질 개선 — faithfulness 측정 복구
+
+### 진단
+
+RAGAS 파이프라인은 v3에서 실행됐으나(`run_analysis`가 반환하는 `gap_result` 평면 구조와 호환) **faithfulness가 5샘플 전부 0.000**. 샘플을 덤프해 원인 3겹 확인:
+1. evidence(retrieved_contexts)가 정작 그 스킬을 언급조차 안 함 — 예: PostgreSQL을 물었는데 Docker/Java만 보이는 공고. (RAG 근거-스킬 무관)
+2. response가 **한국어 일반론**("Docker는 컨테이너화에 필수") — 영어 근거와 언어 불일치.
+3. response가 특정 공고가 말한 게 아닌 일반 지식이라 어떤 근거로도 지지 불가.
+
+→ RAGAS가 측정 버그가 아니라 에이전트 약점(근거 미인용)을 정확히 잡은 것.
+
+### 개선 (평가 레이어만, 에이전트 불변)
+
+1. `_evidence_mentions_skill` 추가 — github_eval의 `_word_match`/`_keywords_for`(별칭 포함) 재사용. evidence 텍스트가 그 스킬을 실제 언급할 때만 컨텍스트로 채택(무관 근거 제거).
+2. response를 한국어 reason 대신 **영어 사실 진술**(`"{skill} is a required skill for the {job_family} role"`)로. 에이전트의 핵심 판정(부족 필수 스킬)을 공고 근거로 검증 = 환각 측정. 한국어 reason 수집 코드 제거.
+
+### 결과 (Software Engineer 1케이스 재측정)
+
+| 지표 | 개선 전 | 개선 후 |
+|---|---|---|
+| Answer Relevancy | 0.36 | **0.90** |
+| Faithfulness | 0.000 | 0.167 |
+
+- relevancy 0.9: response가 질문에 명확히 답함.
+- faithfulness 0→0.167: 측정 복구. 여전히 낮은 건 `ctx=1`(스킬당 근거 1개) — verify_skills가 evidence를 `[:300]`로 짧게 자르고 적게 검색하는 게 병목. **근거 검색 풍부화가 다음 과제**(에이전트 verify_skills 변경 영역).
+- 단위 테스트 4개 추가(`test_ragas_eval.py`: 스킬 매칭·집계), 전체 126 통과.
