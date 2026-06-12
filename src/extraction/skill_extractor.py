@@ -35,6 +35,10 @@ def _get_client() -> OpenAI:
     return OpenAI(api_key=key)
 
 
+# 이력서 전체를 한 번에 처리 (gpt-4o-mini 128K 컨텍스트는 현실 이력서를 모두 수용)
+_RESUME_TEXT_CAP = 100_000
+
+
 def _chat(client: OpenAI, prompt: str, max_tokens: int = 1024) -> str:
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -53,10 +57,14 @@ def extract_skills_from_resume(
     if client is None:
         client = _get_client()
 
+    if len(text) > _RESUME_TEXT_CAP:
+        print(f"[skill_extractor] 이력서가 {len(text)}자 — 상한 {_RESUME_TEXT_CAP}자까지만 처리")
+        text = text[:_RESUME_TEXT_CAP]
+
     prompt = f"""다음은 이력서 텍스트입니다. 섹션별로 기술 스택을 추출하세요.
 
 이력서:
-{text[:4000]}
+{text}
 
 규칙:
 1. 각 프로젝트/경험을 별도 section으로 분리
@@ -84,7 +92,7 @@ def extract_skills_from_resume(
   ]
 }}"""
 
-    return ResumeExtraction(**json.loads(_chat(client, prompt, max_tokens=2048)))
+    return ResumeExtraction(**json.loads(_chat(client, prompt, max_tokens=4096)))
 
 
 # ── 전처리된 채용공고 스킬 추출 ──────────────────────────────────────
