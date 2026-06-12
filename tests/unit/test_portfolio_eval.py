@@ -14,16 +14,21 @@ def test_no_path_empty():
     assert out["portfolio_eval"]["skills"] == []
 
 
-def test_skills_from_vision_maps_source_and_where():
+def test_skills_from_vision_demonstrated_vs_listed():
+    # 프로젝트로 입증된 스킬과 단순 나열 스킬을 구분 (level_hint·증거 태그)
     data = {"skills": [
-        {"skill": "LangGraph", "evidence": "멀티에이전트 다이어그램", "where": "diagram"},
-        {"skill": "FastAPI", "evidence": "API 서버 스크린샷", "where": "screenshot"},
+        {"skill": "LangGraph", "evidence": "멀티에이전트 다이어그램 구현", "demonstrated": True},
+        {"skill": "React", "evidence": "기술스택 목록에 포함", "demonstrated": False},
         {"not_skill": 1},          # skill 없는 항목은 무시
     ]}
     skills = _skills_from_vision(data)
-    assert {s["skill"] for s in skills} == {"LangGraph", "FastAPI"}
+    by = {s["skill"]: s for s in skills}
+    assert set(by) == {"LangGraph", "React"}
     assert all(s["source"] == "portfolio" for s in skills)
-    assert "diagram" in next(s["evidence"] for s in skills if s["skill"] == "LangGraph")
+    # 입증 → level_hint "실무" + 증거에 입증 태그
+    assert by["LangGraph"]["level_hint"] == "실무" and "입증" in by["LangGraph"]["evidence"]
+    # 나열 → level_hint None + 증거에 나열 태그
+    assert by["React"]["level_hint"] is None and "나열" in by["React"]["evidence"]
 
 
 def test_merge_skills_dedupes_by_normalized_name():

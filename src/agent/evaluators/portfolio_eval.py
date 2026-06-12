@@ -19,21 +19,24 @@ _TEXT_PROMPT = """다음은 포트폴리오에서 추출한 텍스트입니다. 
 {text}
 
 아래 JSON만 출력하세요 (코드펜스 없이):
-{{"skills": [{{"skill": "LangGraph", "evidence": "멀티에이전트 RAG 파이프라인 구축", "where": "text"}}]}}
+{{"skills": [{{"skill": "LangGraph", "evidence": "멀티에이전트 RAG 파이프라인 구축", "demonstrated": true}}]}}
 
 규칙:
 - 실제 사용/구현 근거가 있는 기술만. 추측 금지.
+- demonstrated: 프로젝트에서 실제 구현·사용한 설명이면 true,
+  단순히 '기술 스택' 목록에 나열된 것이면 false.
 - 연차·학위·소프트스킬·도메인 지식 제외."""
 
 _VISION_PROMPT = """이 포트폴리오 페이지(이미지)에서 지원자가 실제로 사용/구현한 기술 스킬을 추출하세요.
 다이어그램의 박스·화살표·라벨, 스크린샷, 이미지 속 텍스트를 모두 근거로 보세요.
 
 아래 JSON만 출력하세요 (코드펜스 없이):
-{"skills": [{"skill": "LangGraph", "evidence": "멀티에이전트 RAG 다이어그램에 StateGraph 노드", "where": "diagram"}]}
+{"skills": [{"skill": "LangGraph", "evidence": "멀티에이전트 RAG 다이어그램에 StateGraph 노드", "demonstrated": true}]}
 
 규칙:
 - 실제 사용/구현 근거가 페이지에 있는 기술만. 추측 금지.
-- where 는 text/diagram/screenshot 중 근거가 나온 곳.
+- demonstrated: 아키텍처 다이어그램·스크린샷·구현 설명 등 프로젝트로 보여준 것이면 true,
+  단순히 '기술 스택' 목록/아이콘으로 나열된 것이면 false.
 - 연차·학위·소프트스킬·도메인 지식 제외."""
 
 
@@ -76,16 +79,22 @@ def _render_pages(path: str, indices: list[int]) -> list[bytes]:
 
 
 def _skills_from_vision(data: dict) -> list[dict]:
-    """LLM JSON 응답(텍스트·vision 공통)을 평가자 계약 형식으로 변환한다."""
+    """LLM JSON 응답(텍스트·vision 공통)을 평가자 계약 형식으로 변환한다.
+
+    demonstrated=True(프로젝트로 입증) → level_hint="실무", 증거에 '입증' 태그.
+    demonstrated=False(목록에 나열만)  → level_hint=None, 증거에 '나열' 태그.
+    """
     skills: list[dict] = []
     for item in data.get("skills", []):
         if not isinstance(item, dict) or not item.get("skill"):
             continue
-        where = item.get("where", "")
+        demonstrated = bool(item.get("demonstrated"))
         ev = item.get("evidence", "")
-        evidence = f"[포트폴리오/{where}] {ev}".strip() if where else ev
+        tag = "입증" if demonstrated else "나열"
+        evidence = f"[포트폴리오·{tag}] {ev}".strip()
         skills.append({"skill": item["skill"], "evidence": evidence,
-                       "source": "portfolio", "level_hint": None})
+                       "source": "portfolio",
+                       "level_hint": "실무" if demonstrated else None})
     return skills
 
 
