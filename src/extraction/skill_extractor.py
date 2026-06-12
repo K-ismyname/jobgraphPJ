@@ -37,6 +37,8 @@ def _get_client() -> OpenAI:
 
 # 이력서 전체를 한 번에 처리 (gpt-4o-mini 128K 컨텍스트는 현실 이력서를 모두 수용)
 _RESUME_TEXT_CAP = 100_000
+# 공고 섹션 잘림 상한 (현실 공고 최대 ~13K자를 넉넉히 수용 — 기존 2000/3000은 다수 공고를 잘랐음)
+_POSTING_TEXT_CAP = 20_000
 
 
 def _chat(client: OpenAI, prompt: str, max_tokens: int = 1024) -> str:
@@ -111,8 +113,8 @@ def extract_skills_from_posting(
     preferred_text = job.get("preferred_section") or ""
 
     if required_text:
-        context_req = required_text[:2000]
-        context_pref = preferred_text[:800] if preferred_text else "(없음)"
+        context_req = required_text[:_POSTING_TEXT_CAP]
+        context_pref = preferred_text[:_POSTING_TEXT_CAP] if preferred_text else "(없음)"
         prompt = f"""다음 채용공고 섹션에서 기술명만 추출하세요.
 
 공고 제목: {job.get('title', '')}
@@ -134,7 +136,7 @@ def extract_skills_from_posting(
 - 연차·학위·소프트스킬(커뮤니케이션 등)은 제외
 - 기술이 아닌 도메인 지식(금융, 의료 등)도 제외"""
     else:
-        full_text = (job.get("text_clean") or "")[:3000]
+        full_text = (job.get("text_clean") or "")[:_POSTING_TEXT_CAP]
         prompt = f"""다음 채용공고에서 요구하는 기술명만 추출하세요.
 
 공고 제목: {job.get('title', '')}
@@ -152,7 +154,7 @@ def extract_skills_from_posting(
 - 명시적 필수 조건은 required, 우대/선호는 preferred
 - 연차·학위·소프트스킬·도메인 지식은 제외"""
 
-    result = json.loads(_chat(client, prompt, max_tokens=800))
+    result = json.loads(_chat(client, prompt, max_tokens=1500))
     return {
         "required": result.get("required", []),
         "preferred": result.get("preferred", []),
