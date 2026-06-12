@@ -19,7 +19,7 @@ class TrendingSkillsQuery(BaseModel):
 
 
 class SalaryQuery(BaseModel):
-    job_title: str = "AI Engineer"
+    job_family: str = "AI/LLM Engineer"   # 유효 직군명 (Neo4j JobFamily)
 
 
 # ── Portfolio Request ───────────────────────────────────────────
@@ -72,7 +72,7 @@ class SkillSalaryItem(BaseModel):
 
 
 class SalaryResponse(BaseModel):
-    job_title: str
+    job_family: str
     baseline_avg_salary: float
     total_postings_with_salary: int
     skill_impacts: list[SkillSalaryItem]

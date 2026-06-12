@@ -115,12 +115,12 @@ async def salary_analysis(
 ) -> SalaryResponse:
     """기술별 연봉 영향도 분석."""
     try:
-        result: SalaryAnalysisResult = analyze_salary(neo4j, job_title=query.job_title)
+        result: SalaryAnalysisResult = analyze_salary(neo4j, job_family=query.job_family)
     except Exception as e:
         raise HTTPException(503, f"연봉 분석 실패: {e}")
 
     return SalaryResponse(
-        job_title=result.job_title,
+        job_family=result.job_family,
         baseline_avg_salary=result.baseline_avg_salary,
         total_postings_with_salary=result.total_postings_with_salary,
         skill_impacts=[

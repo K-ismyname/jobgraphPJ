@@ -664,3 +664,31 @@ FastAPI `/portfolio`가 구 직접 파이프라인(run_gap_analysis/generate_coa
 
 - 단위 126 통과(_map_final_report·스키마 테스트 신규). TestClient 스모크: /health 200, 미존재 404, ReportResponse v3 필드(match_rate·confidence_level·verification_counts·verified_skills·coaching_summary) 노출, /github 제거 확인.
 - 범위: 이력서+github+deploy. 포트폴리오 vision은 리소스 부담으로 API 제외(별도). get_chroma 래퍼는 orphan(선재, 정리 대상).
+
+---
+
+## [2026-06-12] salary_analyzer를 v3 JobFamily 스키마로 재배선
+
+연봉 영향도 엔드포인트(`/jobs/salary`)가 죽어 있던 것을 살림.
+
+### 발견한 문제
+
+- `salary_analyzer`의 모든 Cypher가 v1 스키마 `(:Job {normalized_title})` + `(Job)-[:REQUIRES]->(Skill)`를 가정.
+- 실제 v3 그래프는 `Job` 노드 0개. 직군은 `JobFamily`, 관계는 `(JobPosting)-[:INSTANCE_OF]->(JobFamily)` 와 `(JobPosting)-[:REQUIRES]->(Skill)`(2025개)에 붙음.
+- 결과: 모든 쿼리가 빈 결과 → baseline 0·skill_impacts [] 반환하는 죽은 엔드포인트. 기본값 `"AI Engineer"`도 JobFamily엔 없는 이름(실제 "AI/LLM Engineer").
+
+### 작업 절차 (TDD)
+
+1. 통합 테스트(`tests/integration/test_salary_analyzer.py`)로 죽음을 회귀 고정 — Software Engineer(salary 공고 15건)로 실 Neo4j 검증. 현재 코드는 `job_family` 인자 미지원으로 빨강.
+2. 4개 쿼리(BASELINE/SKILL_SALARY/TOP_COOCCURS/COMBO)를 `JobFamily` + `JobPosting-[:REQUIRES]` 기준으로 재작성. 파라미터·결과 필드 `job_title` → `job_family` 통일.
+3. `schemas.py`(SalaryQuery/SalaryResponse), `jobs.py`(엔드포인트 매핑) 정합. 기본값 `"AI/LLM Engineer"`.
+4. 단위 테스트(`tests/unit/test_salary_analyzer.py`) — vs_baseline_pct 계산·정렬·combo·빈 DB를 mock으로 검증.
+
+### 검증 결과
+
+- 단위 122 통과(salary 3개 신규). 통합 1 통과. `/jobs/salary` API 200 — Software Engineer baseline £163,602(15건)·skill_impacts 10개, 기본 직군 200.
+- `coach.py`는 `salary_result.skill_impacts`만 참조(job_title 미사용)라 영향 없음. 단, 에이전트 코칭 흐름은 아직 `analyze_salary`를 호출하지 않음(연봉 주입 미배선 — 별도).
+
+### 남은 백로그(같은 불일치)
+
+- `jobs.py`의 `JOBS_QUERY`·`TRENDING_QUERY`도 동일하게 `(:Job {normalized_title})`를 써서 죽어 있음. 이번 범위(salary) 밖이라 미수정 — 다음 작업 후보.

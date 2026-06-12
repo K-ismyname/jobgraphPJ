@@ -10,7 +10,7 @@ class SkillSalaryImpact(BaseModel):
     skill: str
     avg_salary: float
     posting_count: int
-    vs_baseline_pct: float    # +12.3 → 전체 평균보다 12.3% 높음
+    vs_baseline_pct: float    # +12.3 → 직군 평균보다 12.3% 높음
 
 
 class SkillComboInsight(BaseModel):
@@ -21,7 +21,7 @@ class SkillComboInsight(BaseModel):
 
 
 class SalaryAnalysisResult(BaseModel):
-    job_title: str
+    job_family: str
     baseline_avg_salary: float
     total_postings_with_salary: int
     skill_impacts: list[SkillSalaryImpact]   # avg_salary 내림차순
@@ -29,8 +29,10 @@ class SalaryAnalysisResult(BaseModel):
     combo_insights: list[SkillComboInsight]
 
 
+# v3 스키마: 직군 노드는 JobFamily, REQUIRES는 JobPosting에 붙음
+#   (JobPosting)-[:INSTANCE_OF]->(JobFamily), (JobPosting)-[:REQUIRES]->(Skill)
 BASELINE_QUERY = """
-MATCH (j:Job {normalized_title: $job_title})<-[:INSTANCE_OF]-(p:JobPosting)
+MATCH (p:JobPosting)-[:INSTANCE_OF]->(:JobFamily {name: $job_family})
 WHERE p.salary_min IS NOT NULL AND p.salary_max IS NOT NULL AND p.salary_min > 0
 RETURN
     avg((p.salary_min + p.salary_max) / 2.0) AS baseline_avg,
@@ -38,8 +40,8 @@ RETURN
 """
 
 SKILL_SALARY_QUERY = """
-MATCH (j:Job {normalized_title: $job_title})-[:REQUIRES]->(s:Skill)
-MATCH (s)<-[:REQUIRES]-(any_job:Job)<-[:INSTANCE_OF]-(p:JobPosting)
+MATCH (p:JobPosting)-[:INSTANCE_OF]->(:JobFamily {name: $job_family})
+MATCH (p)-[:REQUIRES]->(s:Skill)
 WHERE p.salary_min IS NOT NULL AND p.salary_max IS NOT NULL AND p.salary_min > 0
 WITH
     s.name                                    AS skill,
@@ -50,19 +52,22 @@ RETURN skill, avg_salary, posting_count
 LIMIT $top_n
 """
 
+# 직군 공고 안에서 같은 공고에 함께 요구된 스킬 쌍 (공고 단위 공동 등장)
 TOP_COOCCURS_QUERY = """
-MATCH (j:Job {normalized_title: $job_title})-[:REQUIRES]->(sa:Skill)
-MATCH (sa)-[co:CO_OCCURS]-(sb:Skill)
+MATCH (p:JobPosting)-[:INSTANCE_OF]->(:JobFamily {name: $job_family})
+MATCH (p)-[:REQUIRES]->(sa:Skill)
+MATCH (p)-[:REQUIRES]->(sb:Skill)
 WHERE sa.name < sb.name
-RETURN sa.name AS skill_a, sb.name AS skill_b, co.count AS co_count
+WITH sa.name AS skill_a, sb.name AS skill_b, count(DISTINCT p) AS co_count
 ORDER BY co_count DESC
+RETURN skill_a, skill_b, co_count
 LIMIT $top_n
 """
 
 COMBO_SALARY_QUERY = """
-MATCH (p:JobPosting)-[:INSTANCE_OF]->(j:Job)
-WHERE (j)-[:REQUIRES]->(:Skill {name: $skill_a})
-  AND (j)-[:REQUIRES]->(:Skill {name: $skill_b})
+MATCH (p:JobPosting)-[:INSTANCE_OF]->(:JobFamily {name: $job_family})
+WHERE (p)-[:REQUIRES]->(:Skill {name: $skill_a})
+  AND (p)-[:REQUIRES]->(:Skill {name: $skill_b})
   AND p.salary_min IS NOT NULL AND p.salary_max IS NOT NULL AND p.salary_min > 0
 RETURN
     avg((p.salary_min + p.salary_max) / 2.0) AS combo_avg_salary,
@@ -72,19 +77,19 @@ RETURN
 
 def analyze_salary(
     neo4j: Neo4jClient,
-    job_title: str = "AI Engineer",
+    job_family: str = "AI/LLM Engineer",
     top_n: int = 10,
     combo_top_n: int = 3,
 ) -> SalaryAnalysisResult:
-    """기술별 연봉 영향도 계산. salary 없는 공고는 집계에서 제외."""
-    baseline_rows = neo4j.execute_query(BASELINE_QUERY, job_title=job_title)
+    """직군 내 기술별 연봉 영향도 계산. salary 없는 공고는 집계에서 제외."""
+    baseline_rows = neo4j.execute_query(BASELINE_QUERY, job_family=job_family)
     baseline_avg = 0.0
     total_postings = 0
     if baseline_rows:
         baseline_avg = float(baseline_rows[0].get("baseline_avg") or 0)
         total_postings = int(baseline_rows[0].get("posting_count") or 0)
 
-    skill_rows = neo4j.execute_query(SKILL_SALARY_QUERY, job_title=job_title, top_n=top_n)
+    skill_rows = neo4j.execute_query(SKILL_SALARY_QUERY, job_family=job_family, top_n=top_n)
     impacts: list[SkillSalaryImpact] = []
     for row in skill_rows:
         avg = float(row.get("avg_salary") or 0)
@@ -98,14 +103,16 @@ def analyze_salary(
 
     top_salary = sorted(impacts, key=lambda x: x.vs_baseline_pct, reverse=True)[:3]
 
-    # CO_OCCURS 상위 쌍의 조합 연봉
-    co_rows = neo4j.execute_query(TOP_COOCCURS_QUERY, job_title=job_title, top_n=combo_top_n)
+    # 직군 내 공동 등장 상위 쌍의 조합 연봉
+    co_rows = neo4j.execute_query(TOP_COOCCURS_QUERY, job_family=job_family, top_n=combo_top_n)
     single_avgs = {s.skill: s.avg_salary for s in impacts}
     combos: list[SkillComboInsight] = []
 
     for row in co_rows:
         skill_a, skill_b = row["skill_a"], row["skill_b"]
-        combo_rows = neo4j.execute_query(COMBO_SALARY_QUERY, skill_a=skill_a, skill_b=skill_b)
+        combo_rows = neo4j.execute_query(
+            COMBO_SALARY_QUERY, job_family=job_family, skill_a=skill_a, skill_b=skill_b
+        )
         if not combo_rows:
             continue
         combo_avg = float(combo_rows[0].get("combo_avg_salary") or 0)
@@ -124,7 +131,7 @@ def analyze_salary(
         ))
 
     return SalaryAnalysisResult(
-        job_title=job_title,
+        job_family=job_family,
         baseline_avg_salary=round(baseline_avg),
         total_postings_with_salary=total_postings,
         skill_impacts=impacts,
