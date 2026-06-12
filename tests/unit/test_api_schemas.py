@@ -1,0 +1,26 @@
+# v3 API 스키마 검증
+from src.api.schemas import AnalyzeRequest, ReportResponse, VerificationItem, SuggestionItem
+
+
+def test_analyze_request_v3_fields():
+    req = AnalyzeRequest(report_id="r1", job_family="Software Engineer",
+                         github_url="https://github.com/x/y", deploy_url="https://x.com")
+    assert req.job_family == "Software Engineer"
+    assert req.github_url and req.deploy_url
+    req2 = AnalyzeRequest(report_id="r1", job_family="Software Engineer")
+    assert req2.github_url is None and req2.deploy_url is None
+
+
+def test_report_response_v3_shape():
+    r = ReportResponse(
+        report_id="r1", status="done", owner="x", job_family="Software Engineer",
+        match_rate=0.44, confidence_level="high", advice="좋음",
+        verification_counts={"Verified": 2, "Corroborated": 0, "Claimed": 1},
+        verified_skills=[VerificationItem(skill="React", verification="Verified", sources=["github"])],
+        coaching_summary="요약",
+        suggestions=[SuggestionItem(target_section="경력", missing_skill="K8s",
+                                    rewritten_text="...", expected_impact="...", priority="high")],
+    )
+    assert r.match_rate == 0.44
+    assert r.verified_skills[0].skill == "React"
+    assert r.verification_counts["Verified"] == 2

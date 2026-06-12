@@ -25,13 +25,10 @@ class SalaryQuery(BaseModel):
 # ── Portfolio Request ───────────────────────────────────────────
 class AnalyzeRequest(BaseModel):
     report_id: str
-    job_title: str = "AI Engineer"
-    owner_name: str | None = None     # None이면 PDF에서 추출한 이름 사용
-
-
-class GitHubRequest(BaseModel):
-    report_id: str
-    github_url: str                   # https://github.com/username
+    job_family: str = "AI/LLM Engineer"   # 유효 직군명 (Neo4j JobFamily)
+    owner_name: str | None = None         # None이면 PDF에서 추출한 이름 사용
+    github_url: str | None = None         # 선택 — 코드 검증
+    deploy_url: str | None = None         # 선택 — 작동 실증
 
 
 # ── Jobs Response ───────────────────────────────────────────────
@@ -97,45 +94,36 @@ class AnalyzeAccepted(BaseModel):
     message: str = "분석을 시작합니다. GET /portfolio/report/{report_id}로 결과를 확인하세요."
 
 
-class GapSkillItem(BaseModel):
-    skill: str
-    category: str
-    have_it: bool
-    confidence: Literal["high", "medium", "low"] | None
-    evidence: str | None
-    related_skills: list[str]
-    difficulty: Literal["학습 장벽 낮음", "신규 학습 필요"] | None
-    job_demand: int
-
-
 class SuggestionItem(BaseModel):
     target_section: str
     missing_skill: str
-    original_text: str | None
+    original_text: str | None = None
     rewritten_text: str
     expected_impact: str
     priority: Literal["high", "medium", "low"]
+    verified: bool = False
+
+
+class VerificationItem(BaseModel):
+    skill: str
+    verification: str               # Verified | Corroborated | Claimed
+    sources: list[str]
 
 
 class ReportResponse(BaseModel):
     report_id: str
     status: Literal["processing", "done", "error"]
     owner: str
-    job_title: str
-    match_rate: float
-    have: list[GapSkillItem]
-    missing: list[GapSkillItem]
-    top_missing: list[str]
-    suggestions: list[SuggestionItem]
-    error_detail: str | None = None   # status=="error"일 때만 채워짐
+    job_family: str
+    match_rate: float = 0.0
+    confidence_level: str | None = None
+    advice: str | None = None
+    verification_counts: dict[str, int] = Field(default_factory=dict)
+    verified_skills: list[VerificationItem] = Field(default_factory=list)
+    coaching_summary: str | None = None
+    suggestions: list[SuggestionItem] = Field(default_factory=list)
+    error_detail: str | None = None
     generated_at: str | None = None
-
-
-class GitHubUpdateResponse(BaseModel):
-    report_id: str
-    skills_boosted: list[str]
-    confidence_changes: dict[str, str]  # {"LangChain": "medium → high"}
-    status: Literal["updated"]
 
 
 class ErrorResponse(BaseModel):
