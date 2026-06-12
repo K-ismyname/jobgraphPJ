@@ -261,18 +261,11 @@ def run_supervisor(
         "seen_source_ids": [],
         "coach_messages": [],
         "coach_iteration": 0,
-        "skill_trends": None,
         "gap_result": None,
-        "github_result": None,
         "coaching_result": None,
         "final_report": None,
-        "plan": None,
-        "replan_count": 0,
-        "profile_result": None,
-        "retrieved_context": [],
-        "market_result": None,
         "critic_report": None,
-        "resume_eval": None, "github_eval": None, "portfolio_eval": None, "deploy_eval": None, "consensus": None, "fit_result": None,
+        "resume_eval": None, "github_eval": None, "portfolio_eval": None, "deploy_eval": None, "consensus": None,
     }
     result = graph.invoke(initial, config)
     return result.get("final_report") or {}
@@ -303,18 +296,11 @@ def run_analysis(
         "seen_source_ids": [],
         "coach_messages": [],
         "coach_iteration": 0,
-        "skill_trends": None,
         "gap_result": None,
-        "github_result": None,
         "coaching_result": None,
         "final_report": None,
-        "plan": None,
-        "replan_count": 0,
-        "profile_result": None,
-        "retrieved_context": [],
-        "market_result": None,
         "critic_report": None,
-        "resume_eval": None, "github_eval": None, "portfolio_eval": None, "deploy_eval": None, "consensus": None, "fit_result": None,
+        "resume_eval": None, "github_eval": None, "portfolio_eval": None, "deploy_eval": None, "consensus": None,
     }
     result = graph.invoke(initial, config)
     gap_result = result.get("gap_result") or {}

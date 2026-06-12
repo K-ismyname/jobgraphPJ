@@ -4,5 +4,5 @@ from src.agent.state import AppState
 
 def test_v3_fields_exist():
     ann = AppState.__annotations__
-    for f in ("resume_eval", "github_eval", "consensus", "fit_result"):
+    for f in ("resume_eval", "github_eval", "portfolio_eval", "deploy_eval", "consensus"):
         assert f in ann, f"'{f}' 누락"

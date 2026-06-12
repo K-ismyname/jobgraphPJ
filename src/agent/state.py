@@ -40,20 +40,9 @@ class AppState(TypedDict):
     coach_iteration: int
 
     # ── 각 에이전트 결과 ──────────────────────────────────────────
-    skill_trends: dict | None        # {"LangGraph": {"recent": 42, "delta_pct": 50.0}}
     gap_result: dict | None
-    github_result: dict | None
     coaching_result: dict | None
     final_report: dict | None
-
-    # ── Plan-and-Execute (멀티 에이전트 코어) ──
-    plan: dict | None
-    replan_count: int
-
-    # ── Executor 산출 (병렬 노드가 각자 채움) ──
-    profile_result: dict | None
-    retrieved_context: list[dict]
-    market_result: dict | None
 
     # ── Critic 검증 ──
     critic_report: dict | None
@@ -64,4 +53,3 @@ class AppState(TypedDict):
     portfolio_eval: dict | None
     deploy_eval: dict | None
     consensus: dict | None       # {skill: {verification, evidences, flags?}}
-    fit_result: dict | None      # 적합도 + 신뢰도 (Gap 산출)
