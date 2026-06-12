@@ -594,3 +594,31 @@ AI/LLM 전용으로 잠겨 있던 후보 스킬 추출을 10개 직군 어디든
 - **문제**: 앞 8페이지만 보고(73% 누락) + 텍스트 페이지도 vision으로 봄(비효율). 실측 8페이지 9개 vs 전체 30페이지 41개(4.5배).
 - **해결**: 전체 페이지 순회 → 텍스트 충분한 페이지는 텍스트 1콜로 묶고, 이미지 페이지(텍스트 빈약)만 페이지별 vision(상한 25장). `_partition_pages` 순수 함수로 분류.
 - 효과: 전체 커버리지 + 비용 적응형(텍스트 페이지 vision 비용 절약). 전부 이미지인 포폴은 모든 페이지 vision(상한 내), 혼합 포폴은 텍스트 페이지 절약.
+
+---
+
+## [2026-06-12] 배포 URL 평가자 (v3 단계3) — 4개 소스 설계 완성
+
+이력서·GitHub·포트폴리오에 더해 **배포 URL 평가자**를 추가. 4개 소스(이력서·포폴·GitHub·배포) 설계 완성. subagent-driven Task 1~4.
+설계: `docs/superpowers/specs/2026-06-11-agent-v3-fit-assessment-design.md` §4-2
+
+### 작업 절차
+
+1. **기반** — AppState `deploy_url`(입력)·`deploy_eval`(평가) 필드, 합의 노드가 deploy_eval 포함. consensus의 `_VERIFIABLE_SOURCES`에 deploy가 이미 있어 **deploy 스킬은 자동 Verified**.
+2. **배포 평가자**(`evaluators/deploy_eval.py`) — httpx로 URL fetch(200=작동 실증), HTML+응답헤더에서 대상 직군 스킬을 단어경계+별칭 매칭(github 매처 재사용). source="deploy".
+3. **그래프 배선** — 디스패처(deploy_url 있으면 Send)·노드·consensus 엣지·run_supervisor 파라미터. 기존 평가자와 대칭.
+
+### 발생 문제
+
+- 계획 테스트가 "tailwind"(HTML)→"Tailwind CSS"(vocab) 매칭을 요구 → normalizer에 tailwind 별칭 추가(github·deploy 일관). 처음엔 단어분리(_deploy_keywords)로 풀었으나 Spring/Boot 오탐 위험으로 별칭 방식으로 교체.
+- raw HTML 노이즈에 1~2자 키워드(go/js/ts/c/r) 오탐 위험 → deploy 매칭에서 **3자 미만 키워드 제외**(deploy=실증 소스라 오탐 비용 큼).
+
+### 해결·검증 결과
+
+- 단위 120 통과. 각 Task TDD + 리뷰.
+- **실데이터 스모크:** nextjs.org → React·Next.js·Tailwind·TypeScript, vuejs.org → Vue.js·TypeScript 정확 검출. 미작동 URL → 빈 결과+로그. deploy 단독 → Verified 확인.
+
+### 한계 (설계대로 수용)
+
+- 프론트·작동·완성도는 보이나 백엔드·AI 기술(LangGraph 등)은 외부에서 안 보임. 주 가치는 "작동 실증 + 배포 경험"(GitHub 코드와 교차 시 강한 검증).
+- vision 스크린샷 UI 평가는 다음 단계(headless 브라우저 의존성).
