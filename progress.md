@@ -745,3 +745,20 @@ RAGAS 파이프라인은 v3에서 실행됐으나(`run_analysis`가 반환하는
 - relevancy 0.9: response가 질문에 명확히 답함.
 - faithfulness 0→0.167: 측정 복구. 여전히 낮은 건 `ctx=1`(스킬당 근거 1개) — verify_skills가 evidence를 `[:300]`로 짧게 자르고 적게 검색하는 게 병목. **근거 검색 풍부화가 다음 과제**(에이전트 verify_skills 변경 영역).
 - 단위 테스트 4개 추가(`test_ragas_eval.py`: 스킬 매칭·집계), 전체 126 통과.
+
+---
+
+## [2026-06-13] Langfuse 트레이싱 배선 + 배포 차단 요소 점검
+
+### Langfuse (배선 0 → CallbackHandler 주입)
+
+- 데코레이터(`langfuse_tracer.py`)는 있었으나 어디에도 적용 안 됨(`@trace` 사용처 0).
+- `langfuse_callbacks()` 헬퍼 추가 — `LANGFUSE_PUBLIC_KEY` 있으면 LangChain `CallbackHandler` 반환(LangGraph 전체 자동 트레이싱), 없으면 빈 목록(no-op, 인증 경고 없음).
+- `run_supervisor`·`run_analysis` 두 invoke의 config에 `callbacks` 주입.
+- 키 없는 환경에서 invoke 정상(회귀 없음), 단위 2개 추가, 전체 128 통과. (커밋 4a24550)
+
+### 배포 점검
+
+- 자산 양호: `app.py`(HF Spaces 진입점, FastAPI 노출), `Dockerfile`(slim+uvicorn), `docker-compose.yml`(api+로컬 neo4j).
+- **차단 요소 발견·수정**: `requirements.txt`가 `ragas~=0.2.0`/`langfuse~=2.0.0`로 낡아 Docker 빌드 시 옛 버전 설치 → 코드(0.4.x/4.x API) import 깨짐. 설치본에 맞춰 `ragas~=0.4.0`/`langfuse~=4.0`으로 정합.
+- 남은 배포 과제(사용자 환경 필요): HF Spaces 실제 배포(Space 생성·Aura/OpenAI 시크릿 등록·app_port), 로컬 Docker 빌드+기동 검증.
