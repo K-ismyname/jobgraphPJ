@@ -18,3 +18,10 @@ def test_empty_defaults_resume():
     sends = evaluator_dispatch({"resume_skills": [], "github_url": None,
                                 "pdf_path": None, "resume_text": None})
     assert [s.node for s in sends] == ["resume_eval"]
+
+
+def test_portfolio_path_dispatches_portfolio():
+    sends = evaluator_dispatch({"resume_skills": [], "github_url": None,
+                                "pdf_path": None, "resume_text": None,
+                                "portfolio_path": "p.pdf"})
+    assert "portfolio_eval" in [s.node for s in sends]
