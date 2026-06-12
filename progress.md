@@ -643,3 +643,24 @@ AI/LLM 전용으로 잠겨 있던 후보 스킬 추출을 10개 직군 어디든
 ### 남은 (구현순서 외)
 
 - 포트폴리오 서사 문서화(README/블로그), 평가 강화(RAGAS), orphan state 필드 정리.
+
+---
+
+## [2026-06-12] API를 v3 에이전트로 재배선
+
+FastAPI `/portfolio`가 구 직접 파이프라인(run_gap_analysis/generate_coaching) 대신 **v3 그래프(run_supervisor)** 를 호출하도록 재배선. 이번 세션의 v3 작업이 비로소 API로 노출됨.
+
+### 작업 절차
+
+1. **스키마 v3 교체** — AnalyzeRequest(job_family·github_url·deploy_url), VerificationItem, 2축·검증 ReportResponse. 구 GitHubRequest·GitHubUpdateResponse·GapSkillItem 삭제.
+2. **lifespan 그래프 주입** — create_supervisor_graph를 1회 빌드해 app.state.graph(openai 키 없으면 None), deps.get_graph.
+3. **라우터 재배선** — /analyze가 업로드 이력서 텍스트+github_url+deploy_url로 run_supervisor 실행(백그라운드), final_report→ReportResponse 매핑(_map_final_report 순수함수). 가드 404→503→422→409. 구 /github 엔드포인트 제거.
+
+### 발생 문제
+
+- Task 1·2 후 portfolio 라우터가 삭제된 GapSkillItem을 import해 `import src.api.main`이 일시적으로 깨짐 → Task 3 라우터 재작성으로 해소(계획상 예상됨).
+
+### 해결·검증 결과
+
+- 단위 126 통과(_map_final_report·스키마 테스트 신규). TestClient 스모크: /health 200, 미존재 404, ReportResponse v3 필드(match_rate·confidence_level·verification_counts·verified_skills·coaching_summary) 노출, /github 제거 확인.
+- 범위: 이력서+github+deploy. 포트폴리오 vision은 리소스 부담으로 API 제외(별도). get_chroma 래퍼는 orphan(선재, 정리 대상).
