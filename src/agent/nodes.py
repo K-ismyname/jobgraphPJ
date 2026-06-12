@@ -48,18 +48,17 @@ verification 값의 의미:
 분석 시 위 합의를 반드시 반영하세요:
 - 각 보유 스킬의 verification 값을 그대로 skills[].verification 에 넣으세요.
 - held_level 은 검증 상태를 드러내세요. 예: Claimed → "실무(주장)", Verified → "실무".
-- confidence_level 은 보유 스킬들의 verification 분포로 정하세요.
-  대부분 Verified/Corroborated → high, 섞임 → medium, 대부분 Claimed → low.
-- fit_score(0.0~1.0) 는 보유 스킬이 요구 수준(required_level)을 얼마나 충족하는지로 산출하세요. (신뢰도와 별개의 축)
-- advice 는 근거가 약할 때(Claimed 비중이 높을 때) GitHub·포트폴리오 추가를 권하는 문장을 쓰세요.
+- match_rate/confidence_level/advice 는 시스템이 도구·합의 결과로 결정적으로 계산해 덮어쓰므로,
+  대략의 값을 넣어도 됩니다(최종값은 코드가 산출).
+- missing_required 의 posting_count/trend_delta_pct 는 도구 결과에 실제로 있는 값만 쓰고,
+  근거가 없으면 0으로 두세요(임의 추정 금지).
 
 다음 JSON 형식으로 출력하세요 (코드 펜스 없이):
 {{
   "job_title": "직무명",
   "match_rate": 0.0,
-  "fit_score": 0.0,
   "confidence_level": "high|medium|low",
-  "advice": "GitHub·포트폴리오를 추가하면 더 정확한 분석이 가능합니다",
+  "advice": "",
   "summary": "한 줄 요약",
   "have_required": ["보유 필수 스킬"],
   "unverified_required": ["보유하나 근거 약한 스킬 (confidence=low)"],
@@ -120,6 +119,58 @@ _COACH_SYSTEM_PROMPT = """당신은 이력서 개선 전문가입니다.
 }}"""
 
 
+# ── 결정적 수치 산출 (LLM 환각 차단) ─────────────────────────────
+def _confidence_from_consensus(consensus: dict) -> str:
+    """consensus 검증 분포로 신뢰도 등급을 결정적으로 산출한다.
+
+    Verified/Corroborated 비율 >=0.6 → high, >=0.3 → medium, 그 외 → low.
+    """
+    if not consensus:
+        return "low"
+    verifs = [(d or {}).get("verification") for d in consensus.values()]
+    strong = sum(1 for v in verifs if v in ("Verified", "Corroborated"))
+    ratio = strong / len(verifs)
+    if ratio >= 0.6:
+        return "high"
+    if ratio >= 0.3:
+        return "medium"
+    return "low"
+
+
+def _match_rate_from_tools(tool_results: list[dict]) -> float | None:
+    """gap_analysis 도구 결과에서 match_rate를 가져온다 (없으면 None)."""
+    for r in tool_results:
+        res = r.get("result")
+        if r.get("tool") == "gap_analysis" and isinstance(res, dict) and "match_rate" in res:
+            return res["match_rate"]
+    return None
+
+
+_ADVICE_BY_CONFIDENCE = {
+    "low": "GitHub·포트폴리오를 추가하면 보유 스킬의 신뢰도가 올라가 더 정확한 분석이 가능합니다.",
+    "medium": "일부 스킬은 코드 근거가 약합니다. GitHub 등으로 보강하면 신뢰도가 올라갑니다.",
+    "high": "보유 스킬 대부분이 코드·복수 소스로 검증되었습니다.",
+}
+
+
+def _apply_deterministic_metrics(report: dict, consensus: dict, tool_results: list[dict]) -> dict:
+    """LLM이 생성한 신뢰도·적합도 수치를 결정적 값으로 덮어쓴다.
+
+    confidence_level: consensus 분포로 코드 산출.
+    match_rate: gap_analysis 도구 결과가 있으면 그 값으로(없으면 기존 유지).
+    fit_score: match_rate와 중복이라 제거.
+    advice: confidence 등급에 따라 결정적으로.
+    """
+    conf = _confidence_from_consensus(consensus)
+    report["confidence_level"] = conf
+    mr = _match_rate_from_tools(tool_results)
+    if mr is not None:
+        report["match_rate"] = mr
+    report.pop("fit_score", None)
+    report["advice"] = _ADVICE_BY_CONFIDENCE[conf]
+    return report
+
+
 def create_nodes(
     tools: list["BaseTool"],
     neo4j: "Neo4jClient",
@@ -172,6 +223,8 @@ def create_nodes(
         raw = response.content.strip().replace("```json", "").replace("```", "").strip()
         try:
             report = json.loads(raw)
+            # 신뢰도·적합도 수치를 결정적 값으로 덮어쓴다 (LLM 환각 차단)
+            report = _apply_deterministic_metrics(report, consensus, tool_results)
         except json.JSONDecodeError:
             report = {"raw": raw, "error": "JSON 파싱 실패"}
 
