@@ -70,6 +70,22 @@ def trace(
     return decorator
 
 
+def langfuse_callbacks() -> list:
+    """LangGraph invoke에 주입할 Langfuse 콜백 목록.
+
+    LANGFUSE_PUBLIC_KEY가 있으면 LangChain CallbackHandler 1개를 반환해
+    그래프 전체(노드·LLM 호출)가 자동 트레이싱된다. 키가 없으면 빈 목록을 반환해
+    no-op으로 동작한다(핸들러를 만들지 않아 인증 경고도 남기지 않는다).
+    """
+    if not os.getenv("LANGFUSE_PUBLIC_KEY"):
+        return []
+    try:
+        from langfuse.langchain import CallbackHandler
+        return [CallbackHandler()]
+    except Exception:
+        return []
+
+
 def flush() -> None:
     """Langfuse 클라이언트의 비동기 큐를 즉시 전송한다. 키 없으면 no-op."""
     if not os.getenv("LANGFUSE_PUBLIC_KEY"):

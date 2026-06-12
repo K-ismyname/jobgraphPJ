@@ -13,6 +13,7 @@ from langgraph.prebuilt import tools_condition
 from langgraph.types import Send
 
 from src.agent.state import COACH_MAX_ITERATIONS, MAX_ITERATIONS, AppState
+from src.evaluation.langfuse_tracer import langfuse_callbacks
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -246,7 +247,7 @@ def run_supervisor(
                 "valid_job_families": valid,
             }
 
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}, "callbacks": langfuse_callbacks()}
     initial: AppState = {
         "job_family": job_family,
         "owner": owner,
@@ -281,7 +282,7 @@ def run_analysis(
     return_state: bool = False,
 ) -> "dict | tuple[dict, list]":
     """갭 분석을 실행한다. RAGAS eval 및 단독 실행용 헬퍼."""
-    config = {"configurable": {"thread_id": thread_id or str(uuid.uuid4())}}
+    config = {"configurable": {"thread_id": thread_id or str(uuid.uuid4())}, "callbacks": langfuse_callbacks()}
     initial: AppState = {
         "job_family": job_title,
         "owner": owner,
