@@ -1,101 +1,59 @@
-# gap_result 주장을 retrieved_context와 대조해 근거 충실성을 판정하는 Critic 노드
+# gap_result의 보유 스킬 주장을 consensus(결정적 사실)와 대조해 환각을 잡는 검증기 Critic 노드
 from __future__ import annotations
 
-import json
-import os
 from typing import TYPE_CHECKING
 
-from langchain_core.messages import SystemMessage
-from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
-
-from src.agent.state import AppState, MAX_REPLAN
+from src.extraction.normalizer import normalize_skill
 
 if TYPE_CHECKING:
-    pass
+    from src.agent.state import AppState
 
 
-class CriticReport(BaseModel):
-    faithful: bool = Field(description="갭 주장들이 검색 근거에 충실한가")
-    unsupported_claims: list[str] = Field(
-        default_factory=list, description="근거가 부족한 주장 목록(한국어)"
-    )
+def verify_gap_against_consensus(
+    gap_result: dict, consensus: dict
+) -> tuple[list[dict], dict]:
+    """gap_result의 skills를 consensus와 대조해 교정·제거하고, 보정된 skills와 검증 리포트를 반환한다.
 
+    - consensus에 없는 보유 스킬 주장 → 제거 (LLM 환각)
+    - verification 라벨이 consensus와 다르면 → consensus 값으로 교정 (부풀림 차단)
 
-_CRITIC_PROMPT = """당신은 RAG 답변의 근거 충실성(faithfulness)을 검증하는 Critic입니다.
-아래 '갭 분석 주장'들이 '검색된 공고 근거'에 의해 실제로 뒷받침되는지 판정하세요.
-
-[갭 분석 주장]
-{claims}
-
-[검색된 공고 근거]
-{evidence}
-
-판정 규칙:
-- 각 주장이 근거 텍스트로 뒷받침되면 faithful=true.
-- 근거가 없거나 모순되는 주장이 하나라도 있으면 faithful=false, 그 주장을 unsupported_claims에 한국어로 기록.
-- 근거가 비어 있으면 검증 불가이므로 faithful=false 처리."""
-
-
-def decide_replan(faithful: bool, replan_count: int) -> bool:
-    """replan 여부를 결정한다(결정적 가드레일).
-
-    근거 불충실하고 replan 상한(MAX_REPLAN) 미만일 때만 재계획한다.
+    consensus는 결정적 사실(합의 노드 산출)이므로 단일 진실 공급원으로 삼는다.
     """
-    return (not faithful) and (replan_count < MAX_REPLAN)
+    skills = gap_result.get("skills") or []
+    consensus = consensus or {}
+    kept: list[dict] = []
+    removed: list[str] = []
+    corrections: list[dict] = []
+    for item in skills:
+        if not isinstance(item, dict):
+            continue
+        raw = item.get("skill", "")
+        name = normalize_skill(raw)
+        info = consensus.get(name)
+        if info is None:
+            removed.append(raw)            # 합의에 없는 보유 주장 → 환각
+            continue
+        true_verif = info.get("verification")
+        if item.get("verification") != true_verif:
+            corrections.append(
+                {"skill": name, "from": item.get("verification"), "to": true_verif}
+            )
+            item = {**item, "verification": true_verif}
+        kept.append(item)
+    report = {"verified": True, "removed_claims": removed, "corrections": corrections}
+    return kept, report
 
 
-def _extract_claims(gap_result: dict) -> list[str]:
-    """gap_result에서 검증 대상 주장 텍스트를 추출한다."""
-    claims: list[str] = []
-    for item in gap_result.get("missing_required") or []:
-        if isinstance(item, dict):
-            skill = item.get("skill", "")
-            reason = item.get("reason", "")
-            claims.append(f"{skill}: {reason}".strip(": "))
-        elif isinstance(item, str):
-            claims.append(item)
-    return claims
+def create_critic_node(openai_client=None):
+    """Critic 노드 팩토리. gap_result를 consensus와 대조해 결정적으로 검증한다(LLM 미사용).
 
-
-def create_critic_node(openai_client):
-    """Critic 노드 팩토리. openai_client는 시그니처 일관성용(미사용)."""
-    if not os.getenv("OPENAI_API_KEY"):
-        raise EnvironmentError("OPENAI_API_KEY 환경변수가 필요합니다.")
-
-    _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0).with_structured_output(CriticReport)
-
-    def critic_node(state: AppState) -> dict:
+    openai_client는 그래프 조립부와의 시그니처 일관성용(미사용).
+    """
+    def critic_node(state: "AppState") -> dict:
         gap_result = state.get("gap_result") or {}
-        context = state.get("retrieved_context") or []
-        replan_count = state.get("replan_count", 0)
-
-        claims = _extract_claims(gap_result)
-        evidence_texts = [c.get("text", "") for c in context if c.get("text")]
-
-        if not claims:
-            report = {"faithful": True, "unsupported_claims": [], "needs_replan": False}
-            return {"critic_report": report}
-
-        try:
-            verdict: CriticReport = _llm.invoke([SystemMessage(content=_CRITIC_PROMPT.format(
-                claims=json.dumps(claims, ensure_ascii=False, indent=2),
-                evidence=json.dumps(evidence_texts, ensure_ascii=False, indent=2),
-            ))])
-            faithful = verdict.faithful
-            unsupported = verdict.unsupported_claims
-        except Exception as e:
-            print(f"[critic] 판정 실패 — 보수적으로 통과 처리: {e}")
-            faithful, unsupported = True, []
-
-        report = {
-            "faithful": faithful,
-            "unsupported_claims": unsupported,
-            "needs_replan": decide_replan(faithful, replan_count),
-        }
-        result = {"critic_report": report}
-        if report["needs_replan"]:
-            result["replan_count"] = replan_count + 1
-        return result
+        consensus = state.get("consensus") or {}
+        kept, report = verify_gap_against_consensus(gap_result, consensus)
+        corrected = {**gap_result, "skills": kept}
+        return {"gap_result": corrected, "critic_report": report}
 
     return critic_node
