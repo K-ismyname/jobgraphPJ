@@ -622,3 +622,24 @@ AI/LLM 전용으로 잠겨 있던 후보 스킬 추출을 10개 직군 어디든
 
 - 프론트·작동·완성도는 보이나 백엔드·AI 기술(LangGraph 등)은 외부에서 안 보임. 주 가치는 "작동 실증 + 배포 경험"(GitHub 코드와 교차 시 강한 검증).
 - vision 스크린샷 UI 평가는 다음 단계(headless 브라우저 의존성).
+
+---
+
+## [2026-06-12] end-to-end 검증 — 4개 소스 설계·구현순서 1~5 완료
+
+4개 소스(이력서·포폴·GitHub·배포) 평가자 + 합의 + 두 축 Gap + Critic + Coach + 검증요약이 통합 동작함을 확인.
+
+### 검증 결과 (3소스 라이트 스모크: 주입이력서+github+deploy)
+
+- `final_report = {gap, verification, coaching}` 구조 정상.
+- gap: match_rate(적합도)·confidence(신뢰도) 결정적, fit_score 제거됨.
+- verification: 스킬별 검증등급 + 뒷받침 소스(예: Spring Boot=Verified[github,resume], React=Verified[deploy,resume]).
+- coaching: summary + suggestions.
+
+### 발생 문제 / 한계
+
+- **4개 전부(포폴 vision 포함) 한 프로세스 동시 실행 → 리소스로 종료.** 포폴 vision 25장 렌더+호출 + CrossEncoder + 전체 gap/coach 루프가 메모리·시간 부담. 각 소스는 개별 검증 완료. 운영 시 포폴 단독/조합 실행 권장. 코드 버그 아님.
+
+### 남은 (구현순서 외)
+
+- 포트폴리오 서사 문서화(README/블로그), 평가 강화(RAGAS), orphan state 필드 정리.
