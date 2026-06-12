@@ -52,3 +52,15 @@ def test_no_flag_when_not_claimed():
         {"skills": [{"skill": "LangGraph", "evidence": "코드", "source": "github", "level_hint": "실무"}]},
     ])
     assert "flags" not in out["LangGraph"]
+
+
+def test_consensus_node_includes_portfolio():
+    from src.agent.consensus import create_consensus_node
+    node = create_consensus_node()
+    state = {
+        "resume_eval": {"skills": [{"skill": "Docker", "evidence": "a", "source": "resume", "level_hint": None}]},
+        "portfolio_eval": {"skills": [{"skill": "Docker", "evidence": "b", "source": "portfolio", "level_hint": None}]},
+    }
+    out = node(state)["consensus"]
+    # resume + portfolio 두 소스 → Corroborated
+    assert out["Docker"]["verification"] == "Corroborated"
