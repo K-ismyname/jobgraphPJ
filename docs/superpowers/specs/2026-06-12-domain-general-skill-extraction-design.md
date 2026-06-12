@@ -34,21 +34,25 @@
 
 **검증:** F-Lab 이력서에서 Java·Spring·Redis가 추출되는지 통합 스모크.
 
-## 구성요소 2 — GitHub 평가자: Neo4j 어휘 매칭 (방식 B)
+## 구성요소 2 — GitHub 평가자: 직군별 스킬 사전 매칭 (방식 B 정제)
 
-**파일:** `src/agent/evaluators/github_eval.py`, `src/agent/supervisor.py`
+**파일:** `src/agent/evaluators/github_eval.py`, `src/agent/supervisor.py`, `src/agent/tools.py`(또는 `neo4j_client.py`)
 
-하드코딩 `_SKILL_KEYWORDS` 대신 **Neo4j의 Skill 어휘**로 매칭한다. GitHub 평가자의 역할은 "직무 관련 스킬을 코드로 검증"이고, 검증 대상은 공고가 요구하는 스킬 = Neo4j 어휘이므로 목적에 정확히 부합한다. 결정적·무료·자동확장(공고 수집 시 어휘 자동 확대).
+하드코딩 `_SKILL_KEYWORDS` 대신 **평가 대상 직군의 스킬 집합**으로 매칭한다. GitHub 평가자의 역할은 "직무 관련 스킬을 코드로 검증"이고, 검증 대상은 그 직군이 요구하는 스킬이므로 목적에 정확히 부합한다. 결정적·무료·자동확장(공고 수집 시 어휘 자동 확대).
 
-- `create_github_evaluator()` → `create_github_evaluator(neo4j)`로 시그니처 변경.
-- 그래프 빌드 시 Neo4j에서 `MATCH (s:Skill) RETURN s.name`으로 스킬 목록을 **1회 로드해 캐시**(평가 호출마다 쿼리하지 않음).
+**왜 전역(1079개)이 아니라 직군별인가:** Neo4j 스킬 1079개 중 **771개(72%)가 1회성 잡음**(`architecture`, `cloud environments`, `OneSource` 등 LLM이 과대추출한 일반 어구·고유명사)이다. 전부를 사전으로 쓰면 README 산문에 오탐이 폭발한다. 직군별 빈도 높은 스킬만 쓰면 잡음이 제거되고, `gap_analysis`가 비교하는 집합과 **완전히 일치**한다(검증 대상 = 비교 대상). 직군별 빈도≥2 기준 사전 크기: Software Engineer 96, … Frontend Engineer 14(가장 작은 직군도 충분).
+
+- **공유 헬퍼:** `get_job_family_skills(neo4j, job_family) -> list[str]` — `_JOB_SKILLS_QUERY`(가중치=공고수 순)로 직군별 상위 요구/우대 스킬을 조회. `gap_analysis`와 `github_eval`이 같은 소스를 쓴다(단일 진실 공급원).
+- `create_github_evaluator()` → `create_github_evaluator(neo4j)`로 시그니처 변경. `evaluate`가 `state["job_family"]`로 대상 직군 스킬을 가져온다(직군별 결과는 캐시 가능).
 - 각 스킬명 + 별칭을 README·의존성파일·언어 텍스트에 **단어경계 매칭**(기존 `_word_match` 재사용).
   - 별칭: `normalizer.SKILL_ALIASES`를 역인덱싱해, 정규화명이 같은 모든 표기(예: `postgres`→`PostgreSQL`)를 후보 키워드로 포함. README가 `postgres`라 적어도 `PostgreSQL`로 매칭.
 - 출력 형식·`source:"github"`·출처 라벨(의존성/설정파일·주 언어·README)은 유지.
 - `supervisor.py`의 `create_supervisor_graph`에서 `create_github_evaluator(neo4j)`로 호출 수정.
-- Neo4j 어휘가 비어 있으면(연결 실패 등) 빈 결과를 반환하고 로그를 남긴다(graceful).
+- 직군 스킬 조회 실패(연결 실패·빈 결과)면 빈 결과를 반환하고 로그를 남긴다(graceful).
 
-**검증:** `_skills_from_sources`를 mock 어휘 리스트로 단위 테스트(별칭 매칭 포함). food-delivery 레포로 통합 스모크.
+**트레이드오프:** github_eval이 `job_family`에 묶인다(현재 입력으로 알고 있으니 무방). 향후 "여러 직군 동시 평가"로 확장 시 직군별로 재매칭한다.
+
+**검증:** `_skills_from_sources`를 mock 직군 스킬 리스트로 단위 테스트(별칭 매칭 포함). food-delivery 레포 + `Software Engineer`로 통합 스모크(Java·Spring 등 백엔드 스킬 검증).
 
 ## 구성요소 3 — 직군명 검증 + 유효 목록 노출
 
@@ -65,21 +69,22 @@
 ```
 이력서 PDF/텍스트 ──(전체 텍스트)──→ extract_skills_from_resume(LLM 자유추출) ─┐
                                                                           ├→ consensus → seed_gap → gap_analysis(job_family 검증됨)
-GitHub 레포 ──(README·manifest·언어)──→ Neo4j 어휘 단어경계 매칭 ───────────┘
+GitHub 레포 ──(README·manifest·언어)──→ 직군 스킬 사전 단어경계 매칭 ─────────┘
+                                          (get_job_family_skills, gap_analysis와 공유)
 ```
 
 - 이력서 = LLM 자유 추출(주장하는 스킬을 폭넓게, Claimed)
-- GitHub = Neo4j 어휘 매칭(직무 관련 스킬을 코드로 검증, Verified 승격)
+- GitHub = 직군 스킬 사전 매칭(그 직군이 요구하는 스킬을 코드로 검증, Verified 승격)
 - consensus가 둘을 합쳐 검증 등급 산출 → gap_analysis가 선택된 직군과 비교
 
 ## 에러 처리
 
 - 이력서: PDF/추출 실패 시 빈 결과(기존 try/except 유지). 상한 초과 시 로그.
-- GitHub: Neo4j 어휘 로드 실패·레포 조회 실패 시 빈 결과 + 로그.
+- GitHub: 직군 스킬 조회 실패·레포 조회 실패 시 빈 결과 + 로그.
 - 직군 검증: Neo4j 조회 실패 시 검증 스킵(백스톱에 위임).
 
 ## 테스트 전략
 
-- **단위:** 이력서 전체 텍스트 전달 확인(잘림 제거), GitHub `_skills_from_sources` Neo4j-어휘 매칭·별칭(mock vocab), `list_job_families`/직군 검증(mock).
+- **단위:** 이력서 전체 텍스트 전달 확인(잘림 제거), GitHub `_skills_from_sources` 직군 스킬 매칭·별칭(mock vocab), `get_job_family_skills`/`list_job_families`/직군 검증(mock).
 - **통합:** F-Lab 이력서+food-delivery → Software Engineer 적합도 산출 스모크(Neo4j 필요).
 - 기존 테스트(98개) 회귀 없음 확인.
