@@ -230,7 +230,7 @@ def run_supervisor(
       4. 없음 — 입력 가드가 차단 (분석할 소스 없음)
     """
     # 입력 가드: 분석 재료가 하나도 없으면 그래프를 돌리지 않고 안내 반환
-    if not (resume_skills or pdf_path or resume_text or github_url):
+    if not (resume_skills or pdf_path or resume_text or github_url or portfolio_path or deploy_url):
         return {
             "error": "no_input",
             "message": "분석하려면 이력서 스킬·PDF·이력서 텍스트·GitHub 중 최소 하나가 필요합니다.",
