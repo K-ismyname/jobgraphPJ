@@ -762,3 +762,11 @@ RAGAS 파이프라인은 v3에서 실행됐으나(`run_analysis`가 반환하는
 - 자산 양호: `app.py`(HF Spaces 진입점, FastAPI 노출), `Dockerfile`(slim+uvicorn), `docker-compose.yml`(api+로컬 neo4j).
 - **차단 요소 발견·수정**: `requirements.txt`가 `ragas~=0.2.0`/`langfuse~=2.0.0`로 낡아 Docker 빌드 시 옛 버전 설치 → 코드(0.4.x/4.x API) import 깨짐. 설치본에 맞춰 `ragas~=0.4.0`/`langfuse~=4.0`으로 정합.
 - 남은 배포 과제(사용자 환경 필요): HF Spaces 실제 배포(Space 생성·Aura/OpenAI 시크릿 등록·app_port), 로컬 Docker 빌드+기동 검증.
+
+---
+
+## [2026-06-13] 로컬 Docker 빌드·기동 검증
+
+- `.dockerignore` 추가 — `data`(23M)·`chroma_db`·`__pycache__`·`.venv`·`tests`·`docs` 등 빌드 컨텍스트에서 제외.
+- `docker build` 성공(exit 0): **requirements 정합이 실제 빌드에서 검증됨** — ragas-0.4.3·langfuse-4.7.1 정상 설치, 전체 의존성 import 깨짐 없음. 이미지 `job-skill-analyzer:latest` 생성(torch+CUDA로 빌드 14분).
+- 기동 검증: 첫 시도는 포트 8000이 다른 앱(ClaBi)에 점유돼 무효(curl이 그 앱 응답을 잡음) → 8123 포트로 재검증, 우리 앱 `/health` = `{"status":"ok","has_openai":true}` 정상.

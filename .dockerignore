@@ -1,0 +1,25 @@
+# 빌드 컨텍스트에서 제외 — 이미지 크기·빌드 속도 최적화
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# 런타임에 볼륨 마운트/재적재되는 데이터 (이미지에 넣지 않음)
+data
+chroma_db
+neo4j_data
+
+# 비밀·로컬 설정
+.env
+*.pdf
+
+# 문서·개발 산출물
+docs
+progress.md
+tests
