@@ -70,6 +70,12 @@ async def index() -> FileResponse:
     return FileResponse(_WEB_DIR / "index.html")
 
 
+@app.get("/observe", include_in_schema=False)
+async def observe() -> FileResponse:
+    """관측 페이지 — 워크플로우 추적 + 데이터 현황."""
+    return FileResponse(_WEB_DIR / "observe.html")
+
+
 @app.get("/health", tags=["system"])
 async def health(request: Request) -> dict:
     """Neo4j·Chroma 연결 상태 반환. 헬스체크용."""

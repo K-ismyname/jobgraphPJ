@@ -19,3 +19,11 @@ def test_static_assets_served():
         r = client.get(path)
         assert r.status_code == 200, path
         assert ctype in r.headers["content-type"], path
+
+
+def test_observe_served():
+    client = TestClient(app)
+    r = client.get("/observe")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert "관측" in r.text
