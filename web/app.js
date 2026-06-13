@@ -97,9 +97,28 @@ async function pollReport(attempt) {
   }
 }
 
+function renderCapability(d) {
+  const cf = d.capability_fit;
+  if (!cf) return "";
+  const pct = Math.round((cf.fit || 0) * 100);
+  const met = (cf.met || []).map((c) => `<span class="cap met">${esc(c)} ✓</span>`).join("");
+  const unmet = (cf.unmet || []).map((c) => `<span class="cap unmet">${esc(c)} ✗</span>`).join("");
+  const ev = (d.capability_evidence || [])
+    .map((e) => `<div class="cap-ev">${esc(e.capability)}: ${(e.tools || []).map((t) => `${esc(t.skill)}(${esc(t.verification)})`).join(", ")}</div>`)
+    .join("");
+  const rec = (d.recommended_families || [])
+    .map((r) => `<div class="fam-row"><span>${esc(r.job_family)}</span><span>${Math.round((r.fit || 0) * 100)}%</span></div>`)
+    .join("");
+  return `
+    <h3>${esc(cf.job_family || "")} 핵심 역량 충족 ${pct}%</h3>
+    <div>${met}${unmet}</div>
+    ${ev ? `<h3>역량별 근거 (검증 등급)</h3>${ev}` : ""}
+    ${rec ? `<h3>당신에게 맞는 직군</h3>${rec}` : ""}
+  `;
+}
+
 // 4. 결과 렌더
 function renderReport(d) {
-  const pct = d.match_rate <= 1 ? Math.round(d.match_rate * 100) : Math.round(d.match_rate);
   const counts = d.verification_counts || {};
   const skills = (d.verified_skills || [])
     .map((s) => `<div class="skill-row"><span>${esc(s.skill)}</span>
@@ -115,9 +134,8 @@ function renderReport(d) {
     .join("");
 
   $("result").innerHTML = `
+    ${renderCapability(d)}
     <div class="metrics">
-      <div class="metric"><div>적합도</div><div class="big">${pct}%</div>
-        <div class="gauge"><span style="width:${pct}%"></span></div></div>
       <div class="metric"><div>신뢰도</div><div class="big">${d.confidence_level ? esc(d.confidence_level) : "-"}</div>
         <div class="prio">Verified ${counts.Verified || 0} · Corroborated ${counts.Corroborated || 0} · Claimed ${counts.Claimed || 0}</div></div>
     </div>

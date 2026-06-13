@@ -49,3 +49,8 @@ h3 { margin:18px 0 6px; font-size:.95rem; }
 .step { border-left:3px solid var(--accent); padding:8px 12px; margin:10px 0; background:#fff; }
 .step h4 { margin:0 0 4px; font-size:.92rem; }
 .stat-row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line); font-size:.9rem; }
+.cap { display:inline-block; padding:3px 10px; margin:3px; border-radius:8px; font-size:.82rem; border:1px solid var(--line); }
+.cap.met { background:#eef2ff; border-color:var(--accent); }
+.cap.unmet { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+.fam-row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line); font-size:.9rem; }
+.cap-ev { font-size:.82rem; color:var(--muted); padding:3px 0; }
