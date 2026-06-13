@@ -78,7 +78,7 @@ function stageData(key, t, report) {
     const cf = report.capability_fit;
     if (!cf) return "역량 정보 없음";
     const rec = (report.recommended_families || []).slice(0, 3).map((r) => `${esc(r.job_family)} ${Math.round((r.fit || 0) * 100)}%`).join(" · ");
-    return `핵심 역량 충족 ${Math.round((cf.fit || 0) * 100)}% (${(cf.met || []).map(esc).join(", ")})<br>맞는 직군: ${rec}`;
+    return `핵심 역량 ${(cf.met || []).length}/${(cf.met || []).length + (cf.unmet || []).length} 충족 (${(cf.met || []).map(esc).join(", ")})<br>맞는 직군: ${rec}`;
   }
   if (key === "critic")
     return `제거된 주장: ${(t.critic && t.critic.removed_skills || []).map(esc).join(", ") || "없음"} · 교정 ${(t.critic && t.critic.corrected) || 0}건`;

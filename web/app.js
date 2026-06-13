@@ -100,7 +100,8 @@ async function pollReport(attempt) {
 function renderCapability(d) {
   const cf = d.capability_fit;
   if (!cf) return "";
-  const pct = Math.round((cf.fit || 0) * 100);
+  const metN = (cf.met || []).length;
+  const totalN = metN + (cf.unmet || []).length;
   const met = (cf.met || []).map((c) => `<span class="cap met">${esc(c)} ✓</span>`).join("");
   const unmet = (cf.unmet || []).map((c) => `<span class="cap unmet">${esc(c)} ✗</span>`).join("");
   const ev = (d.capability_evidence || [])
@@ -110,7 +111,7 @@ function renderCapability(d) {
     .map((r) => `<div class="fam-row"><span>${esc(r.job_family)}</span><span>${Math.round((r.fit || 0) * 100)}%</span></div>`)
     .join("");
   return `
-    <h3>${esc(cf.job_family || "")} 핵심 역량 충족 ${pct}%</h3>
+    <h3>${esc(cf.job_family || "")} 핵심 역량 ${metN}/${totalN} 충족</h3>
     <div>${met}${unmet}</div>
     ${ev ? `<h3>역량별 근거 (검증 등급)</h3>${ev}` : ""}
     ${rec ? `<h3>당신에게 맞는 직군</h3>${rec}` : ""}
