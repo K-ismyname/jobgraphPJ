@@ -55,3 +55,56 @@ def skills_to_capabilities(skills: list[str]) -> set[str]:
         if cap and cap != "other":
             caps.add(cap)
     return caps
+
+
+_CORE_QUERY = """
+MATCH (:JobFamily {name: $job_family})<-[:INSTANCE_OF]-(jp)-[:REQUIRES]->(s:Skill)
+RETURN s.name AS skill, count(DISTINCT jp) AS w
+"""
+
+
+def job_family_core_capabilities(neo4j, job_family: str, n: int = 6) -> list[str]:
+    """직군 REQUIRES 스킬을 역량으로 환산, 요구 공고 가중 상위 n개."""
+    rows = neo4j.execute_query(_CORE_QUERY, job_family=job_family)
+    m = _cap_map()
+    capw: dict[str, int] = {}
+    for r in rows:
+        cap = m.get((r["skill"] or "").lower()) or m.get(normalize_skill(r["skill"] or "").lower())
+        if cap and cap != "other":
+            capw[cap] = capw.get(cap, 0) + int(r["w"] or 0)
+    return [c for c, _ in sorted(capw.items(), key=lambda x: -x[1])[:n]]
+
+
+def capability_fit(resume_caps: set[str], core_caps: list[str]) -> dict:
+    """핵심 역량 충족률 + 충족/미충족 목록."""
+    met = [c for c in core_caps if c in resume_caps]
+    unmet = [c for c in core_caps if c not in resume_caps]
+    return {
+        "fit": round(len(met) / len(core_caps), 2) if core_caps else 0.0,
+        "met": met,
+        "unmet": unmet,
+    }
+
+
+def recommend_families(neo4j, resume_caps: set[str], families: list[str]) -> list[dict]:
+    """직군별 충족률을 계산해 내림차순 정렬 — 역방향 직군 추천."""
+    out = []
+    for fam in families:
+        core = job_family_core_capabilities(neo4j, fam)
+        out.append({"job_family": fam, **capability_fit(resume_caps, core)})
+    return sorted(out, key=lambda x: -x["fit"])
+
+
+def capability_evidence(owned: list[dict], consensus: dict, met_caps: set[str]) -> list[dict]:
+    """충족된 역량별로, 그 역량을 충족시킨 보유 도구 + 검증 등급(consensus)."""
+    m = _cap_map()
+    by_cap: dict[str, list[dict]] = {}
+    for item in owned:
+        sk = item.get("skill") if isinstance(item, dict) else None
+        if not sk:
+            continue
+        cap = m.get(sk.lower()) or m.get(normalize_skill(sk).lower())
+        if cap in met_caps:
+            grade = (consensus.get(normalize_skill(sk)) or {}).get("verification", "Claimed")
+            by_cap.setdefault(cap, []).append({"skill": sk, "verification": grade})
+    return [{"capability": c, "tools": ts} for c, ts in by_cap.items()]
