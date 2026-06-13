@@ -128,6 +128,9 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         suggestions=suggestions,
         generated_at=datetime.now(timezone.utc).isoformat(),
         trace=final.get("trace"),
+        capability_fit=final.get("capability_fit"),
+        recommended_families=final.get("recommended_families") or [],
+        capability_evidence=final.get("capability_evidence") or [],
     )
 
 

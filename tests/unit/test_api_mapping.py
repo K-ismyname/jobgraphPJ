@@ -42,3 +42,19 @@ def test_map_final_report_passes_trace():
     }
     resp = _map_final_report("rid", "owner", "Software Engineer", final)
     assert resp.trace == {"evaluators": [{"source": "resume", "skill_count": 3}]}
+
+
+def test_map_final_report_passes_capability():
+    from src.api.routers.portfolio import _map_final_report
+    final = {
+        "gap": {"match_rate": 0.5},
+        "verification": {"counts": {}, "skills": []},
+        "coaching": {"summary": "s", "suggestions": []},
+        "capability_fit": {"job_family": "Software Engineer", "core": ["backend_fw"], "fit": 1.0, "met": ["backend_fw"], "unmet": []},
+        "recommended_families": [{"job_family": "Software Engineer", "fit": 1.0, "met": ["backend_fw"], "unmet": []}],
+        "capability_evidence": [{"capability": "backend_fw", "tools": [{"skill": "Spring", "verification": "Verified"}]}],
+    }
+    resp = _map_final_report("rid", "owner", "Software Engineer", final)
+    assert resp.capability_fit["fit"] == 1.0
+    assert resp.recommended_families[0]["job_family"] == "Software Engineer"
+    assert resp.capability_evidence[0]["capability"] == "backend_fw"

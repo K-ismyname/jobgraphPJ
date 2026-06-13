@@ -15,6 +15,9 @@ class _FakeNeo4j:
     def list_job_families(self):
         return ["AI/LLM Engineer", "Software Engineer"]
 
+    def execute_query(self, query: str, **kwargs):
+        return []
+
 
 def test_invalid_job_family_blocks():
     g = _FakeGraph()
