@@ -31,5 +31,5 @@ def get_reports(request: Request) -> dict[str, object]:
 
 
 def get_graph(request: Request):
-    """v3 supervisor 그래프 (openai 키 없으면 None)."""
-    return request.app.state.graph
+    """v3 supervisor 그래프 (openai 키 없거나 lifespan 미실행이면 None)."""
+    return getattr(request.app.state, "graph", None)
