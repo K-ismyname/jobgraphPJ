@@ -11,6 +11,10 @@ if TYPE_CHECKING:
     from src.storage.chroma_client import ChromaClient
     from src.storage.neo4j_client import Neo4jClient
 
+# 적합도는 '핵심 필수' 스킬만 기준으로 — 직군에서 가장 자주 요구되는(빈도 상위) REQUIRES N개.
+# 공고마다 나열되는 주변 스킬(빈도 1~2)까지 분모에 넣으면 다 보유해야 적합해지는 비현실적 결과가 나온다.
+_CORE_REQUIRED_N = 10
+
 # ── Cypher 쿼리 ──────────────────────────────────────────────────
 _JOB_SKILLS_QUERY = """
 MATCH (:JobFamily {name: $job_family})<-[:INSTANCE_OF]-(jp)-[r:REQUIRES|PREFERS]->(s:Skill)
@@ -46,7 +50,8 @@ def create_tools(neo4j: "Neo4jClient", chroma: "ChromaClient") -> list:
             if not rows:
                 return {"error": f"'{job_family}' 직군 데이터 없음. 유효한 직군명인지 확인하세요."}
 
-            required = [r for r in rows if r["importance"] == "REQUIRES"]
+            # rows는 weight(요구 공고 수) 내림차순 → REQUIRES 상위 N개만 '핵심 필수'로
+            required = [r for r in rows if r["importance"] == "REQUIRES"][:_CORE_REQUIRED_N]
             preferred = [r for r in rows if r["importance"] == "PREFERS"]
             portfolio_lower = {s.lower() for s in portfolio_skills}
 
