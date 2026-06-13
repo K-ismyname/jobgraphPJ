@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from src.extraction.normalizer import normalize_skill
+
+if TYPE_CHECKING:
+    from src.storage.neo4j_client import Neo4jClient
 
 # 역량 시드 사전 (수동 — 명백한 매핑은 사전이 정답). 키=역량, 값=스킬 소문자 집합.
 SEED_CAPABILITIES: dict[str, set[str]] = {
@@ -63,7 +67,7 @@ RETURN s.name AS skill, count(DISTINCT jp) AS w
 """
 
 
-def job_family_core_capabilities(neo4j, job_family: str, n: int = 6) -> list[str]:
+def job_family_core_capabilities(neo4j: "Neo4jClient", job_family: str, n: int = 6) -> list[str]:
     """직군 REQUIRES 스킬을 역량으로 환산, 요구 공고 가중 상위 n개."""
     rows = neo4j.execute_query(_CORE_QUERY, job_family=job_family)
     m = _cap_map()
@@ -86,7 +90,7 @@ def capability_fit(resume_caps: set[str], core_caps: list[str]) -> dict:
     }
 
 
-def recommend_families(neo4j, resume_caps: set[str], families: list[str]) -> list[dict]:
+def recommend_families(neo4j: "Neo4jClient", resume_caps: set[str], families: list[str]) -> list[dict]:
     """직군별 충족률을 계산해 내림차순 정렬 — 역방향 직군 추천."""
     out = []
     for fam in families:
