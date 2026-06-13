@@ -126,6 +126,7 @@ function renderReport(d) {
     <h3>코칭</h3>
     ${d.coaching_summary ? `<p>${esc(d.coaching_summary)}</p>` : ""}
     ${suggestions || "<p class='prio'>제안 없음</p>"}
+    <p style="margin-top:16px"><a href="/observe?report_id=${encodeURIComponent(state.reportId)}&tab=workflow">→ 이 분석의 실행 과정 보기</a></p>
   `;
 }
 
