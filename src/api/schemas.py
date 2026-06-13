@@ -124,6 +124,7 @@ class ReportResponse(BaseModel):
     suggestions: list[SuggestionItem] = Field(default_factory=list)
     error_detail: str | None = None
     generated_at: str | None = None
+    trace: dict | None = None
 
 
 class ErrorResponse(BaseModel):

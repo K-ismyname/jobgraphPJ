@@ -29,3 +29,16 @@ def test_map_final_report_tolerates_missing_fields():
     r = _map_final_report("r1", "x", "Software Engineer", {})
     assert r.status == "done" and r.match_rate == 0.0
     assert r.verified_skills == [] and r.suggestions == []
+
+
+def test_map_final_report_passes_trace():
+    from src.api.routers.portfolio import _map_final_report
+
+    final = {
+        "gap": {"match_rate": 0.5, "confidence_level": "medium"},
+        "verification": {"counts": {}, "skills": []},
+        "coaching": {"summary": "s", "suggestions": []},
+        "trace": {"evaluators": [{"source": "resume", "skill_count": 3}]},
+    }
+    resp = _map_final_report("rid", "owner", "Software Engineer", final)
+    assert resp.trace == {"evaluators": [{"source": "resume", "skill_count": 3}]}

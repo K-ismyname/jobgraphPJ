@@ -127,6 +127,7 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         coaching_summary=coaching.get("summary"),
         suggestions=suggestions,
         generated_at=datetime.now(timezone.utc).isoformat(),
+        trace=final.get("trace"),
     )
 
 
