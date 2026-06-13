@@ -7,7 +7,8 @@ from typing import AsyncGenerator
 
 from openai import OpenAI
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.agent.supervisor import create_supervisor_graph
 from src.api.routers import jobs as jobs_router
@@ -50,6 +51,14 @@ app = FastAPI(
 
 app.include_router(jobs_router.router, prefix="/jobs", tags=["jobs"])
 app.include_router(portfolio_router.router, prefix="/portfolio", tags=["portfolio"])
+
+app.mount("/web", StaticFiles(directory="web"), name="web")
+
+
+@app.get("/", include_in_schema=False)
+async def index() -> FileResponse:
+    """프론트 진입점 — 정적 index.html 반환."""
+    return FileResponse("web/index.html")
 
 
 @app.get("/health", tags=["system"])
