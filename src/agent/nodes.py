@@ -119,6 +119,37 @@ _COACH_SYSTEM_PROMPT = """당신은 이력서 개선 전문가입니다.
 }}"""
 
 
+def _build_trace(state: "AppState") -> dict:
+    """그래프 결과 state에서 실행 흔적(관측 페이지용)을 결정적으로 조립한다."""
+    from src.agent.consensus import build_verification_summary
+
+    evaluators = []
+    for src in ("resume", "github", "portfolio", "deploy"):
+        ev = state.get(f"{src}_eval")
+        if ev:
+            evaluators.append({"source": src, "skill_count": len(ev.get("skills") or [])})
+
+    counts = build_verification_summary(state.get("consensus") or {})["counts"]
+
+    tool_calls: list[str] = []
+    for m in state.get("messages") or []:
+        if isinstance(m, ToolMessage) and getattr(m, "name", None) and m.name not in tool_calls:
+            tool_calls.append(m.name)
+
+    critic = state.get("critic_report") or {}
+    coaching = state.get("coaching_result") or {}
+    return {
+        "evaluators": evaluators,
+        "consensus": counts,
+        "gap_loop": {"tool_calls": tool_calls, "iterations": state.get("iteration") or 0},
+        "critic": {
+            "removed": len(critic.get("removed_claims") or []),
+            "corrected": len(critic.get("corrections") or []),
+        },
+        "coach": {"suggestion_count": len(coaching.get("suggestions") or [])},
+    }
+
+
 # ── 결정적 수치 산출 (LLM 환각 차단) ─────────────────────────────
 def _confidence_from_consensus(consensus: dict) -> str:
     """consensus 검증 분포로 신뢰도 등급을 결정적으로 산출한다.
@@ -286,6 +317,7 @@ def create_coach_nodes(coach_tools: list["BaseTool"]):
                 "gap": gap_raw,            # 적합도 축 (match_rate) + 신뢰도(confidence) + advice + skills
                 "verification": verification,  # 신뢰도 축 — 스킬별 검증 등급 + 뒷받침 소스
                 "coaching": coaching_dict,
+                "trace": _build_trace(state),
             },
         }
 
