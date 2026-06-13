@@ -11,3 +11,11 @@ def test_index_served():
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
     assert "Job Skill Analyzer" in r.text
+
+
+def test_static_assets_served():
+    client = TestClient(app)
+    for path, ctype in [("/web/app.js", "javascript"), ("/web/style.css", "css")]:
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert ctype in r.headers["content-type"], path
