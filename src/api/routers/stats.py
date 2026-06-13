@@ -19,10 +19,16 @@ RETURN f.name AS name, postings, count(DISTINCT s) AS skill_count
 ORDER BY postings DESC
 """
 
+# skill_count는 REQUIRES 기준(우대 PREFERS 제외). 각 집계는 WITH로 단일 행 collapse 후
+# 다음 MATCH로 넘겨 cartesian product·경고를 피한다.
 _TOTALS = """
-MATCH (jp:JobPosting) WITH count(jp) AS postings
-MATCH (s:Skill) WITH postings, count(s) AS skills
-MATCH ()-[r:REQUIRES|PREFERS]->() RETURN postings, skills, count(r) AS relations
+MATCH (jp:JobPosting)
+WITH count(jp) AS postings
+MATCH (s:Skill)
+WITH postings, count(s) AS skills
+MATCH ()-[r:REQUIRES|PREFERS]->()
+WITH postings, skills, count(r) AS relations
+RETURN postings, skills, relations
 """
 
 

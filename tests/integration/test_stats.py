@@ -24,3 +24,4 @@ def test_stats_returns_aggregates():
     assert body["totals"]["postings"] > 0
     fam = body["job_families"][0]
     assert "name" in fam and "posting_count" in fam and "skill_count" in fam
+    assert body["chroma_chunks"] is not None  # 실 앱은 Chroma 연결됨
