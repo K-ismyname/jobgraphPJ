@@ -3,6 +3,9 @@ const state = { reportId: null };
 
 const $ = (id) => document.getElementById(id);
 
+// innerHTML 삽입 전 HTML 이스케이프 — 이력서 파생 텍스트의 self-XSS 방지
+const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 function setMsg(el, text, isError = false) {
   el.textContent = text;
   el.classList.toggle("error", isError);
@@ -68,6 +71,7 @@ async function pollReport(attempt) {
   }
   try {
     const res = await fetch(`/portfolio/report/${state.reportId}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.status === "processing") {
       setTimeout(() => pollReport(attempt + 1), 3000);
@@ -89,29 +93,29 @@ function renderReport(d) {
   const pct = d.match_rate <= 1 ? Math.round(d.match_rate * 100) : Math.round(d.match_rate);
   const counts = d.verification_counts || {};
   const skills = (d.verified_skills || [])
-    .map((s) => `<div class="skill-row"><span>${s.skill}</span>
-      <span class="badge ${s.verification}">${s.verification}</span>
-      <span class="src">${(s.sources || []).join(", ")}</span></div>`)
+    .map((s) => `<div class="skill-row"><span>${esc(s.skill)}</span>
+      <span class="badge ${s.verification}">${esc(s.verification)}</span>
+      <span class="src">${(s.sources || []).map(esc).join(", ")}</span></div>`)
     .join("");
   const suggestions = (d.suggestions || [])
     .map((s) => `<div class="suggestion">
-      <div class="head">${s.missing_skill} → ${s.target_section}
-        <span class="prio">[${s.priority}${s.verified ? " · 검증됨" : ""}]</span></div>
-      <div class="rew">${s.rewritten_text}</div>
-      <div class="prio">기대효과: ${s.expected_impact}</div></div>`)
+      <div class="head">${esc(s.missing_skill)} → ${esc(s.target_section)}
+        <span class="prio">[${esc(s.priority)}${s.verified ? " · 검증됨" : ""}]</span></div>
+      <div class="rew">${esc(s.rewritten_text)}</div>
+      <div class="prio">기대효과: ${esc(s.expected_impact)}</div></div>`)
     .join("");
 
   $("result").innerHTML = `
     <div class="metrics">
       <div class="metric"><div>적합도</div><div class="big">${pct}%</div>
         <div class="gauge"><span style="width:${pct}%"></span></div></div>
-      <div class="metric"><div>신뢰도</div><div class="big">${d.confidence_level || "-"}</div>
+      <div class="metric"><div>신뢰도</div><div class="big">${d.confidence_level ? esc(d.confidence_level) : "-"}</div>
         <div class="prio">Verified ${counts.Verified || 0} · Corroborated ${counts.Corroborated || 0} · Claimed ${counts.Claimed || 0}</div></div>
     </div>
-    ${d.advice ? `<p>${d.advice}</p>` : ""}
+    ${d.advice ? `<p>${esc(d.advice)}</p>` : ""}
     <h3>검증된 스킬</h3>${skills || "<p class='prio'>없음</p>"}
     <h3>코칭</h3>
-    ${d.coaching_summary ? `<p>${d.coaching_summary}</p>` : ""}
+    ${d.coaching_summary ? `<p>${esc(d.coaching_summary)}</p>` : ""}
     ${suggestions || "<p class='prio'>제안 없음</p>"}
   `;
 }
