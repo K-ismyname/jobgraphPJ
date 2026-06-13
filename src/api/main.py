@@ -18,6 +18,7 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 from src.agent.supervisor import create_supervisor_graph
 from src.api.routers import jobs as jobs_router
 from src.api.routers import portfolio as portfolio_router
+from src.api.routers import stats as stats_router
 from src.storage.chroma_client import ChromaClient
 from src.storage.neo4j_client import Neo4jClient
 
@@ -56,6 +57,7 @@ app = FastAPI(
 
 app.include_router(jobs_router.router, prefix="/jobs", tags=["jobs"])
 app.include_router(portfolio_router.router, prefix="/portfolio", tags=["portfolio"])
+app.include_router(stats_router.router, prefix="/stats", tags=["stats"])
 
 # 정적 프론트 디렉토리는 실행 위치(CWD)와 무관하게 파일 기준 절대경로로 해석
 _WEB_DIR = Path(__file__).resolve().parents[2] / "web"
