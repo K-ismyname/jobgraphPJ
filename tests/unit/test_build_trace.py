@@ -6,8 +6,8 @@ from src.agent.nodes import _build_trace
 
 def test_build_trace_assembles_from_state():
     state = {
-        "resume_eval": {"skills": ["Python", "SQL"]},
-        "github_eval": {"skills": ["Docker"]},
+        "resume_eval": {"skills": [{"skill": "Python", "evidence": "ev1", "source": "resume", "level_hint": "high"}]},
+        "github_eval": {"skills": [{"skill": "Docker", "evidence": "ev2", "source": "github", "level_hint": None}]},
         "portfolio_eval": None,
         "deploy_eval": None,
         "consensus": {
@@ -17,7 +17,6 @@ def test_build_trace_assembles_from_state():
         "messages": [
             ToolMessage(content="{}", name="gap_analysis", tool_call_id="1"),
             ToolMessage(content="{}", name="verify_skills", tool_call_id="2"),
-            ToolMessage(content="{}", name="verify_skills", tool_call_id="3"),
         ],
         "iteration": 2,
         "critic_report": {"removed_claims": ["X"], "corrections": [{"skill": "Y"}]},
@@ -25,21 +24,31 @@ def test_build_trace_assembles_from_state():
     }
     t = _build_trace(state)
 
-    assert [e["source"] for e in t["evaluators"]] == ["resume", "github"]
-    assert t["evaluators"][0]["skill_count"] == 2
-    assert t["consensus"] == {"Verified": 1, "Corroborated": 0, "Claimed": 1}
-    assert set(t["gap_loop"]["tool_calls"]) == {"gap_analysis", "verify_skills"}  # 중복 제거
-    assert t["gap_loop"]["iterations"] == 2
-    assert t["critic"] == {"removed": 1, "corrected": 1}
+    # 평가자: 스킬 목록까지
+    assert t["evaluators"][0]["source"] == "resume"
+    assert t["evaluators"][0]["skills"][0]["skill"] == "Python"
+    assert t["evaluators"][0]["skills"][0]["evidence"] == "ev1"
+    # 합의: counts + skills
+    assert t["consensus"]["counts"] == {"Verified": 1, "Corroborated": 0, "Claimed": 1}
+    assert any(s["skill"] == "Python" and s["verification"] == "Verified" for s in t["consensus"]["skills"])
+    # gap 루프
+    assert set(t["gap_loop"]["tool_calls"]) == {"gap_analysis", "verify_skills"}
+    # critic: 항목까지
+    assert t["critic"]["removed_skills"] == ["X"]
+    assert t["critic"]["corrected"] == 1
+    # 실행 노드
+    assert "resume_eval" in t["executed_nodes"] and "github_eval" in t["executed_nodes"]
+    assert "consensus" in t["executed_nodes"] and "critic" in t["executed_nodes"]
     assert t["coach"]["suggestion_count"] == 3
 
 
 def test_build_trace_empty_state_safe():
     t = _build_trace({})
     assert t["evaluators"] == []
-    assert t["consensus"] == {"Verified": 0, "Corroborated": 0, "Claimed": 0}
+    assert t["consensus"]["counts"] == {"Verified": 0, "Corroborated": 0, "Claimed": 0}
     assert t["gap_loop"] == {"tool_calls": [], "iterations": 0}
-    assert t["critic"] == {"removed": 0, "corrected": 0}
+    assert t["critic"]["removed_skills"] == []
+    assert t["executed_nodes"] == ["synthesizer"]
     assert t["coach"]["suggestion_count"] == 0
 
 

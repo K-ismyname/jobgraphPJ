@@ -128,27 +128,51 @@ def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
     from src.agent.consensus import build_verification_summary
 
     evaluators = []
+    executed: list[str] = []
     for src in ("resume", "github", "portfolio", "deploy"):
         ev = state.get(f"{src}_eval")
         if ev:
-            evaluators.append({"source": src, "skill_count": len(ev.get("skills") or [])})
+            skills = ev.get("skills") or []
+            evaluators.append({
+                "source": src,
+                "skill_count": len(skills),
+                "skills": [
+                    {"skill": s.get("skill"), "evidence": s.get("evidence"), "level_hint": s.get("level_hint")}
+                    for s in skills if isinstance(s, dict)
+                ],
+            })
+            executed.append(f"{src}_eval")
 
-    counts = build_verification_summary(state.get("consensus") or {})["counts"]
+    cons = build_verification_summary(state.get("consensus") or {})
+    if state.get("consensus"):
+        executed.append("consensus")
 
     tool_calls: list[str] = []
     for m in state.get("messages") or []:
         if isinstance(m, ToolMessage) and getattr(m, "name", None) and m.name not in tool_calls:
             tool_calls.append(m.name)
+    if state.get("messages"):
+        executed += ["seed_gap", "call_model", "tools"]
+    executed.append("synthesizer")
 
     critic = state.get("critic_report") or {}
+    removed = critic.get("removed_claims") or []
+    corrections = critic.get("corrections") or []
+    if critic:
+        executed.append("critic")
+
     coaching = coaching if coaching is not None else (state.get("coaching_result") or {})
+    if state.get("coaching_result"):
+        executed += ["coach_call_model", "finalize_coach"]
+
     return {
+        "executed_nodes": executed,
         "evaluators": evaluators,
-        "consensus": counts,
+        "consensus": cons,
         "gap_loop": {"tool_calls": tool_calls, "iterations": state.get("iteration") or 0},
         "critic": {
-            "removed": len(critic.get("removed_claims") or []),
-            "corrected": len(critic.get("corrections") or []),
+            "removed": len(removed), "corrected": len(corrections),
+            "removed_skills": removed, "corrections": corrections,
         },
         "coach": {"suggestion_count": len(coaching.get("suggestions") or [])},
     }
