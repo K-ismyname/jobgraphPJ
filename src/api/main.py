@@ -6,10 +6,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
+from dotenv import load_dotenv
 from openai import OpenAI
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+# uvicorn src.api.main:app 으로 직접 띄울 때도 .env가 적용되도록 — 실행 위치 무관 절대경로
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 from src.agent.supervisor import create_supervisor_graph
 from src.api.routers import jobs as jobs_router
