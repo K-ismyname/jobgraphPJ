@@ -2,6 +2,7 @@
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
   .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+if (window.mermaid) mermaid.initialize({ startOnLoad: false });
 
 // 탭 전환
 function showTab(name) {
@@ -15,43 +16,75 @@ function showTab(name) {
 $("tab-workflow").addEventListener("click", () => showTab("workflow"));
 $("tab-data").addEventListener("click", () => showTab("data"));
 
-// ── 워크플로우 탭 ──
+// ── 워크플로우 탭 = 시스템 설명 + (분석 있으면) 실제 예시 ──
 async function loadWorkflow() {
-  const params = new URLSearchParams(location.search);
-  const reportId = params.get("report_id");
-  if (!reportId) {
-    $("workflow").innerHTML = "<p class='prio'>분석을 먼저 실행하세요. 분석 결과 화면의 '실행 과정 보기'로 들어오면 그 분석의 흐름이 표시됩니다.</p>";
+  let g;
+  try {
+    const res = await fetch("/graph");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    g = await res.json();
+  } catch (e) {
+    $("workflow").innerHTML = `<p class='msg error'>구조 불러오기 실패: ${esc(e.message)}</p>`;
     return;
   }
-  try {
-    const res = await fetch(`/portfolio/report/${reportId}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const d = await res.json();
-    if (!d.trace) {
-      $("workflow").innerHTML = "<p class='prio'>이 분석에는 실행 추적 정보가 없습니다.</p>";
-      return;
-    }
-    renderTrace(d.trace);
-  } catch (e) {
-    $("workflow").innerHTML = `<p class='msg error'>불러오기 실패: ${esc(e.message)}</p>`;
+  const reportId = new URLSearchParams(location.search).get("report_id");
+  let report = null;
+  if (reportId) {
+    try {
+      const r = await fetch(`/portfolio/report/${reportId}`);
+      if (r.ok) report = await r.json();
+    } catch (e) { /* report 없이 설명만 */ }
   }
+  await renderWorkflow(g, report);
 }
 
-function renderTrace(t) {
-  const ev = (t.evaluators || []).map((e) => `${esc(e.source)} ${e.skill_count}개`).join(" · ") || "없음";
-  const c = t.consensus || {};
-  const tools = (t.gap_loop?.tool_calls || []).map(esc).join(", ") || "없음";
-  const cr = t.critic || {};
-  $("workflow").innerHTML = `
-    <div class="step"><h4>1. 평가자 (소스별 스킬 추출)</h4>${ev}</div>
-    <div class="step"><h4>2. 합의 — 검증 등급 분포</h4>
-      Verified ${c.Verified || 0} · Corroborated ${c.Corroborated || 0} · Claimed ${c.Claimed || 0}</div>
-    <div class="step"><h4>3. Gap 루프 (Corrective RAG)</h4>
-      도구: ${tools} · 반복 ${t.gap_loop?.iterations || 0}회</div>
-    <div class="step"><h4>4. Critic (결정적 검증)</h4>
-      환각 제거 ${cr.removed || 0} · 검증 라벨 교정 ${cr.corrected || 0}</div>
-    <div class="step"><h4>5. Coach</h4>제안 ${t.coach?.suggestion_count || 0}개</div>
-  `;
+async function renderWorkflow(g, report) {
+  let diagram = "";
+  if (g.mermaid && window.mermaid) {
+    let src = g.mermaid;
+    const ex = report && report.trace && report.trace.executed_nodes;
+    if (ex && ex.length) {
+      src += "\n" + ex.map((n) => `class ${n} executed;`).join("\n");
+      src += "\nclassDef executed fill:#eef2ff,stroke:#4f46e5,stroke-width:2px;";
+    }
+    try {
+      const { svg } = await mermaid.render("wfgraph", src);
+      diagram = `<div class="diagram">${svg}</div>`;
+    } catch (e) {
+      diagram = "<p class='prio'>다이어그램 로드 실패</p>";
+    }
+  }
+  const cards = (g.stages || []).map((st) => renderStage(st, report)).join("");
+  $("workflow").innerHTML = diagram + cards;
+}
+
+function renderStage(st, report) {
+  const t = report && report.trace;
+  let data = "<div class='cap-ev'>분석하면 이 단계의 실제 처리 결과가 표시됩니다.</div>";
+  if (report && t) data = `<div class="stage-data">${stageData(st.key, t, report)}</div>`;
+  return `<div class="step"><h4>${esc(st.title)}</h4><p class="cap-ev">${esc(st.description)}</p>${data}</div>`;
+}
+
+function stageData(key, t, report) {
+  if (key === "evaluators")
+    return (t.evaluators || []).map((e) =>
+      `<div><b>${esc(e.source)}</b> (${e.skill_count}): ${(e.skills || []).map((s) => esc(s.skill)).join(", ")}</div>`).join("") || "없음";
+  if (key === "consensus")
+    return ((t.consensus && t.consensus.skills) || []).map((s) =>
+      `<div class="skill-row"><span>${esc(s.skill)}</span><span class="badge ${s.verification}">${esc(s.verification)}</span><span class="src">${(s.sources || []).map(esc).join(", ")}</span></div>`).join("") || "없음";
+  if (key === "gap_loop")
+    return `도구: ${(t.gap_loop && t.gap_loop.tool_calls || []).map(esc).join(", ") || "없음"} · 반복 ${(t.gap_loop && t.gap_loop.iterations) || 0}회`;
+  if (key === "fit") {
+    const cf = report.capability_fit;
+    if (!cf) return "역량 정보 없음";
+    const rec = (report.recommended_families || []).slice(0, 3).map((r) => `${esc(r.job_family)} ${Math.round((r.fit || 0) * 100)}%`).join(" · ");
+    return `핵심 역량 충족 ${Math.round((cf.fit || 0) * 100)}% (${(cf.met || []).map(esc).join(", ")})<br>맞는 직군: ${rec}`;
+  }
+  if (key === "critic")
+    return `제거된 주장: ${(t.critic && t.critic.removed_skills || []).map(esc).join(", ") || "없음"} · 교정 ${(t.critic && t.critic.corrected) || 0}건`;
+  if (key === "coach")
+    return `개선 제안 ${(t.coach && t.coach.suggestion_count) || 0}개`;
+  return "";
 }
 
 // ── 데이터 탭 ──
