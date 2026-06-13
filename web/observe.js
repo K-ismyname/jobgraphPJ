@@ -10,7 +10,7 @@ function showTab(name) {
   $("panel-data").classList.toggle("hidden", wf);
   $("tab-workflow").classList.toggle("active", wf);
   $("tab-data").classList.toggle("active", !wf);
-  if (!wf) loadData();
+  if (wf) loadWorkflow(); else loadData();
 }
 $("tab-workflow").addEventListener("click", () => showTab("workflow"));
 $("tab-data").addEventListener("click", () => showTab("data"));
@@ -81,7 +81,6 @@ async function loadData() {
   }
 }
 
-// 진입 시: report_id 있으면 워크플로우, 없으면 워크플로우 안내. tab 쿼리로 데이터 직행 가능.
+// 진입 시: tab 쿼리로 초기 탭 결정. showTab이 해당 탭의 로더(loadWorkflow/loadData)를 호출한다.
 const initTab = new URLSearchParams(location.search).get("tab") === "data" ? "data" : "workflow";
 showTab(initTab);
-loadWorkflow();

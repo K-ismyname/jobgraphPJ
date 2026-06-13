@@ -24,9 +24,9 @@ ORDER BY postings DESC
 _TOTALS = """
 MATCH (jp:JobPosting)
 WITH count(jp) AS postings
-MATCH (s:Skill)
+OPTIONAL MATCH (s:Skill)
 WITH postings, count(s) AS skills
-MATCH ()-[r:REQUIRES|PREFERS]->()
+OPTIONAL MATCH ()-[r:REQUIRES|PREFERS]->()
 WITH postings, skills, count(r) AS relations
 RETURN postings, skills, relations
 """

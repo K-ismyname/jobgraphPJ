@@ -119,8 +119,12 @@ _COACH_SYSTEM_PROMPT = """당신은 이력서 개선 전문가입니다.
 }}"""
 
 
-def _build_trace(state: "AppState") -> dict:
-    """그래프 결과 state에서 실행 흔적(관측 페이지용)을 결정적으로 조립한다."""
+def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
+    """그래프 결과 state에서 실행 흔적(관측 페이지용)을 결정적으로 조립한다.
+
+    coaching은 호출 노드(finalize_coach)가 막 만든 결과를 직접 넘긴다 — LangGraph가
+    반환 dict를 state에 머지하기 전이라 state["coaching_result"]는 아직 비어 있기 때문.
+    """
     from src.agent.consensus import build_verification_summary
 
     evaluators = []
@@ -137,7 +141,7 @@ def _build_trace(state: "AppState") -> dict:
             tool_calls.append(m.name)
 
     critic = state.get("critic_report") or {}
-    coaching = state.get("coaching_result") or {}
+    coaching = coaching if coaching is not None else (state.get("coaching_result") or {})
     return {
         "evaluators": evaluators,
         "consensus": counts,
@@ -317,7 +321,7 @@ def create_coach_nodes(coach_tools: list["BaseTool"]):
                 "gap": gap_raw,            # 적합도 축 (match_rate) + 신뢰도(confidence) + advice + skills
                 "verification": verification,  # 신뢰도 축 — 스킬별 검증 등급 + 뒷받침 소스
                 "coaching": coaching_dict,
-                "trace": _build_trace(state),
+                "trace": _build_trace(state, coaching=coaching_dict),
             },
         }
 
