@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from openai import OpenAI
@@ -52,13 +53,15 @@ app = FastAPI(
 app.include_router(jobs_router.router, prefix="/jobs", tags=["jobs"])
 app.include_router(portfolio_router.router, prefix="/portfolio", tags=["portfolio"])
 
-app.mount("/web", StaticFiles(directory="web"), name="web")
+# 정적 프론트 디렉토리는 실행 위치(CWD)와 무관하게 파일 기준 절대경로로 해석
+_WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+app.mount("/web", StaticFiles(directory=_WEB_DIR), name="web")
 
 
 @app.get("/", include_in_schema=False)
 async def index() -> FileResponse:
     """프론트 진입점 — 정적 index.html 반환."""
-    return FileResponse("web/index.html")
+    return FileResponse(_WEB_DIR / "index.html")
 
 
 @app.get("/health", tags=["system"])

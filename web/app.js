@@ -4,7 +4,8 @@ const state = { reportId: null };
 const $ = (id) => document.getElementById(id);
 
 // innerHTML 삽입 전 HTML 이스케이프 — 이력서 파생 텍스트의 self-XSS 방지
-const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 function setMsg(el, text, isError = false) {
   el.textContent = text;
@@ -71,7 +72,15 @@ async function pollReport(attempt) {
   }
   try {
     const res = await fetch(`/portfolio/report/${state.reportId}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      // 4xx(만료된 report_id 등)는 재시도해도 무의미 — 즉시 중단
+      if (res.status >= 400 && res.status < 500) {
+        $("progress").classList.add("hidden");
+        $("result").innerHTML = `<p class='msg error'>결과를 찾을 수 없습니다 (HTTP ${res.status}).</p>`;
+        return;
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
     const data = await res.json();
     if (data.status === "processing") {
       setTimeout(() => pollReport(attempt + 1), 3000);
@@ -79,7 +88,7 @@ async function pollReport(attempt) {
     }
     $("progress").classList.add("hidden");
     if (data.status === "error") {
-      $("result").innerHTML = `<p class='msg error'>분석 오류: ${data.error_detail || "알 수 없음"}</p>`;
+      $("result").innerHTML = `<p class='msg error'>분석 오류: ${esc(data.error_detail) || "알 수 없음"}</p>`;
       return;
     }
     renderReport(data);
