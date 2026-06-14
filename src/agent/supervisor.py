@@ -109,7 +109,7 @@ def evaluator_dispatch(state: AppState) -> list[Send]:
     return sends
 
 
-def create_supervisor_graph(neo4j, chroma, openai_client):
+def create_supervisor_graph(neo4j, openai_client):
     """v3 단계1: 평가자 병렬 → 합의 → Gap 적합도 → Critic → Coach."""
     from src.agent.tools import create_tools, create_coach_tools
     from src.agent.nodes import create_nodes, create_coach_nodes
@@ -325,14 +325,12 @@ if __name__ == "__main__":
 
     load_dotenv()
 
-    from src.storage.chroma_client import ChromaClient
     from src.storage.neo4j_client import Neo4jClient
 
     neo4j = Neo4jClient()
-    chroma = ChromaClient()
     openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-    graph = create_supervisor_graph(neo4j, chroma, openai_client)
+    graph = create_supervisor_graph(neo4j, openai_client)
 
     g = graph.get_graph()
     print("=== 노드 ===")

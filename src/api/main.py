@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     app.state.reports: dict = {}             # report_id → ReportResponse
     # v3 그래프는 1회 빌드해 재사용 (openai 키 없으면 None — /analyze가 503)
     app.state.graph = (
-        create_supervisor_graph(app.state.neo4j, app.state.chroma, app.state.openai)
+        create_supervisor_graph(app.state.neo4j, app.state.openai)
         if app.state.openai else None
     )
 

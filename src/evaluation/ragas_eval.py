@@ -256,15 +256,13 @@ def run_ragas_eval(
 
 # ── CLI 실행 ─────────────────────────────────────────────────────
 if __name__ == "__main__":
-    from src.storage.chroma_client import ChromaClient
     from src.storage.neo4j_client import Neo4jClient
     from src.agent.supervisor import create_supervisor_graph
 
     from openai import OpenAI
     neo4j = Neo4jClient()
-    chroma = ChromaClient()
     openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if os.getenv("OPENAI_API_KEY") else None
-    graph = create_supervisor_graph(neo4j, chroma, openai_client)
+    graph = create_supervisor_graph(neo4j, openai_client)
 
     # Software Engineer: 127개로 가장 많은 데이터 보유 → 신뢰도 높음
     test_cases = [
