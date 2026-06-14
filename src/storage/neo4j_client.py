@@ -389,6 +389,30 @@ class Neo4jClient:
                 except Exception as e:
                     print(f"[warn] confidence 업데이트 실패 ({skill}): {e}")
 
+    def set_posting_sections(self, source_id: str, required: str, preferred: str) -> None:
+        """공고 노드에 요건 원문(필수·우대)을 속성으로 저장한다."""
+        try:
+            self.execute_query(
+                "MATCH (p:JobPosting {source_id: $source_id}) "
+                "SET p.required_section = $required, p.preferred_section = $preferred",
+                source_id=source_id, required=required or "", preferred=preferred or "",
+            )
+        except Exception as e:
+            print(f"[neo4j] 공고 원문 저장 실패({source_id}): {e}")
+
+    def get_posting_sections(self, source_ids: list[str]) -> list[dict]:
+        """source_id 목록의 공고 요건 원문을 가져온다."""
+        try:
+            return self.execute_query(
+                "MATCH (p:JobPosting) WHERE p.source_id IN $ids "
+                "RETURN p.source_id AS source_id, p.company AS company, "
+                "p.required_section AS required_section, p.preferred_section AS preferred_section",
+                ids=source_ids,
+            )
+        except Exception as e:
+            print(f"[neo4j] 공고 원문 조회 실패: {e}")
+            return []
+
     def get_postings_requiring_skill(self, skill_name: str, limit: int = 5) -> list[str]:
         """특정 스킬을 REQUIRES하는 JobPosting의 source_id 목록을 반환한다."""
         rows = self.execute_query(QUERY_POSTINGS_FOR_SKILL, skill_name=skill_name, limit=limit)
