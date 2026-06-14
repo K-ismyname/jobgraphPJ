@@ -1,11 +1,10 @@
-# 시스템 데이터 현황 — 직군별 통계 + 전체 노드/관계/청크 수
+# 시스템 데이터 현황 — 직군별 통계 + 전체 노드/관계 수
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.api.deps import get_chroma, get_neo4j
+from src.api.deps import get_neo4j
 from src.api.schemas import JobFamilyStat, StatsResponse
-from src.storage.chroma_client import ChromaClient
 from src.storage.neo4j_client import Neo4jClient
 
 router = APIRouter()
@@ -35,9 +34,8 @@ RETURN postings, skills, relations
 @router.get("", response_model=StatsResponse)
 async def stats(
     neo4j: Neo4jClient = Depends(get_neo4j),
-    chroma: ChromaClient = Depends(get_chroma),
 ) -> StatsResponse:
-    """Neo4j 집계 + Chroma 청크 수."""
+    """Neo4j 집계."""
     try:
         fam_rows = neo4j.execute_query(_FAMILY_STATS)
         tot_rows = neo4j.execute_query(_TOTALS)
@@ -45,10 +43,6 @@ async def stats(
         raise HTTPException(503, f"DB 집계 실패: {e}")
 
     tot = tot_rows[0] if tot_rows else {"postings": 0, "skills": 0, "relations": 0}
-    try:
-        chunks = chroma.count()
-    except Exception:
-        chunks = None
 
     return StatsResponse(
         job_families=[
@@ -64,5 +58,4 @@ async def stats(
             "skills": int(tot.get("skills") or 0),
             "relations": int(tot.get("relations") or 0),
         },
-        chroma_chunks=chunks,
     )

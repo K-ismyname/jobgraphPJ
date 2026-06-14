@@ -105,7 +105,6 @@ async function loadData() {
       <div class="stat-row"><span>공고</span><span>${tot.postings || 0}</span></div>
       <div class="stat-row"><span>스킬</span><span>${tot.skills || 0}</span></div>
       <div class="stat-row"><span>요구/우대 관계</span><span>${tot.relations || 0}</span></div>
-      <div class="stat-row"><span>벡터 청크</span><span>${d.chroma_chunks ?? "—"}</span></div>
       <h3>직군별</h3>${fams}
     `;
   } catch (e) {

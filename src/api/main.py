@@ -20,7 +20,6 @@ from src.api.routers import jobs as jobs_router
 from src.api.routers import portfolio as portfolio_router
 from src.api.routers import stats as stats_router
 from src.api.routers import system as system_router
-from src.storage.chroma_client import ChromaClient
 from src.storage.neo4j_client import Neo4jClient
 
 
@@ -28,7 +27,6 @@ from src.storage.neo4j_client import Neo4jClient
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     # ── startup ──────────────────────────────────────────────────
     app.state.neo4j = Neo4jClient()
-    app.state.chroma = ChromaClient()
     app.state.openai = (
         OpenAI() if os.getenv("OPENAI_API_KEY") else None
     )

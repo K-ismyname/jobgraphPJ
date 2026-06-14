@@ -145,4 +145,3 @@ class JobFamilyStat(BaseModel):
 class StatsResponse(BaseModel):
     job_families: list[JobFamilyStat]
     totals: dict[str, int]          # postings, skills, relations
-    chroma_chunks: int | None = None

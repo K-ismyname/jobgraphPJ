@@ -4,16 +4,11 @@ from __future__ import annotations
 from openai import OpenAI
 from fastapi import Request
 
-from src.storage.chroma_client import ChromaClient
 from src.storage.neo4j_client import Neo4jClient
 
 
 def get_neo4j(request: Request) -> Neo4jClient:
     return request.app.state.neo4j
-
-
-def get_chroma(request: Request) -> ChromaClient:
-    return request.app.state.chroma
 
 
 def get_openai(request: Request) -> OpenAI | None:
