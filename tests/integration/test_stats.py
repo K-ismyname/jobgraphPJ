@@ -1,4 +1,4 @@
-# GET /stats가 Neo4j 집계 + Chroma count를 반환하는지 — 실 Neo4j 필요
+# GET /stats가 Neo4j 집계를 반환하는지 — 실 Neo4j 필요
 import os
 from pathlib import Path
 
@@ -24,4 +24,3 @@ def test_stats_returns_aggregates():
     assert body["totals"]["postings"] > 0
     fam = body["job_families"][0]
     assert "name" in fam and "posting_count" in fam and "skill_count" in fam
-    assert body["chroma_chunks"] is not None  # 실 앱은 Chroma 연결됨

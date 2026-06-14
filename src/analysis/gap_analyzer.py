@@ -5,7 +5,6 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from src.storage.chroma_client import ChromaClient
 from src.storage.neo4j_client import Neo4jClient
 
 
@@ -54,11 +53,10 @@ ORDER BY i_have_it ASC, job_demand DESC
 
 def run_gap_analysis(
     neo4j: Neo4jClient,
-    chroma: ChromaClient | None = None,
     job_family: str = "AI/LLM Engineer",
     owner: str = "",
 ) -> GapAnalysisResult:
-    """GAP_QUERY 실행 → Pydantic 변환 → Chroma evidence로 보강."""
+    """GAP_QUERY 실행 → Pydantic 변환."""
     rows = neo4j.execute_query(GAP_QUERY, job_family=job_family, owner=owner)
 
     have: list[SkillGap] = []
@@ -68,12 +66,6 @@ def run_gap_analysis(
         related: list[str] = row.get("related_skills") or []
         have_it = bool(row.get("i_have_it"))
         evidence: str | None = row.get("evidence")
-
-        # missing 기술에 Neo4j evidence 없으면 Chroma에서 보강
-        if not have_it and not evidence and chroma:
-            results = chroma.search(row["skill"], n_results=1, section_type="required")
-            if results:
-                evidence = results[0]["original_text"][:200]
 
         gap = SkillGap(
             skill=row["skill"],

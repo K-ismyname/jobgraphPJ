@@ -25,7 +25,6 @@ def filter_by_job_family(jobs: list[dict]) -> list[dict]:
         print(f"직군 필터: {len(jobs)}개 → {len(kept)}개 ({removed}개 제거)")
     return kept
 from src.storage.neo4j_client import Neo4jClient
-from src.storage.chroma_client import ChromaClient
 
 
 _JOB_FAMILIES = {
@@ -139,34 +138,6 @@ def step_extract_skills(
     return list(already.values())
 
 
-def step_ingest_chroma(jobs: list[dict], *, contextual: bool = False) -> None:
-    """Step 4: Chroma에 공고 섹션 텍스트 적재.
-
-    contextual=True 이면 LLM으로 각 청크의 문맥 설명을 생성해 함께 저장한다
-    (Anthropic Contextual Retrieval 방식). False 이면 메타데이터 헤더만 사용.
-    섹션 파싱 성공 시 required/preferred 별도 문서, 실패 시 text_clean fallback.
-    """
-    openai_client = _get_openai() if contextual else None
-    if contextual:
-        print("  [contextual] LLM 문맥 생성 모드 활성화")
-
-    chroma = ChromaClient()
-    ingestible = [j for j in jobs if j.get("text_clean") or j.get("required_section")]
-    print(f"\n=== Step 4: Chroma 적재 ({len(ingestible)}개) ===")
-
-    total_docs = 0
-    for i, job in enumerate(ingestible, 1):
-        try:
-            added = chroma.ingest_posting(job, openai_client=openai_client)
-            total_docs += added
-            if contextual and i % 50 == 0:
-                print(f"  진행: {i}/{len(ingestible)}")
-        except Exception as e:
-            print(f"  [오류] {job.get('title', '?')}: {e}")
-
-    print(f"Chroma 적재 완료: 문서 {total_docs}개 (컬렉션 총 {chroma.count()}개)")
-
-
 def step_ingest(jobs: list[dict]) -> None:
     """Step 3: Neo4j에 공고·스킬·관계 적재."""
     neo4j = Neo4jClient()
@@ -228,7 +199,6 @@ def run_remoteok_pipeline(
 
     if not skip_ingest:
         step_ingest(jobs)
-        step_ingest_chroma(jobs)
 
 
 def run_pipeline(
@@ -266,12 +236,8 @@ def run_ingest_all(
     filtered_path: str | Path = _FILTERED,
     *,
     clear: bool = False,
-    contextual: bool = False,
 ) -> None:
-    """jobs_filtered.json → Neo4j + Chroma 전체 적재.
-
-    contextual=True 이면 Chroma 인덱싱 시 LLM 문맥 설명을 생성한다.
-    """
+    """jobs_filtered.json → Neo4j 전체 적재."""
     with open(filtered_path, encoding="utf-8") as f:
         jobs = json.load(f)
 
@@ -294,8 +260,6 @@ def run_ingest_all(
         print(f"Neo4j 완료: {success}/{len(jobs)}개")
     finally:
         neo4j.close()
-
-    step_ingest_chroma(jobs, contextual=contextual)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-# gap_analyzer.py 단위 테스트 — mock Neo4j/Chroma 사용
+# gap_analyzer.py 단위 테스트 — mock Neo4j 사용
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -70,10 +70,7 @@ class TestRunGapAnalysis:
         mock_neo4j = MagicMock()
         mock_neo4j.execute_query.return_value = []  # 공고 없음
 
-        mock_chroma = MagicMock()
-        mock_chroma.search_evidence.return_value = []
-
-        result = run_gap_analysis(mock_neo4j, mock_chroma, "AI Engineer", "김지원")
+        result = run_gap_analysis(mock_neo4j, "AI Engineer", "김지원")
 
         assert isinstance(result, GapAnalysisResult)
         assert result.job_title == "AI Engineer"
@@ -84,10 +81,8 @@ class TestRunGapAnalysis:
         """반환된 결과에 필수 필드가 모두 존재한다."""
         mock_neo4j = MagicMock()
         mock_neo4j.execute_query.return_value = []
-        mock_chroma = MagicMock()
-        mock_chroma.search_evidence.return_value = []
 
-        result = run_gap_analysis(mock_neo4j, mock_chroma, "ML Engineer", "이지원")
+        result = run_gap_analysis(mock_neo4j, "ML Engineer", "이지원")
 
         assert hasattr(result, "have")
         assert hasattr(result, "missing")

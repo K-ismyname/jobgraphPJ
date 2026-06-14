@@ -8,7 +8,6 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from src.analysis.gap_analyzer import GapAnalysisResult, SkillGap
-from src.storage.chroma_client import ChromaClient
 
 if TYPE_CHECKING:
     from src.analysis.salary_analyzer import SalaryAnalysisResult
@@ -34,7 +33,6 @@ class CoachingResult(BaseModel):
 
 def generate_coaching(
     gap_result: GapAnalysisResult,
-    chroma: ChromaClient,
     client: OpenAI,
     salary_result: SalaryAnalysisResult | None = None,
 ) -> CoachingResult:
@@ -42,10 +40,6 @@ def generate_coaching(
     top_missing = sorted(gap_result.missing, key=lambda s: s.job_demand, reverse=True)[:5]
 
     section_contexts: dict[str, str] = {}
-    for skill_gap in top_missing:
-        results = chroma.search(skill_gap.skill, n_results=1, section_type="required")
-        if results:
-            section_contexts[skill_gap.skill] = results[0]["original_text"][:300]
 
     salary_lines = ""
     if salary_result:
