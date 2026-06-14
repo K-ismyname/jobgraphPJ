@@ -3,15 +3,39 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Job Skill Analyzer — 이력서 분석</title>
+  <title>Job Skill Analyzer — 이력서 적합도 진단</title>
   <link rel="stylesheet" href="/web/style.css">
 </head>
-<body>
+<body id="top">
+  <nav class="topnav">
+    <div class="nav-inner">
+      <a href="#top" class="logo">Job Skill Analyzer</a>
+      <div class="menu">
+        <a href="#hero">소개</a>
+        <a href="#how">사용법</a>
+        <a href="#contact">문의</a>
+        <a href="/observe">관측</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero" id="hero">
+    <div class="hero-inner">
+      <h1>이력서 한 장으로<br>직무 적합도를 진단하세요</h1>
+      <p>GitHub·배포까지 교차검증하는 Agentic RAG 분석. 적합도와 그 판단의 신뢰도를 분리해 보여줍니다.</p>
+      <a class="cta" href="#step-upload">지금 분석하기</a>
+    </div>
+  </header>
+
   <main>
-    <header>
-      <h1>Job Skill Analyzer</h1>
-      <p class="sub">이력서를 올리면 직무 <b>적합도</b>와 그 판단의 <b>신뢰도</b>를 분리해 알려줍니다. <a href="/observe">관측 보기 →</a></p>
-    </header>
+    <section class="how" id="how">
+      <h2>어떻게 작동하나요</h2>
+      <div class="how-grid">
+        <div class="how-card"><span class="num">1</span><h3>업로드</h3><p>PDF 이력서를 올립니다.</p></div>
+        <div class="how-card"><span class="num">2</span><h3>조건 설정</h3><p>직군과 GitHub·배포 URL(선택)을 입력합니다.</p></div>
+        <div class="how-card"><span class="num">3</span><h3>결과 확인</h3><p>핵심 역량 충족·검증 등급·개선 제안을 받습니다.</p></div>
+      </div>
+    </section>
 
     <!-- 1단계: 업로드 -->
     <section id="step-upload" class="card">
@@ -57,6 +81,18 @@
       <div id="result"></div>
     </section>
   </main>
+
+  <footer class="site-footer" id="contact">
+    <div class="footer-inner">
+      <span>© 2026 Job Skill Analyzer</span>
+      <div class="footer-links">
+        <a href="https://github.com/K-ismyname/jobgraphPJ">GitHub</a>
+        <a href="mailto:dagahee0903@gmail.com">문의</a>
+        <a href="/observe">관측</a>
+      </div>
+    </div>
+  </footer>
+
   <script src="/web/app.js"></script>
 </body>
 </html>
