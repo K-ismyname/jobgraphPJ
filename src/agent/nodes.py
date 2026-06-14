@@ -12,7 +12,6 @@ from src.agent.state import AppState
 
 if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
-    from src.storage.chroma_client import ChromaClient
     from src.storage.neo4j_client import Neo4jClient
 
 # ── Gap Agent 프롬프트 ────────────────────────────────────────────
@@ -27,8 +26,7 @@ _GAP_SYSTEM_PROMPT = """당신은 AI 커리어 분석 전문가입니다.
 5. 충분한 근거가 모이면 도구 호출 없이 텍스트만 반환하세요 → 리포트 생성.
 
 규칙:
-- verify_skills는 단 1회. 스킬당 1회 vector_search 호출 금지.
-- vector_search는 시장 트렌드 등 일반 질의에만 사용하세요.
+- verify_skills는 단 1회. 스킬마다 반복 호출 금지.
 - skip:true 또는 "없음" 메시지가 있으면 graph_only로 처리하고 넘어가세요.
 - 추측으로 판단 가능하면 ask_human을 쓰지 마세요."""
 
@@ -233,7 +231,6 @@ def _apply_deterministic_metrics(report: dict, consensus: dict, tool_results: li
 def create_nodes(
     tools: list["BaseTool"],
     neo4j: "Neo4jClient",
-    chroma: "ChromaClient",
 ):
     """Gap Agent 노드 팩토리 — call_model, generate_report 반환."""
     if not os.getenv("OPENAI_API_KEY"):

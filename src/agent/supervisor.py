@@ -17,7 +17,6 @@ from src.evaluation.langfuse_tracer import langfuse_callbacks
 
 if TYPE_CHECKING:
     from openai import OpenAI
-    from src.storage.chroma_client import ChromaClient
     from src.storage.neo4j_client import Neo4jClient
 
 
@@ -38,13 +37,7 @@ def _make_tools_node(tools_list: list):
             except Exception as e:
                 result = [{"error": str(e)}]
 
-            if tc["name"] == "vector_search" and isinstance(result, list):
-                if not any(r.get("skip") for r in result):
-                    fresh = [r for r in result if r.get("source_id") not in seen]
-                    new_seen.update(r["source_id"] for r in fresh if "source_id" in r)
-                    result = fresh or [{"note": "이미 확인한 공고들입니다. 다음 스킬로 넘어가세요.", "skip": True}]
-
-            elif tc["name"] == "verify_skills" and isinstance(result, dict):
+            if tc["name"] == "verify_skills" and isinstance(result, dict):
                 for skill_data in result.values():
                     if not isinstance(skill_data, dict):
                         continue
@@ -127,9 +120,9 @@ def create_supervisor_graph(neo4j, chroma, openai_client):
     from src.agent.consensus import create_consensus_node
     from src.agent.critic import create_critic_node
 
-    gap_tools = create_tools(neo4j, chroma)
-    coach_tools = create_coach_tools(chroma)
-    call_model, generate_report = create_nodes(gap_tools, neo4j, chroma)
+    gap_tools = create_tools(neo4j)
+    coach_tools = create_coach_tools(neo4j)
+    call_model, generate_report = create_nodes(gap_tools, neo4j)
     coach_call_model, finalize_coach = create_coach_nodes(coach_tools)
     tools_node = _make_tools_node(gap_tools)
     coach_tools_node = _make_coach_tools_node(coach_tools)

@@ -1,14 +1,16 @@
-# 에이전트가 사용하는 툴 정의 — Neo4j/Chroma 클라이언트를 클로저로 캡처
+# 에이전트가 사용하는 툴 정의 — Neo4j 클라이언트를 클로저로 캡처
 from __future__ import annotations
 
 import os
+import re
 from typing import TYPE_CHECKING, Annotated
 
 from langchain_core.tools import tool
 from langgraph.types import interrupt
 
+from src.agent.evaluators.github_eval import _keywords_for, _word_match
+
 if TYPE_CHECKING:
-    from src.storage.chroma_client import ChromaClient
     from src.storage.neo4j_client import Neo4jClient
 
 # 적합도는 '핵심 필수' 스킬만 기준으로 — 직군에서 가장 자주 요구되는(빈도 상위) REQUIRES N개.
@@ -29,7 +31,16 @@ RETURN s.name AS skill, r.confidence AS confidence, r.evidence AS evidence
 """
 
 
-def create_tools(neo4j: "Neo4jClient", chroma: "ChromaClient") -> list:
+def _evidence_sentence(skill: str, text: str) -> str:
+    """텍스트에서 스킬 키워드가 든 문장을 근거로. 없으면 앞부분."""
+    kws = _keywords_for(skill)
+    for sent in re.split(r"[.\n•]", text or ""):
+        if any(_word_match(kw, sent.lower()) for kw in kws):
+            return sent.strip()[:300]
+    return (text or "").strip()[:300]
+
+
+def create_tools(neo4j: "Neo4jClient") -> list:
     """Gap 에이전트용 툴 목록 생성."""
 
     @tool
@@ -99,88 +110,25 @@ def create_tools(neo4j: "Neo4jClient", chroma: "ChromaClient") -> list:
             return {"error": str(e)}
 
     @tool
-    def vector_search(
-        query: Annotated[str, "검색할 내용 (예: 'LangGraph production RAG experience')"],
-        section_type: Annotated[str, "검색 범위: 'required', 'preferred', 'bullet', 또는 빈 문자열(전체)"],
-    ) -> list[dict]:
-        """Chroma에서 실제 공고 텍스트를 검색해 스킬 요구 수준·맥락의 근거를 가져온다."""
-        try:
-            results = chroma.search(
-                query=query,
-                n_results=3,
-                section_type=section_type if section_type else None,
-            )
-            if not results:
-                return [{"note": f"'{query}' 관련 공고 텍스트 없음. 다음 스킬로 넘어가세요.", "skip": True}]
-            return [
-                {
-                    "source_id": r["source_id"],
-                    "job_title": r["job_title"],
-                    "company": r["company"],
-                    "section_type": r["section_type"],
-                    "text": r["original_text"][:400],
-                }
-                for r in results
-            ]
-        except Exception as e:
-            return [{"error": str(e)}]
-
-    @tool
     def verify_skills(
         skill_names: Annotated[list[str], "근거를 확인할 부족 스킬 목록 (최대 5개)"],
     ) -> dict:
-        """여러 부족 스킬의 공고 근거를 한 번에 조회한다.
-
-        각 스킬에 대해:
-        1. Neo4j에서 해당 스킬을 REQUIRES하는 공고 ID를 조회
-        2. Chroma에서 해당 공고의 요건 텍스트를 직접 fetch (유사도 검색 아님)
-        3. Chroma에 청크가 없으면 BM25 키워드 exact match로 fallback
-        """
+        """여러 부족 스킬의 공고 근거를 한 번에 조회한다(Neo4j 요건 원문 기반)."""
         results: dict = {}
         try:
             for skill in skill_names[:5]:
                 posting_ids = neo4j.get_postings_requiring_skill(skill, limit=3)
-
+                evidence = []
                 if posting_ids:
-                    chunks = chroma.search(
-                        skill,
-                        n_results=2,
-                        source_ids=posting_ids,
-                        section_type="required",
-                    )
-                    if not chunks:
-                        chunks = chroma.search(skill, n_results=2, source_ids=posting_ids)
-                    if chunks:
-                        results[skill] = {
-                            "method": "neo4j_guided",
-                            "posting_count": len(posting_ids),
-                            "evidence": [
-                                {
-                                    "source_id": c["source_id"],
-                                    "company": c["company"],
-                                    "text": c["original_text"][:300],
-                                }
-                                for c in chunks
-                            ],
-                        }
-                        continue
-
-                chunks = chroma.search(skill, n_results=2, section_type="required")
-                if chunks:
-                    results[skill] = {
-                        "method": "keyword_fallback",
-                        "posting_count": len(chunks),
-                        "evidence": [
-                            {
-                                "source_id": c["source_id"],
-                                "company": c["company"],
-                                "text": c["original_text"][:300],
-                            }
-                            for c in chunks
-                        ],
-                    }
+                    for s in neo4j.get_posting_sections(posting_ids):
+                        text = f"{s.get('required_section') or ''} {s.get('preferred_section') or ''}"
+                        sent = _evidence_sentence(skill, text)
+                        if sent:
+                            evidence.append({"source_id": s["source_id"], "company": s.get("company") or "", "text": sent})
+                if evidence:
+                    results[skill] = {"method": "neo4j_text", "posting_count": len(posting_ids), "evidence": evidence}
                 else:
-                    results[skill] = {"method": "graph_only", "posting_count": 0, "evidence": []}
+                    results[skill] = {"method": "graph_only", "posting_count": len(posting_ids), "evidence": []}
         except Exception as e:
             return {"error": str(e)}
         return results
@@ -254,11 +202,11 @@ def create_tools(neo4j: "Neo4jClient", chroma: "ChromaClient") -> list:
         answer: str = interrupt({"question": question})
         return answer
 
-    return [gap_analysis, verify_skills, vector_search, skill_unlock, posting_trend,
+    return [gap_analysis, verify_skills, skill_unlock, posting_trend,
             market_insights, graph_query, ask_human]
 
 
-def create_coach_tools(chroma: "ChromaClient") -> list:
+def create_coach_tools(neo4j: "Neo4jClient") -> list:
     """Coach 에이전트 전용 툴 목록 생성."""
 
     @tool
@@ -272,21 +220,15 @@ def create_coach_tools(chroma: "ChromaClient") -> list:
         이 툴은 데이터만 반환하며, 판단은 하지 않는다.
         """
         try:
-            results = chroma.search(skill, n_results=2, section_type="required")
-            if not results:
-                return {
-                    "skill": skill,
-                    "evidence": "",
-                    "company": "",
-                    "note": "해당 스킬의 공고 텍스트 없음 — 제안을 더 일반적으로 작성하세요.",
-                }
-            return {
-                "skill": skill,
-                "evidence": results[0]["original_text"][:400],
-                "company": results[0].get("company", ""),
-                "section_type": results[0].get("section_type", ""),
-            }
+            ids = neo4j.get_postings_requiring_skill(skill, limit=2)
+            if not ids:
+                return {"skill": skill, "evidence": "", "company": "",
+                        "note": "해당 스킬의 공고 텍스트 없음 — 제안을 더 일반적으로 작성하세요."}
+            secs = neo4j.get_posting_sections(ids)
+            s = secs[0] if secs else {}
+            text = (s.get("required_section") or s.get("preferred_section") or "")[:400]
+            return {"skill": skill, "evidence": text, "company": s.get("company") or ""}
         except Exception as e:
-            return {"skill": skill, "evidence": "", "error": str(e)}
+            return {"skill": skill, "evidence": "", "company": "", "error": str(e)}
 
     return [verify_suggestion]

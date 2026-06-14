@@ -8,8 +8,7 @@ def _make_gap_tool(rows):
     neo4j = MagicMock()
     neo4j.execute_query.return_value = rows
     neo4j.get_portfolio_demonstrated_skills.return_value = []
-    chroma = MagicMock()
-    tools = create_tools(neo4j, chroma)
+    tools = create_tools(neo4j)
     return next(t for t in tools if t.name == "gap_analysis")
 
 
