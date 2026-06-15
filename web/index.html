@@ -64,12 +64,17 @@
           <option>Architect</option>
         </select>
       </label>
-      <label>GitHub URL (선택)
-        <input type="url" id="github-url" placeholder="https://github.com/owner/repo">
-      </label>
-      <label>배포 URL (선택)
-        <input type="url" id="deploy-url" placeholder="https://my-service.example.com">
-      </label>
+      <label>GitHub URL (선택, 여러 개 가능)</label>
+      <div id="github-urls">
+        <div class="url-row"><input type="url" id="github-url" placeholder="https://github.com/owner/repo"></div>
+      </div>
+      <button type="button" id="add-github" class="add-btn">+ GitHub 추가</button>
+
+      <label>배포 URL (선택, 여러 개 가능)</label>
+      <div id="deploy-urls">
+        <div class="url-row"><input type="url" id="deploy-url" placeholder="https://my-service.example.com"></div>
+      </div>
+      <button type="button" id="add-deploy" class="add-btn">+ 배포 추가</button>
       <button id="analyze-btn">분석 시작</button>
       <p id="analyze-msg" class="msg"></p>
     </section>

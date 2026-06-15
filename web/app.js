@@ -40,8 +40,8 @@ async function startAnalysis() {
   const body = {
     report_id: state.reportId,
     job_family: $("job-family").value,
-    github_url: $("github-url").value || null,
-    deploy_url: $("deploy-url").value || null,
+    github_urls: collectUrls("github-urls"),
+    deploy_urls: collectUrls("deploy-urls"),
   };
   setMsg($("analyze-msg"), "");
   try {
@@ -149,6 +149,28 @@ function renderReport(d) {
     <p style="margin-top:16px"><a href="/observe?report_id=${encodeURIComponent(state.reportId)}&tab=workflow">→ 이 분석의 실행 과정 보기</a></p>
   `;
 }
+
+// URL 입력칸 수집·추가
+function collectUrls(containerId) {
+  return Array.from(document.querySelectorAll(`#${containerId} input`))
+    .map((i) => i.value.trim()).filter(Boolean);
+}
+function addUrlField(containerId, placeholder) {
+  const row = document.createElement("div");
+  row.className = "url-row";
+  const input = document.createElement("input");
+  input.type = "url";
+  input.placeholder = placeholder;
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "url-del";
+  del.textContent = "×";
+  del.addEventListener("click", () => row.remove());
+  row.append(input, del);
+  document.getElementById(containerId).appendChild(row);
+}
+$("add-github").addEventListener("click", () => addUrlField("github-urls", "https://github.com/owner/repo"));
+$("add-deploy").addEventListener("click", () => addUrlField("deploy-urls", "https://my-service.example.com"));
 
 $("upload-btn").addEventListener("click", uploadResume);
 $("analyze-btn").addEventListener("click", startAnalysis);
