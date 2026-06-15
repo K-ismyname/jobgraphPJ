@@ -105,3 +105,10 @@ h3 { margin:18px 0 6px; font-size:.95rem; }
   .footer-inner { flex-direction:column; gap:8px; text-align:center; }
   .footer-links a { margin:0 7px; }
 }
+/* ── 관측 흐름 띠·배지 ── */
+.flow-band { background:var(--bg-accent); border:1px solid var(--line); border-radius:10px;
+  padding:12px 14px; margin-bottom:16px; font-size:.9rem; font-weight:600; color:var(--accent);
+  overflow-x:auto; white-space:nowrap; }
+.flow-band.muted { background:#fff; color:var(--muted); font-weight:400; }
+.badge-num { display:inline-block; margin-left:6px; padding:1px 8px; border-radius:999px;
+  background:#eef2ff; color:var(--accent); font-size:.72rem; font-weight:600; vertical-align:middle; }
