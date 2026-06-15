@@ -36,3 +36,21 @@ def test_capability_evidence_grades():
     by_cap = {e["capability"]: e["tools"] for e in ev}
     assert by_cap["backend_fw"][0] == {"skill": "Spring", "verification": "Verified"}
     assert by_cap["cloud"][0] == {"skill": "AWS", "verification": "Claimed"}
+
+
+from src.analysis.capability import skill_overlap
+
+
+def test_skill_overlap_normalizes_and_counts():
+    # React.js→React 정규화로 직군 풀의 "React"와 일치, 이력서 원형을 반환
+    count, matched = skill_overlap(["React.js", "Python"], ["React", "Java"])
+    assert count == 1
+    assert matched == ["React.js"]
+
+
+def test_skill_overlap_dedup_and_empty():
+    assert skill_overlap([], ["SQL"]) == (0, [])
+    # 정규화상 같은 스킬(SQL/sql)은 한 번만 집계
+    count, matched = skill_overlap(["SQL", "sql"], ["SQL"])
+    assert count == 1
+    assert matched == ["SQL"]

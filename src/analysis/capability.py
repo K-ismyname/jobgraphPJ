@@ -61,6 +61,19 @@ def skills_to_capabilities(skills: list[str]) -> set[str]:
     return caps
 
 
+def skill_overlap(resume_skills: list[str], family_skills: list[str]) -> tuple[int, list[str]]:
+    """이력서 스킬과 직군 스킬 풀의 교집합(정규화 후). (개수, 일치한 이력서 원형 목록)."""
+    fam_norm = {normalize_skill(s).lower() for s in family_skills}
+    matched: list[str] = []
+    seen: set[str] = set()
+    for s in resume_skills:
+        key = normalize_skill(s).lower()
+        if key in fam_norm and key not in seen:
+            seen.add(key)
+            matched.append(s)
+    return len(matched), matched
+
+
 _CORE_QUERY = """
 MATCH (:JobFamily {name: $job_family})<-[:INSTANCE_OF]-(jp)-[:REQUIRES]->(s:Skill)
 RETURN s.name AS skill, count(DISTINCT jp) AS w
