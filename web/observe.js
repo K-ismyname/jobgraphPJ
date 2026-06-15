@@ -125,7 +125,7 @@ function stageData(key, t, report) {
   if (key === "fit") {
     const cf = report.capability_fit;
     if (!cf) return "역량 정보 없음";
-    const rec = (report.recommended_families || []).slice(0, 3).map((r) => `${esc(r.job_family)} ${Math.round((r.fit || 0) * 100)}%`).join(" · ");
+    const rec = (report.recommended_families || []).slice(0, 3).map((r) => `${esc(r.job_family)} ${r.matched_count}개`).join(" · ");
     return `핵심 역량 ${(cf.met || []).length}/${(cf.met || []).length + (cf.unmet || []).length} 충족 (${(cf.met || []).map(esc).join(", ")})<br>맞는 직군: ${rec}`;
   }
   if (key === "critic")

@@ -108,7 +108,8 @@ function renderCapability(d) {
     .map((e) => `<div class="cap-ev">${esc(e.capability)}: ${(e.tools || []).map((t) => `${esc(t.skill)}(${esc(t.verification)})`).join(", ")}</div>`)
     .join("");
   const rec = (d.recommended_families || [])
-    .map((r) => `<div class="fam-row"><span>${esc(r.job_family)}</span><span>${Math.round((r.fit || 0) * 100)}%</span></div>`)
+    .map((r) => `<div class="fam-row"><span>${esc(r.job_family)}</span><span>${r.matched_count}개 일치</span></div>`
+      + ((r.matched_skills || []).length ? `<div class="cap-ev">${(r.matched_skills || []).map(esc).join(", ")}</div>` : ""))
     .join("");
   return `
     <h3>${esc(cf.job_family || "")} 핵심 역량 ${metN}/${totalN} 충족</h3>
