@@ -4,6 +4,49 @@ const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
   .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 if (window.mermaid) mermaid.initialize({ startOnLoad: false });
 
+// report.trace에서 단계별 데이터 변화를 한 줄 요약
+function flowSummary(report) {
+  const t = report.trace || {};
+  const extracted = new Set((t.evaluators || []).flatMap((e) => (e.skills || []).map((s) => s.skill))).size;
+  const cons = (t.consensus && t.consensus.skills) || [];
+  const verified = cons.filter((s) => s.verification === "Verified").length;
+  const cf = report.capability_fit || {};
+  const met = (cf.met || []).length, unmet = (cf.unmet || []).length;
+  const corrected = (t.critic && t.critic.corrected) || 0;
+  const suggestions = (t.coach && t.coach.suggestion_count) || 0;
+  return `스킬 ${extracted} 추출 → 합의 ${cons.length}(Verified ${verified}) → 부족 역량 ${unmet} → 적합도 ${met}/${met + unmet} → 교정 ${corrected} → 제안 ${suggestions}`;
+}
+
+// 단계 카드 헤더용 수치 배지 목록
+function stageBadges(key, report) {
+  const t = report.trace || {};
+  if (key === "evaluators") {
+    const ev = t.evaluators || [];
+    const sk = new Set(ev.flatMap((e) => (e.skills || []).map((s) => s.skill))).size;
+    return [`소스 ${ev.length}`, `스킬 ${sk}`];
+  }
+  if (key === "consensus") {
+    const c = (t.consensus && t.consensus.skills) || [];
+    const cnt = (v) => c.filter((s) => s.verification === v).length;
+    return [`Verified ${cnt("Verified")}`, `Corroborated ${cnt("Corroborated")}`, `Claimed ${cnt("Claimed")}`];
+  }
+  if (key === "gap_loop") {
+    const g = t.gap_loop || {};
+    return [`반복 ${g.iterations || 0}회`, `도구 ${(g.tool_calls || []).length}`];
+  }
+  if (key === "fit") {
+    const cf = report.capability_fit || {};
+    const m = (cf.met || []).length, u = (cf.unmet || []).length;
+    return [`적합도 ${m}/${m + u}`];
+  }
+  if (key === "critic") {
+    const cr = t.critic || {};
+    return [`제거 ${(cr.removed_skills || []).length}`, `교정 ${cr.corrected || 0}`];
+  }
+  if (key === "coach") return [`제안 ${(t.coach && t.coach.suggestion_count) || 0}`];
+  return [];
+}
+
 // ── 워크플로우 = 시스템 설명 + (분석 있으면) 실제 예시 ──
 async function loadWorkflow() {
   let g;
@@ -27,13 +70,26 @@ async function loadWorkflow() {
 }
 
 async function renderWorkflow(g, report) {
+  // 흐름 요약 띠
+  let band;
+  if (report && report.trace) {
+    band = `<div class="flow-band">${esc(flowSummary(report))}</div>`;
+  } else {
+    band = `<div class="flow-band muted">분석을 실행하면 실제 데이터 흐름이 채워집니다.</div>`;
+  }
+
+  // 다이어그램 (실행 경로 강조 + 미실행 dim)
   let diagram = "";
   if (g.mermaid && window.mermaid) {
     let src = g.mermaid;
-    const ex = report && report.trace && report.trace.executed_nodes;
-    if (ex && ex.length) {
+    const ex = (report && report.trace && report.trace.executed_nodes) || [];
+    if (ex.length) {
+      const allNodes = (g.stages || []).flatMap((s) => s.nodes || []);
+      const dim = allNodes.filter((n) => !ex.includes(n));
       src += "\n" + ex.map((n) => `class ${n} executed;`).join("\n");
-      src += "\nclassDef executed fill:#eef2ff,stroke:#4f46e5,stroke-width:2px;";
+      if (dim.length) src += "\n" + dim.map((n) => `class ${n} dimmed;`).join("\n");
+      src += "\nclassDef executed fill:#4f46e5,color:#fff,stroke:#4f46e5,stroke-width:2px;";
+      src += "\nclassDef dimmed fill:#f3f4f6,color:#9ca3af,stroke:#e5e7eb;";
     }
     try {
       const { svg } = await mermaid.render("wfgraph", src);
@@ -42,15 +98,19 @@ async function renderWorkflow(g, report) {
       diagram = "<p class='prio'>다이어그램 로드 실패</p>";
     }
   }
+
   const cards = (g.stages || []).map((st) => renderStage(st, report)).join("");
-  $("workflow").innerHTML = diagram + cards;
+  $("workflow").innerHTML = band + diagram + cards;
 }
 
 function renderStage(st, report) {
   const t = report && report.trace;
+  const badges = (report && t)
+    ? stageBadges(st.key, report).map((b) => `<span class="badge-num">${esc(b)}</span>`).join("")
+    : "";
   let data = "<div class='cap-ev'>분석하면 이 단계의 실제 처리 결과가 표시됩니다.</div>";
   if (report && t) data = `<div class="stage-data">${stageData(st.key, t, report)}</div>`;
-  return `<div class="step"><h4>${esc(st.title)}</h4><p class="cap-ev">${esc(st.description)}</p>${data}</div>`;
+  return `<div class="step"><h4>${esc(st.title)} ${badges}</h4><p class="cap-ev">${esc(st.description)}</p>${data}</div>`;
 }
 
 function stageData(key, t, report) {
