@@ -133,15 +133,3 @@ class ReportResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     detail: str | None = None
-
-
-# ── Stats Response ───────────────────────────────────────────────
-class JobFamilyStat(BaseModel):
-    name: str
-    posting_count: int
-    skill_count: int
-
-
-class StatsResponse(BaseModel):
-    job_families: list[JobFamilyStat]
-    totals: dict[str, int]          # postings, skills, relations
