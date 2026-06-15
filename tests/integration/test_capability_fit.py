@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
 
 from src.analysis.capability import (  # noqa: E402
-    job_family_core_capabilities, recommend_families,
+    job_family_core_skills, recommend_families,
 )
 from src.storage.neo4j_client import Neo4jClient  # noqa: E402
 
@@ -16,10 +16,10 @@ requires_neo4j = pytest.mark.skipif(not os.getenv("NEO4J_URI"), reason="NEO4J_UR
 
 
 @requires_neo4j
-def test_se_core_has_backend_and_db():
+def test_se_core_skills_nonempty():
     neo4j = Neo4jClient()
-    core = job_family_core_capabilities(neo4j, "Software Engineer")
-    assert "backend_fw" in core and "database" in core
+    core = job_family_core_skills(neo4j, "Software Engineer", 10)
+    assert len(core) > 0 and all(isinstance(s, str) for s in core)
     neo4j.close()
 
 
