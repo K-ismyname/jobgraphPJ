@@ -29,5 +29,5 @@ def test_resume_skills_passes_guard():
 
 def test_github_only_passes_guard():
     g = _FakeGraph()
-    run_supervisor(g, job_family="AI Engineer", owner="김지원", github_url="https://github.com/x")
+    run_supervisor(g, job_family="AI Engineer", owner="김지원", github_urls=["https://github.com/x"])
     assert g.invoked is True

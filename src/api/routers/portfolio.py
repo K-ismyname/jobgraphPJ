@@ -88,7 +88,7 @@ async def analyze_portfolio(
         _run_analysis,
         report_id=req.report_id, resume_text=uploads[req.report_id],
         job_family=req.job_family, owner_name=req.owner_name,
-        github_url=req.github_url, deploy_url=req.deploy_url,
+        github_urls=req.github_urls, deploy_urls=req.deploy_urls,
         graph=graph, neo4j=neo4j, reports=reports,
     )
     return AnalyzeAccepted(report_id=req.report_id, status="processing")
@@ -137,7 +137,7 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
 # ── 백그라운드 태스크 ──────────────────────────────────────────
 def _run_analysis(
     report_id: str, resume_text: str, job_family: str, owner_name: str | None,
-    github_url: str | None, deploy_url: str | None,
+    github_urls: list[str], deploy_urls: list[str],
     graph, neo4j: Neo4jClient, reports: dict,
 ) -> None:
     """업로드 이력서 + GitHub + 배포 URL → v3 그래프 → 2축·검증 리포트."""
@@ -145,7 +145,7 @@ def _run_analysis(
     try:
         out = run_supervisor(
             graph, job_family=job_family, owner=owner,
-            resume_text=resume_text, github_url=github_url, deploy_url=deploy_url,
+            resume_text=resume_text, github_urls=github_urls, deploy_urls=deploy_urls,
             neo4j=neo4j,
         )
         if out.get("error"):

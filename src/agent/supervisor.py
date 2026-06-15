@@ -209,10 +209,10 @@ def run_supervisor(
     owner: str,
     pdf_path: str | None = None,
     resume_text: str | None = None,
-    github_url: str | None = None,
+    github_urls: list[str] | None = None,
     resume_skills: list[str] | None = None,
     portfolio_path: str | None = None,
-    deploy_url: str | None = None,
+    deploy_urls: list[str] | None = None,
     neo4j: "Neo4jClient | None" = None,
 ) -> dict:
     """Supervisor 그래프를 실행하고 final_report를 반환한다.
@@ -224,7 +224,7 @@ def run_supervisor(
       4. 없음 — 입력 가드가 차단 (분석할 소스 없음)
     """
     # 입력 가드: 분석 재료가 하나도 없으면 그래프를 돌리지 않고 안내 반환
-    if not (resume_skills or pdf_path or resume_text or github_url or portfolio_path or deploy_url):
+    if not (resume_skills or pdf_path or resume_text or github_urls or portfolio_path or deploy_urls):
         return {
             "error": "no_input",
             "message": "분석하려면 이력서 스킬·PDF·이력서 텍스트·GitHub 중 최소 하나가 필요합니다.",
@@ -246,8 +246,8 @@ def run_supervisor(
         "owner": owner,
         "pdf_path": pdf_path,
         "portfolio_path": portfolio_path,
-        "deploy_url": deploy_url,
-        "github_url": github_url,
+        "deploy_urls": deploy_urls or [],
+        "github_urls": github_urls or [],
         "resume_skills": resume_skills or [],
         "resume_text": resume_text,
         "messages": [],
@@ -296,8 +296,8 @@ def run_analysis(
         "owner": owner,
         "pdf_path": None,
         "portfolio_path": None,
-        "deploy_url": None,
-        "github_url": None,
+        "deploy_urls": [],
+        "github_urls": [],
         "resume_skills": portfolio_skills or [],
         "resume_text": None,
         "messages": [],
