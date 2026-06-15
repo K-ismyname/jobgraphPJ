@@ -37,7 +37,6 @@ _JOB_FAMILIES = {
     'Frontend Engineer': ['frontend','front end','front-end'],
     'DevOps/SRE':        ['devops','sre','site reliability','platform engineer','infrastructure engineer','cloud engineer'],
     'Security Engineer': ['security engineer','appsec','cybersecurity','infosec'],
-    'Architect':         ['architect','solutions architect'],
 }
 
 def _job_family(title: str) -> str | None:
