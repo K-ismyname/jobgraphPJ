@@ -101,20 +101,16 @@ function renderCapability(d) {
   const cf = d.capability_fit;
   if (!cf) return "";
   const metN = (cf.met || []).length;
-  const totalN = metN + (cf.unmet || []).length;
-  const met = (cf.met || []).map((c) => `<span class="cap met">${esc(c)} ✓</span>`).join("");
-  const unmet = (cf.unmet || []).map((c) => `<span class="cap unmet">${esc(c)} ✗</span>`).join("");
-  const ev = (d.capability_evidence || [])
-    .map((e) => `<div class="cap-ev">${esc(e.capability)}: ${(e.tools || []).map((t) => `${esc(t.skill)}(${esc(t.verification)})`).join(", ")}</div>`)
-    .join("");
+  const met = (cf.met || []).map((m) =>
+    `<span class="cap met">${esc(m.skill)} ✓ <span class="badge ${m.verification}">${esc(m.verification)}</span></span>`).join("");
+  const unmet = (cf.unmet || []).map((s) => `<span class="cap unmet">${esc(s)} ✗</span>`).join("");
   const rec = (d.recommended_families || [])
     .map((r) => `<div class="fam-row"><span>${esc(r.job_family)}</span><span>${r.matched_count}개 일치</span></div>`
       + ((r.matched_skills || []).length ? `<div class="cap-ev">${(r.matched_skills || []).map(esc).join(", ")}</div>` : ""))
     .join("");
   return `
-    <h3>${esc(cf.job_family || "")} 핵심 역량 ${metN}/${totalN} 충족</h3>
+    <h3>${esc(cf.job_family || "")} 핵심 스킬 ${metN}/${cf.total || 0} 충족</h3>
     <div>${met}${unmet}</div>
-    ${ev ? `<h3>역량별 근거 (검증 등급)</h3>${ev}` : ""}
     ${rec ? `<h3>당신에게 맞는 직군</h3>${rec}` : ""}
   `;
 }
