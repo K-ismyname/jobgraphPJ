@@ -88,23 +88,15 @@ def _skills_from_sources(
 
 def create_github_evaluator(neo4j: "Neo4jClient") -> Callable[["AppState"], dict]:
     """GitHub 평가자 팩토리. 대상 직군의 스킬 집합을 레포 코드 근거로 검증한다."""
-    def evaluate(state: "AppState") -> dict:
-        url = state.get("github_url")
-        if not url:
-            return {"github_eval": {"skills": []}}
+    def _eval_one(url: str, vocab) -> list:
         try:
             owner, repo = parse_github_repo(url)
         except ValueError as e:
             print(f"[github_eval] URL 파싱 실패: {e}")
-            return {"github_eval": {"skills": []}}
+            return []
         if not repo:
             print(f"[github_eval] 레포 미지정 (계정 주소만): {url}")
-            return {"github_eval": {"skills": []}}
-
-        vocab = neo4j.get_job_family_skills(state.get("job_family") or "")
-        if not vocab:
-            print(f"[github_eval] 직군 스킬 어휘 없음 (job_family={state.get('job_family')!r})")
-            return {"github_eval": {"skills": []}}
+            return []
 
         token = os.getenv("GITHUB_TOKEN")
         headers = {"Accept": "application/vnd.github+json"}
@@ -120,7 +112,7 @@ def create_github_evaluator(neo4j: "Neo4jClient") -> Callable[["AppState"], dict
             languages = lang_resp.json()
         except Exception as e:
             print(f"[github_eval] GitHub API 실패: {e}")
-            return {"github_eval": {"skills": []}}
+            return []
         lang_text = " ".join(languages.keys())
 
         # README (없을 수 있음)
@@ -149,7 +141,26 @@ def create_github_evaluator(neo4j: "Neo4jClient") -> Callable[["AppState"], dict
             print(f"[github_eval] 의존성 파일 조회 실패: {e}")
         manifest_text = " ".join(manifest_parts)
 
-        skills = _skills_from_sources(owner, repo, lang_text, readme_text, manifest_text, vocab)
-        return {"github_eval": {"skills": skills}}
+        return _skills_from_sources(owner, repo, lang_text, readme_text, manifest_text, vocab)
+
+    def evaluate(state: "AppState") -> dict:
+        urls = state.get("github_urls") or []
+        if not urls:
+            return {"github_eval": {"skills": []}}
+        vocab = neo4j.get_job_family_skills(state.get("job_family") or "")
+        if not vocab:
+            print(f"[github_eval] 직군 스킬 어휘 없음 (job_family={state.get('job_family')!r})")
+            return {"github_eval": {"skills": []}}
+        merged: list = []
+        seen: set = set()
+        for url in urls:
+            for s in _eval_one(url, vocab):
+                key = s.get("skill") if isinstance(s, dict) else s
+                if key not in seen:
+                    seen.add(key)
+                    merged.append(s)
+        return {"github_eval": {"skills": merged}}
+
+    return evaluate
 
     return evaluate
