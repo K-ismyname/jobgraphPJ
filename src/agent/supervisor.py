@@ -265,18 +265,16 @@ def run_supervisor(
     final = result.get("final_report") or {}
     if neo4j and final and not final.get("error"):
         from src.analysis.capability import (
-            capability_evidence, capability_fit, job_family_core_capabilities,
-            recommend_families, skills_to_capabilities,
+            job_family_core_skills, recommend_families, skill_fit,
         )
         owned: list[dict] = []
         for k in ("resume_eval", "github_eval", "portfolio_eval", "deploy_eval"):
             owned += (result.get(k) or {}).get("skills", [])
         names = [it["skill"] for it in owned if isinstance(it, dict) and it.get("skill")]
-        resume_caps = skills_to_capabilities(names)
-        core = job_family_core_capabilities(neo4j, job_family)
-        final["capability_fit"] = {"job_family": job_family, "core": core, **capability_fit(resume_caps, core)}
+        core_skills = job_family_core_skills(neo4j, job_family, 10)
+        final["capability_fit"] = {"job_family": job_family,
+                                   **skill_fit(names, core_skills, result.get("consensus") or {})}
         final["recommended_families"] = recommend_families(neo4j, names, neo4j.list_job_families())[:3]
-        final["capability_evidence"] = capability_evidence(owned, result.get("consensus") or {}, set(final["capability_fit"]["met"]))
     return final
 
 
