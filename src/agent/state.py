@@ -23,8 +23,8 @@ class AppState(TypedDict):
     owner: str
     pdf_path: str | None
     portfolio_path: str | None   # 포트폴리오 PDF 경로 (멀티모달 평가자 입력)
-    github_url: str | None
-    deploy_url: str | None       # 배포 URL (작동 실증 평가자 입력)
+    github_urls: list[str]
+    deploy_urls: list[str]       # 배포 URL 목록 (작동 실증 평가자 입력)
 
     # ── Resume Agent ─────────────────────────────────────────────
     resume_skills: list[str]

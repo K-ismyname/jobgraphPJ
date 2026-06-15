@@ -4,11 +4,11 @@ from src.api.schemas import AnalyzeRequest, ReportResponse, VerificationItem, Su
 
 def test_analyze_request_v3_fields():
     req = AnalyzeRequest(report_id="r1", job_family="Software Engineer",
-                         github_url="https://github.com/x/y", deploy_url="https://x.com")
+                         github_urls=["https://github.com/x/y"], deploy_urls=["https://x.com"])
     assert req.job_family == "Software Engineer"
-    assert req.github_url and req.deploy_url
+    assert req.github_urls == ["https://github.com/x/y"] and req.deploy_urls == ["https://x.com"]
     req2 = AnalyzeRequest(report_id="r1", job_family="Software Engineer")
-    assert req2.github_url is None and req2.deploy_url is None
+    assert req2.github_urls == [] and req2.deploy_urls == []
 
 
 def test_report_response_v3_shape():

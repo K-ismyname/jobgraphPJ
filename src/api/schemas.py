@@ -27,8 +27,8 @@ class AnalyzeRequest(BaseModel):
     report_id: str
     job_family: str = "AI/LLM Engineer"   # 유효 직군명 (Neo4j JobFamily)
     owner_name: str | None = None         # None이면 PDF에서 추출한 이름 사용
-    github_url: str | None = None         # 선택 — 코드 검증
-    deploy_url: str | None = None         # 선택 — 작동 실증
+    github_urls: list[str] = Field(default_factory=list)   # 선택 — 코드 검증 (여러 개)
+    deploy_urls: list[str] = Field(default_factory=list)   # 선택 — 작동 실증 (여러 개)
 
 
 # ── Jobs Response ───────────────────────────────────────────────
