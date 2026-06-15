@@ -275,7 +275,7 @@ def run_supervisor(
         resume_caps = skills_to_capabilities(names)
         core = job_family_core_capabilities(neo4j, job_family)
         final["capability_fit"] = {"job_family": job_family, "core": core, **capability_fit(resume_caps, core)}
-        final["recommended_families"] = recommend_families(neo4j, resume_caps, neo4j.list_job_families())[:5]
+        final["recommended_families"] = recommend_families(neo4j, names, neo4j.list_job_families())[:3]
         final["capability_evidence"] = capability_evidence(owned, result.get("consensus") or {}, set(final["capability_fit"]["met"]))
     return final
 

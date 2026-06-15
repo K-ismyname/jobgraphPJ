@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
 
 from src.analysis.capability import (  # noqa: E402
-    job_family_core_capabilities, recommend_families, skills_to_capabilities,
+    job_family_core_capabilities, recommend_families,
 )
 from src.storage.neo4j_client import Neo4jClient  # noqa: E402
 
@@ -26,8 +26,8 @@ def test_se_core_has_backend_and_db():
 @requires_neo4j
 def test_backend_resume_ranks_se_above_ai():
     neo4j = Neo4jClient()
-    caps = skills_to_capabilities(["Java", "Spring", "MariaDB", "Docker", "AWS", "Jenkins"])
-    rec = recommend_families(neo4j, caps, neo4j.list_job_families())
+    skills = ["Java", "Spring", "MariaDB", "Docker", "AWS", "Jenkins"]
+    rec = recommend_families(neo4j, skills, neo4j.list_job_families())
     rank = {r["job_family"]: i for i, r in enumerate(rec)}
     assert rank["Software Engineer"] < rank["AI/LLM Engineer"]
     neo4j.close()

@@ -103,13 +103,23 @@ def capability_fit(resume_caps: set[str], core_caps: list[str]) -> dict:
     }
 
 
-def recommend_families(neo4j: "Neo4jClient", resume_caps: set[str], families: list[str]) -> list[dict]:
-    """직군별 충족률을 계산해 내림차순 정렬 — 역방향 직군 추천."""
+_FAMILY_SKILLS_QUERY = """
+MATCH (:JobFamily {name: $job_family})<-[:INSTANCE_OF]-(jp)-[:REQUIRES]->(s:Skill)
+RETURN s.name AS skill, count(DISTINCT jp) AS w
+ORDER BY w DESC
+LIMIT $n
+"""
+
+
+def recommend_families(neo4j: "Neo4jClient", resume_skills: list[str], families: list[str], n: int = 25) -> list[dict]:
+    """직군별 빈도 상위 n개 스킬 풀과 이력서 스킬의 교집합 개수로 추천 — 내림차순."""
     out = []
     for fam in families:
-        core = job_family_core_capabilities(neo4j, fam)
-        out.append({"job_family": fam, **capability_fit(resume_caps, core)})
-    return sorted(out, key=lambda x: -x["fit"])
+        rows = neo4j.execute_query(_FAMILY_SKILLS_QUERY, job_family=fam, n=n)
+        pool = [r["skill"] for r in rows]
+        count, matched = skill_overlap(resume_skills, pool)
+        out.append({"job_family": fam, "matched_count": count, "matched_skills": matched})
+    return sorted(out, key=lambda x: -x["matched_count"])
 
 
 def capability_evidence(owned: list[dict], consensus: dict, met_caps: set[str]) -> list[dict]:
