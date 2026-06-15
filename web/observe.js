@@ -1,22 +1,10 @@
-// 관측 페이지 — 워크플로우 추적(report_id의 trace) + 데이터 현황(/stats)
+// 관측 페이지 — 분석 워크플로우 추적(report_id의 trace 기반)
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
   .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 if (window.mermaid) mermaid.initialize({ startOnLoad: false });
 
-// 탭 전환
-function showTab(name) {
-  const wf = name === "workflow";
-  $("panel-workflow").classList.toggle("hidden", !wf);
-  $("panel-data").classList.toggle("hidden", wf);
-  $("tab-workflow").classList.toggle("active", wf);
-  $("tab-data").classList.toggle("active", !wf);
-  if (wf) loadWorkflow(); else loadData();
-}
-$("tab-workflow").addEventListener("click", () => showTab("workflow"));
-$("tab-data").addEventListener("click", () => showTab("data"));
-
-// ── 워크플로우 탭 = 시스템 설명 + (분석 있으면) 실제 예시 ──
+// ── 워크플로우 = 시스템 설명 + (분석 있으면) 실제 예시 ──
 async function loadWorkflow() {
   let g;
   try {
@@ -87,32 +75,5 @@ function stageData(key, t, report) {
   return "";
 }
 
-// ── 데이터 탭 ──
-let dataLoaded = false;
-async function loadData() {
-  if (dataLoaded) return;
-  dataLoaded = true;
-  try {
-    const res = await fetch("/stats");
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const d = await res.json();
-    const fams = (d.job_families || [])
-      .map((f) => `<div class="stat-row"><span>${esc(f.name)}</span>
-        <span>공고 ${f.posting_count} · 스킬 ${f.skill_count}</span></div>`).join("");
-    const tot = d.totals || {};
-    $("data").innerHTML = `
-      <h3>전체</h3>
-      <div class="stat-row"><span>공고</span><span>${tot.postings || 0}</span></div>
-      <div class="stat-row"><span>스킬</span><span>${tot.skills || 0}</span></div>
-      <div class="stat-row"><span>요구/우대 관계</span><span>${tot.relations || 0}</span></div>
-      <h3>직군별</h3>${fams}
-    `;
-  } catch (e) {
-    dataLoaded = false;
-    $("data").innerHTML = `<p class='msg error'>데이터 현황 불러오기 실패: ${esc(e.message)}</p>`;
-  }
-}
-
-// 진입 시: tab 쿼리로 초기 탭 결정. showTab이 해당 탭의 로더(loadWorkflow/loadData)를 호출한다.
-const initTab = new URLSearchParams(location.search).get("tab") === "data" ? "data" : "workflow";
-showTab(initTab);
+// 진입 시 워크플로우 로드
+loadWorkflow();
