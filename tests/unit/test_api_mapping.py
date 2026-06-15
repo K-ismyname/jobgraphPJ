@@ -50,11 +50,10 @@ def test_map_final_report_passes_capability():
         "gap": {"match_rate": 0.5},
         "verification": {"counts": {}, "skills": []},
         "coaching": {"summary": "s", "suggestions": []},
-        "capability_fit": {"job_family": "Software Engineer", "core": ["backend_fw"], "fit": 1.0, "met": ["backend_fw"], "unmet": []},
+        "capability_fit": {"job_family": "Software Engineer", "fit": 0.5, "total": 2,
+                           "met": [{"skill": "Java", "verification": "Verified"}], "unmet": ["SQL"]},
         "recommended_families": [{"job_family": "Software Engineer", "matched_count": 5, "matched_skills": ["Java", "Spring"]}],
-        "capability_evidence": [{"capability": "backend_fw", "tools": [{"skill": "Spring", "verification": "Verified"}]}],
     }
     resp = _map_final_report("rid", "owner", "Software Engineer", final)
-    assert resp.capability_fit["fit"] == 1.0
+    assert resp.capability_fit["fit"] == 0.5
     assert resp.recommended_families[0]["job_family"] == "Software Engineer"
-    assert resp.capability_evidence[0]["capability"] == "backend_fw"

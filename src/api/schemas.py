@@ -127,7 +127,6 @@ class ReportResponse(BaseModel):
     trace: dict | None = None
     capability_fit: dict | None = None
     recommended_families: list[dict] = Field(default_factory=list)
-    capability_evidence: list[dict] = Field(default_factory=list)
 
 
 class ErrorResponse(BaseModel):
