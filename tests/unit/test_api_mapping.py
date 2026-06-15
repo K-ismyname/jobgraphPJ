@@ -51,7 +51,7 @@ def test_map_final_report_passes_capability():
         "verification": {"counts": {}, "skills": []},
         "coaching": {"summary": "s", "suggestions": []},
         "capability_fit": {"job_family": "Software Engineer", "core": ["backend_fw"], "fit": 1.0, "met": ["backend_fw"], "unmet": []},
-        "recommended_families": [{"job_family": "Software Engineer", "fit": 1.0, "met": ["backend_fw"], "unmet": []}],
+        "recommended_families": [{"job_family": "Software Engineer", "matched_count": 5, "matched_skills": ["Java", "Spring"]}],
         "capability_evidence": [{"capability": "backend_fw", "tools": [{"skill": "Spring", "verification": "Verified"}]}],
     }
     resp = _map_final_report("rid", "owner", "Software Engineer", final)
