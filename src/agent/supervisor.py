@@ -98,11 +98,11 @@ def evaluator_dispatch(state: AppState) -> list[Send]:
     sends = []
     if state.get("resume_skills") or state.get("pdf_path") or state.get("resume_text"):
         sends.append(Send("resume_eval", state))
-    if state.get("github_url"):
+    if state.get("github_urls"):
         sends.append(Send("github_eval", state))
     if state.get("portfolio_path"):
         sends.append(Send("portfolio_eval", state))
-    if state.get("deploy_url"):
+    if state.get("deploy_urls"):
         sends.append(Send("deploy_eval", state))
     if not sends:
         sends.append(Send("resume_eval", state))   # 최소 하나 보장
