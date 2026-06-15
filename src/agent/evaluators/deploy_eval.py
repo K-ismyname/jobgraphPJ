@@ -38,25 +38,33 @@ def _skills_from_deploy(text: str, vocab: list[str]) -> list[dict]:
 
 def create_deploy_evaluator(neo4j: "Neo4jClient") -> Callable[["AppState"], dict]:
     """배포 URL 평가자 팩토리. 작동하는 배포에서 직군 스킬을 코드 외부 근거로 확인한다."""
-    def evaluate(state: "AppState") -> dict:
-        url = state.get("deploy_url")
-        if not url:
-            return {"deploy_eval": {"skills": []}}
-
-        vocab = neo4j.get_job_family_skills(state.get("job_family") or "")
-        if not vocab:
-            print(f"[deploy_eval] 직군 스킬 어휘 없음 (job_family={state.get('job_family')!r})")
-            return {"deploy_eval": {"skills": []}}
-
+    def _eval_one(url: str, vocab) -> list:
         try:
             resp = httpx.get(url, timeout=10, follow_redirects=True,
                              headers={"User-Agent": "Mozilla/5.0 (job-skill-analyzer)"})
             resp.raise_for_status()
         except Exception as e:
             print(f"[deploy_eval] URL fetch 실패 (미작동/접근불가): {e}")
-            return {"deploy_eval": {"skills": []}}
-
+            return []
         text = _build_text(resp.text, dict(resp.headers))
-        return {"deploy_eval": {"skills": _skills_from_deploy(text, vocab)}}
+        return _skills_from_deploy(text, vocab)
+
+    def evaluate(state: "AppState") -> dict:
+        urls = state.get("deploy_urls") or []
+        if not urls:
+            return {"deploy_eval": {"skills": []}}
+        vocab = neo4j.get_job_family_skills(state.get("job_family") or "")
+        if not vocab:
+            print(f"[deploy_eval] 직군 스킬 어휘 없음 (job_family={state.get('job_family')!r})")
+            return {"deploy_eval": {"skills": []}}
+        merged: list = []
+        seen: set = set()
+        for url in urls:
+            for s in _eval_one(url, vocab):
+                key = s.get("skill") if isinstance(s, dict) else s
+                if key not in seen:
+                    seen.add(key)
+                    merged.append(s)
+        return {"deploy_eval": {"skills": merged}}
 
     return evaluate

@@ -16,7 +16,7 @@ class _FakeNeo4j:
 
 def test_no_url_empty():
     node = create_deploy_evaluator(_FakeNeo4j(["React"]))
-    out = node({"deploy_url": None, "job_family": "Frontend Engineer"})
+    out = node({"deploy_urls": [], "job_family": "Frontend Engineer"})
     assert out["deploy_eval"]["skills"] == []
 
 
