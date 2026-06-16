@@ -128,7 +128,7 @@ def create_supervisor_graph(neo4j, openai_client):
     coach_tools_node = _make_coach_tools_node(coach_tools)
 
     resume_eval = create_resume_evaluator(openai_client)
-    github_eval = create_github_evaluator(neo4j)
+    github_eval = create_github_evaluator(neo4j, openai_client)
     portfolio_eval = create_portfolio_evaluator(openai_client)
     deploy_eval = create_deploy_evaluator(neo4j)
     consensus_node = create_consensus_node()

@@ -122,15 +122,15 @@ def _profile_one(openai, owner: str, repo: str, readme: str, description: str,
 
 def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["AppState"], dict]:
     """GitHub 평가자 팩토리. 대상 직군의 스킬 집합을 레포 코드 근거로 검증한다."""
-    def _eval_one(url: str, vocab) -> list:
+    def _eval_one(url: str, vocab) -> tuple[list, dict | None]:
         try:
             owner, repo = parse_github_repo(url)
         except ValueError as e:
             print(f"[github_eval] URL 파싱 실패: {e}")
-            return []
+            return [], None
         if not repo:
             print(f"[github_eval] 레포 미지정 (계정 주소만): {url}")
-            return []
+            return [], None
 
         token = os.getenv("GITHUB_TOKEN")
         headers = {"Accept": "application/vnd.github+json"}
@@ -146,8 +146,18 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
             languages = lang_resp.json()
         except Exception as e:
             print(f"[github_eval] GitHub API 실패: {e}")
-            return []
+            return [], None
         lang_text = " ".join(languages.keys())
+
+        # repo 메타 (description·topics)
+        description, topics = "", []
+        try:
+            meta = httpx.get(base, headers=headers, timeout=10).json()
+            if isinstance(meta, dict):
+                description = meta.get("description") or ""
+                topics = meta.get("topics") or []
+        except Exception as e:
+            print(f"[github_eval] repo 메타 조회 실패: {e}")
 
         # README (없을 수 있음)
         readme_text = ""
@@ -158,12 +168,14 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
         except Exception as e:
             print(f"[github_eval] README 조회 실패: {e}")
 
-        # 의존성/설정 파일 (루트만 확인)
+        # 루트 파일 구조 + 의존성/설정 파일
+        file_names: list = []
         manifest_parts: list[str] = []
         try:
             root = httpx.get(f"{base}/contents", headers=headers, timeout=10).json()
             if not isinstance(root, list):
                 root = []
+            file_names = [it["name"] for it in root]
             present = [it["name"] for it in root if it["name"].lower() in _ALL_MANIFESTS]
             for name in present:
                 manifest_parts.append(name)
@@ -175,25 +187,31 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
             print(f"[github_eval] 의존성 파일 조회 실패: {e}")
         manifest_text = " ".join(manifest_parts)
 
-        return _skills_from_sources(owner, repo, lang_text, readme_text, manifest_text, vocab)
+        skills = _skills_from_sources(owner, repo, lang_text, readme_text, manifest_text, vocab)
+        profile = _profile_one(openai, owner, repo, readme_text, description, topics, file_names, manifest_text)
+        return skills, profile
 
     def evaluate(state: "AppState") -> dict:
         urls = state.get("github_urls") or []
         if not urls:
-            return {"github_eval": {"skills": []}}
+            return {"github_eval": {"skills": [], "profiles": []}}
         vocab = neo4j.get_job_family_skills(state.get("job_family") or "")
         if not vocab:
             print(f"[github_eval] 직군 스킬 어휘 없음 (job_family={state.get('job_family')!r})")
-            return {"github_eval": {"skills": []}}
+            return {"github_eval": {"skills": [], "profiles": []}}
         merged: list = []
         seen: set = set()
+        profiles: list = []
         for url in urls:
-            for s in _eval_one(url, vocab):
+            skills, profile = _eval_one(url, vocab)
+            for s in skills:
                 key = s.get("skill") if isinstance(s, dict) else s
                 if key not in seen:
                     seen.add(key)
                     merged.append(s)
-        return {"github_eval": {"skills": merged}}
+            if profile:
+                profiles.append(profile)
+        return {"github_eval": {"skills": merged, "profiles": profiles}}
 
     return evaluate
 

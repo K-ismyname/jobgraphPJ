@@ -18,25 +18,25 @@ class _FakeNeo4j:
 
 
 def test_no_url_empty():
-    node = create_github_evaluator(_FakeNeo4j(["Java"]))
+    node = create_github_evaluator(_FakeNeo4j(["Java"]), None)
     out = node({"github_urls": [], "job_family": "Software Engineer"})
     assert out["github_eval"]["skills"] == []
 
 
 def test_invalid_url_empty():
-    node = create_github_evaluator(_FakeNeo4j(["Java"]))
+    node = create_github_evaluator(_FakeNeo4j(["Java"]), None)
     out = node({"github_urls": ["not-a-url"], "job_family": "Software Engineer"})
     assert out["github_eval"]["skills"] == []
 
 
 def test_account_url_only_empty():
-    node = create_github_evaluator(_FakeNeo4j(["Java"]))
+    node = create_github_evaluator(_FakeNeo4j(["Java"]), None)
     out = node({"github_urls": ["https://github.com/fastapi"], "job_family": "Software Engineer"})
     assert out["github_eval"]["skills"] == []
 
 
 def test_empty_vocab_empty():
-    node = create_github_evaluator(_FakeNeo4j([]))
+    node = create_github_evaluator(_FakeNeo4j([]), None)
     out = node({"github_urls": ["https://github.com/x/y"], "job_family": "Software Engineer"})
     assert out["github_eval"]["skills"] == []
 
