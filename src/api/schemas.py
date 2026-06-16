@@ -115,6 +115,7 @@ class VerificationItem(BaseModel):
 class ReportResponse(BaseModel):
     report_id: str
     status: Literal["processing", "done", "error"]
+    phase: str | None = None   # 진행 중 현재 단계 (status=processing일 때만 의미)
     owner: str
     job_family: str
     match_rate: float = 0.0
