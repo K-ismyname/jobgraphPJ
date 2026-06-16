@@ -25,6 +25,15 @@ from src.storage.neo4j_client import Neo4jClient
 router = APIRouter()
 
 _MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MB
+_NODE_PHASE = {
+    "resume_eval": "소스 평가 중", "github_eval": "소스 평가 중",
+    "portfolio_eval": "소스 평가 중", "deploy_eval": "소스 평가 중",
+    "consensus": "교차검증 합의 중",
+    "seed_gap": "적합도 분석 중", "call_model": "적합도 분석 중", "tools": "적합도 분석 중",
+    "synthesizer": "리포트 생성 중", "critic": "검증 중",
+    "coach_call_model": "코칭 생성 중", "coach_tools": "코칭 생성 중",
+    "finalize_coach": "코칭 생성 중",
+}
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -80,7 +89,7 @@ async def analyze_portfolio(
         raise HTTPException(409, "이미 분석 중입니다.")
 
     reports[req.report_id] = ReportResponse(
-        report_id=req.report_id, status="processing",
+        report_id=req.report_id, status="processing", phase="소스 평가 중",
         owner=req.owner_name or "분석 중", job_family=req.job_family,
     )
     background_tasks.add_task(
@@ -148,11 +157,17 @@ def _run_analysis(
 ) -> None:
     """업로드 이력서 + GitHub + 배포 URL → v3 그래프 → 2축·검증 리포트."""
     owner = owner_name or "지원자"
+
+    def _progress(node: str) -> None:
+        phase = _NODE_PHASE.get(node)
+        if phase and report_id in reports:
+            reports[report_id].phase = phase
+
     try:
         out = run_supervisor(
             graph, job_family=job_family, owner=owner,
             resume_text=resume_text, github_urls=github_urls, deploy_urls=deploy_urls,
-            neo4j=neo4j,
+            neo4j=neo4j, progress_cb=_progress,
         )
         if out.get("error"):
             reports[report_id] = ReportResponse(
