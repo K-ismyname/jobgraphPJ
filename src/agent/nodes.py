@@ -84,35 +84,26 @@ verification 값의 의미:
 }}"""
 
 # ── Coach Agent 프롬프트 ─────────────────────────────────────────
-_COACH_SYSTEM_PROMPT = """당신은 이력서 개선 전문가입니다.
-갭 분석 결과를 바탕으로 각 부족 스킬에 대해 구체적인 이력서 개선 제안을 작성합니다.
+_COACH_SYSTEM_PROMPT = """당신은 커리어 코치입니다. 지원자의 GitHub 프로젝트와 직군 부족 스킬을 보고 두 종류의 코칭을 합니다.
 
-작업 절차:
-1. 부족 스킬별로 이력서 개선 제안을 작성하세요.
-2. 각 제안에 대해 verify_suggestion 툴로 실제 공고 근거를 확인하세요.
-3. 공고 근거와 제안이 잘 맞고 충분히 구체적이면 확정하세요.
-4. 근거와 맞지 않거나 너무 모호하면 제안을 수정해 다시 작성하세요.
-5. 모든 스킬 검토가 끝나면 도구 호출 없이 최종 제안 목록을 JSON으로 반환하세요.
+1. 프로젝트 보강: 각 GitHub 프로젝트 프로필(summary·tech_stack·observations)과 직군 부족 스킬을 보고, "이 프로젝트에 무엇을 추가/발전시키면 부족 스킬이 코드로 실증되는가"를 제안하세요. observations(예: Dockerfile 없음·테스트 없음)를 우선 활용하세요.
+2. 연계 학습: related_skills 툴에 보유 스킬을 넘겨, 자주 함께 요구되는 스킬 중 미보유를 학습 추천하세요.
 
 규칙:
-- unverified_required 스킬은 "근거 보강 필요"로 처리하세요.
-- GitHub 검증 완료 스킬(confidence=high)은 재증명 제안 불필요.
-- 제안은 반드시 실제 공고 텍스트에 근거해야 합니다.
-- 너무 모호한 제안("경험 추가 필요")은 반드시 구체화하세요.
+- 갖지 않은 스킬을 이력서에 써넣으라고 하지 마세요. 프로젝트로 실증하거나 학습하라고 안내하세요.
+- GitHub 프로젝트가 없으면 project_suggestions는 비우고 연계 학습 위주로 작성하세요.
+- 필요하면 verify_suggestion으로 공고 근거를 확인하세요.
+- 모든 검토가 끝나면 도구 호출 없이 최종 JSON을 반환하세요.
 
 최종 출력 형식 (코드 펜스 없이):
 {{
-  "summary": "전체 개선 방향 2-3문장",
-  "suggestions": [
-    {{
-      "target_section": "이력서 섹션명",
-      "missing_skill": "스킬명",
-      "original_text": "기존 이력서 문장 (없으면 null)",
-      "rewritten_text": "개선된 문장",
-      "expected_impact": "이 수정의 효과 (1문장)",
-      "priority": "high/medium/low",
-      "verified": true
-    }}
+  "summary": "전체 코칭 방향 2-3문장",
+  "project_suggestions": [
+    {{"repo": "owner/repo (일반 제안이면 빈 문자열)", "add_skill": "추가하면 좋은 스킬",
+      "why": "직군/실증 관점 이유", "how": "이 프로젝트에 어떻게 적용하는지"}}
+  ],
+  "learning_recommendations": [
+    {{"skill": "연계 스킬", "reason": "어떤 보유 스킬과 이어지는지"}}
   ]
 }}"""
 
@@ -172,7 +163,10 @@ def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
             "removed": len(removed), "corrected": len(corrections),
             "removed_skills": removed, "corrections": corrections,
         },
-        "coach": {"suggestion_count": len(coaching.get("suggestions") or [])},
+        "coach": {
+            "project_suggestion_count": len(coaching.get("project_suggestions") or []),
+            "learning_count": len(coaching.get("learning_recommendations") or []),
+        },
     }
 
 
@@ -284,11 +278,13 @@ def create_nodes(
         except json.JSONDecodeError:
             report = {"raw": raw, "error": "JSON 파싱 실패"}
 
-        # Coach 루프 시작 메시지 초기화
+        # Coach 루프 시작 메시지 초기화 — 갭 분석 + GitHub 프로젝트 프로필
+        profiles = (state.get("github_eval") or {}).get("profiles") or []
         coach_init = (
-            "아래 갭 분석 결과를 바탕으로 부족 스킬별 이력서 개선 제안을 작성하세요.\n"
-            "각 제안은 verify_suggestion으로 공고 근거를 확인한 뒤 확정하세요.\n\n"
+            "아래 갭 분석을 바탕으로 코칭하세요.\n"
             + json.dumps(report, ensure_ascii=False, indent=2)
+            + (("\n\n[GitHub 프로젝트 프로필]\n" + json.dumps(profiles, ensure_ascii=False, indent=2))
+               if profiles else "\n\n[GitHub 프로젝트] 없음 — 연계 학습 위주로 코칭하세요.")
         )
 
         return {

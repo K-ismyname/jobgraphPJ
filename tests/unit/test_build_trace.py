@@ -20,7 +20,7 @@ def test_build_trace_assembles_from_state():
         ],
         "iteration": 2,
         "critic_report": {"removed_claims": ["X"], "corrections": [{"skill": "Y"}]},
-        "coaching_result": {"suggestions": [1, 2, 3]},
+        "coaching_result": {"project_suggestions": [1, 2, 3]},
     }
     t = _build_trace(state)
 
@@ -39,7 +39,7 @@ def test_build_trace_assembles_from_state():
     # 실행 노드
     assert "resume_eval" in t["executed_nodes"] and "github_eval" in t["executed_nodes"]
     assert "consensus" in t["executed_nodes"] and "critic" in t["executed_nodes"]
-    assert t["coach"]["suggestion_count"] == 3
+    assert t["coach"]["project_suggestion_count"] == 3
 
 
 def test_build_trace_empty_state_safe():
@@ -49,11 +49,11 @@ def test_build_trace_empty_state_safe():
     assert t["gap_loop"] == {"tool_calls": [], "iterations": 0}
     assert t["critic"]["removed_skills"] == []
     assert t["executed_nodes"] == ["synthesizer"]
-    assert t["coach"]["suggestion_count"] == 0
+    assert t["coach"]["project_suggestion_count"] == 0
 
 
 def test_build_trace_prefers_passed_coaching():
     # finalize_coach는 막 만든 coaching을 직접 넘긴다 — state엔 아직 머지 전이라 비어 있음
     state = {"coaching_result": None}
-    t = _build_trace(state, coaching={"suggestions": [1, 2]})
-    assert t["coach"]["suggestion_count"] == 2
+    t = _build_trace(state, coaching={"project_suggestions": [1, 2]})
+    assert t["coach"]["project_suggestion_count"] == 2
