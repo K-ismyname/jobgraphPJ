@@ -231,4 +231,14 @@ def create_coach_tools(neo4j: "Neo4jClient") -> list:
         except Exception as e:
             return {"skill": skill, "evidence": "", "company": "", "error": str(e)}
 
-    return [verify_suggestion]
+    @tool
+    def related_skills(
+        skills: Annotated[list[str], "보유 스킬 목록"],
+    ) -> dict:
+        """보유 스킬과 공고에서 자주 함께 요구되는(CO_OCCURS) 연계 스킬을 반환한다."""
+        try:
+            return {"related": neo4j.get_co_occurring_skills(skills, top_n=8)}
+        except Exception as e:
+            return {"related": [], "error": str(e)}
+
+    return [verify_suggestion, related_skills]
