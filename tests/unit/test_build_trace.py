@@ -57,3 +57,15 @@ def test_build_trace_prefers_passed_coaching():
     state = {"coaching_result": None}
     t = _build_trace(state, coaching={"project_suggestions": [1, 2]})
     assert t["coach"]["project_suggestion_count"] == 2
+
+
+def test_build_trace_coach_includes_inputs():
+    state = {
+        "coaching_result": {"project_suggestions": [1], "learning_recommendations": [1, 2]},
+        "github_eval": {"profiles": [{"repo": "me/app", "observations": ["Docker 없음"]}]},
+        "gap_result": {"missing_required": [{"skill": "K8s"}, "Helm"]},
+    }
+    t = _build_trace(state)
+    assert t["coach"]["project_suggestion_count"] == 1
+    assert t["coach"]["github_profiles"][0]["repo"] == "me/app"
+    assert t["coach"]["missing_skills"] == ["K8s", "Helm"]

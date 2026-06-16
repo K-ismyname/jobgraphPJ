@@ -108,6 +108,17 @@ _COACH_SYSTEM_PROMPT = """당신은 커리어 코치입니다. 지원자의 GitH
 }}"""
 
 
+def _gap_missing_names(gap: dict) -> list[str]:
+    """gap report의 missing_required에서 부족 스킬명 목록(dict/str 모두 허용)."""
+    out: list[str] = []
+    for item in (gap.get("missing_required") or []):
+        if isinstance(item, dict) and item.get("skill"):
+            out.append(item["skill"])
+        elif isinstance(item, str):
+            out.append(item)
+    return out[:8]
+
+
 def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
     """그래프 결과 state에서 실행 흔적(관측 페이지용)을 결정적으로 조립한다.
 
@@ -166,6 +177,8 @@ def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
         "coach": {
             "project_suggestion_count": len(coaching.get("project_suggestions") or []),
             "learning_count": len(coaching.get("learning_recommendations") or []),
+            "github_profiles": (state.get("github_eval") or {}).get("profiles") or [],
+            "missing_skills": _gap_missing_names(state.get("gap_result") or {}),
         },
     }
 
