@@ -90,3 +90,33 @@ def test_skills_from_vocab_matches_alias_and_manifest():
 def test_skills_none_when_no_match():
     skills = _skills_from_sources("me", "proj", "", "", "", vocab=["Kotlin", "Rust"])
     assert skills == []
+
+
+import types
+from src.agent.evaluators.github_eval import _profile_one
+
+
+def _fake_openai(content):
+    resp = types.SimpleNamespace(
+        choices=[types.SimpleNamespace(message=types.SimpleNamespace(content=content))])
+    return types.SimpleNamespace(
+        chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=lambda **k: resp)))
+
+
+def test_profile_one_parses_llm_json():
+    oa = _fake_openai('{"summary":"RAG 챗봇","tech_stack":["Python","FastAPI"],"observations":["Dockerfile 없음"]}')
+    p = _profile_one(oa, "me", "proj", "readme", "desc", ["llm"], ["main.py"], "fastapi")
+    assert p["repo"] == "me/proj"
+    assert p["summary"] == "RAG 챗봇"
+    assert p["tech_stack"] == ["Python", "FastAPI"]
+    assert p["observations"] == ["Dockerfile 없음"]
+
+
+def test_profile_one_no_openai_returns_empty():
+    p = _profile_one(None, "me", "proj", "", "", [], [], "")
+    assert p == {"repo": "me/proj", "summary": "", "tech_stack": [], "observations": []}
+
+
+def test_profile_one_bad_json_returns_empty():
+    p = _profile_one(_fake_openai("not json"), "me", "proj", "r", "d", [], [], "")
+    assert p == {"repo": "me/proj", "summary": "", "tech_stack": [], "observations": []}

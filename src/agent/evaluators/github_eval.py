@@ -1,6 +1,7 @@
 # 지정 GitHub 레포에서 대상 직군의 스킬을 코드 근거로 검증하는 평가자 (코드 modality)
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import TYPE_CHECKING, Callable
@@ -86,7 +87,40 @@ def _skills_from_sources(
     return skills
 
 
-def create_github_evaluator(neo4j: "Neo4jClient") -> Callable[["AppState"], dict]:
+def _profile_one(openai, owner: str, repo: str, readme: str, description: str,
+                 topics: list, file_names: list, manifest_text: str) -> dict:
+    """repo 정보(README·설명·구조·의존성)를 LLM으로 읽어 프로젝트 프로필 생성."""
+    empty = {"repo": f"{owner}/{repo}", "summary": "", "tech_stack": [], "observations": []}
+    if not openai:
+        return empty
+    prompt = (
+        "다음 GitHub 저장소 정보를 보고 프로젝트를 파악해 JSON으로만 답하세요.\n"
+        f"저장소: {owner}/{repo}\n"
+        f"설명: {description}\n"
+        f"topics: {', '.join(topics)}\n"
+        f"README:\n{readme[:3000]}\n"
+        f"파일 구조: {', '.join(file_names[:50])}\n"
+        f"의존성: {manifest_text[:1000]}\n\n"
+        '형식(코드펜스 없이): {"summary": "이 프로젝트가 무엇을 하는지 한두 문장", '
+        '"tech_stack": ["사용 기술"], '
+        '"observations": ["눈에 띄는 점·빠진 것, 예: Dockerfile 없음·테스트 없음·CI 없음"]}'
+    )
+    try:
+        resp = openai.chat.completions.create(
+            model="gpt-4o-mini", max_tokens=512,
+            messages=[{"role": "user", "content": prompt}])
+        raw = (resp.choices[0].message.content or "").strip().replace("```json", "").replace("```", "").strip()
+        data = json.loads(raw)
+        return {"repo": f"{owner}/{repo}",
+                "summary": data.get("summary", ""),
+                "tech_stack": list(data.get("tech_stack") or []),
+                "observations": list(data.get("observations") or [])}
+    except Exception as e:
+        print(f"[github_eval] 프로필 생성 실패: {e}")
+        return empty
+
+
+def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["AppState"], dict]:
     """GitHub 평가자 팩토리. 대상 직군의 스킬 집합을 레포 코드 근거로 검증한다."""
     def _eval_one(url: str, vocab) -> list:
         try:
