@@ -36,7 +36,9 @@ _JOB_FAMILIES = {
     'Software Engineer': ['backend engineer','backend developer','software engineer','software developer','full stack','fullstack'],
     'Frontend Engineer': ['frontend','front end','front-end'],
     'DevOps/SRE':        ['devops','sre','site reliability','platform engineer','infrastructure engineer','cloud engineer'],
-    'Security Engineer': ['security engineer','appsec','cybersecurity','infosec'],
+    'Security Engineer': ['security engineer','appsec','application security','cybersecurity',
+                          'infosec','soc analyst','security analyst','penetration test','pentest',
+                          'threat detection','incident response','security operations','vulnerability'],
 }
 
 def _job_family(title: str) -> str | None:

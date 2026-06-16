@@ -12,3 +12,10 @@ def test_known_families_kept():
     assert _job_family("Frontend Engineer") == "Frontend Engineer"
     assert _job_family("Senior Security Engineer") == "Security Engineer"
     assert _job_family("Machine Learning Engineer") == "ML Engineer"
+
+
+def test_security_titles_classified():
+    assert _job_family("SOC Analyst") == "Security Engineer"
+    assert _job_family("Senior Penetration Tester") == "Security Engineer"
+    assert _job_family("Threat Detection Engineer") == "Security Engineer"
+    assert _job_family("Incident Response Specialist") == "Security Engineer"
