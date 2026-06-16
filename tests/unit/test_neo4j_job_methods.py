@@ -27,3 +27,21 @@ def test_methods_graceful_on_error():
             raise RuntimeError("db down")
     assert Neo4jClient.get_job_family_skills(_Boom(), "X") == []
     assert Neo4jClient.list_job_families(_Boom()) == []
+
+
+def test_get_co_occurring_skills_maps_names():
+    fake = _Fake([{"skill": "TypeScript", "w": 30}, {"skill": "Docker", "w": 20}])
+    rel = Neo4jClient.get_co_occurring_skills(fake, ["React"], top_n=5)
+    assert rel == ["TypeScript", "Docker"]
+
+
+def test_get_co_occurring_skills_empty_input():
+    fake = _Fake([{"skill": "X", "w": 1}])
+    assert Neo4jClient.get_co_occurring_skills(fake, [], top_n=5) == []
+
+
+def test_get_co_occurring_skills_graceful_on_error():
+    class _Boom:
+        def execute_query(self, query, **params):
+            raise RuntimeError("db down")
+    assert Neo4jClient.get_co_occurring_skills(_Boom(), ["React"]) == []

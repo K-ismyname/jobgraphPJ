@@ -375,6 +375,24 @@ class Neo4jClient:
             print(f"[neo4j] 직군 스킬 조회 실패: {e}")
             return []
 
+    def get_co_occurring_skills(self, skills: list[str], top_n: int = 8) -> list[str]:
+        """주어진 스킬들과 CO_OCCURS로 함께 등장하는 스킬을 가중치 상위로(입력 제외)."""
+        if not skills:
+            return []
+        query = """
+        MATCH (s:Skill)-[r:CO_OCCURS]-(o:Skill)
+        WHERE s.name IN $skills AND NOT o.name IN $skills
+        RETURN o.name AS skill, sum(r.count) AS w
+        ORDER BY w DESC
+        LIMIT $n
+        """
+        try:
+            rows = self.execute_query(query, skills=skills, n=top_n)
+            return [r["skill"] for r in rows if r.get("skill")]
+        except Exception as e:
+            print(f"[neo4j] CO_OCCURS 조회 실패: {e}")
+            return []
+
     def update_portfolio_confidence(self, owner: str, changes: dict[str, str]) -> None:
         """confidence 레벨을 업데이트한다. changes: {"LangChain": "medium → high"}."""
         query = """
