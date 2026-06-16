@@ -77,9 +77,35 @@ _JOB_TITLE_RULES: list[tuple[list[str], str]] = [
 _normalized_jobs_cache: dict[str, str] = {}
 
 
+# 대문자 유지가 필요한 약어/브랜드
+_KEEP_UPPER = {
+    "llm", "llms", "rag", "ai", "ml", "api", "apis", "sql", "nosql",
+    "nlp", "cv", "gpu", "cpu", "iam", "sdk", "ci", "cd", "aws", "gcp",
+    "etl", "sre", "ui", "ux", "url", "rest", "grpc", "mlops",
+}
+_TITLE_STOP = {"and", "or", "the", "of", "in", "for", "a", "an", "with", "to"}
+
+
+def smart_title(name: str) -> str:
+    """단어별 첫글자 대문자. 전치사/관사 소문자, 약어는 ALL CAPS 유지."""
+    words = name.split()
+    result = []
+    for i, w in enumerate(words):
+        if w.lower() in _KEEP_UPPER:
+            result.append(w.upper())
+        elif i == 0 or w.lower() not in _TITLE_STOP:
+            result.append(w.capitalize())
+        else:
+            result.append(w.lower())
+    return " ".join(result)
+
+
 def normalize_skill(raw: str) -> str:
-    """원문 기술명을 표준 표기로 정규화. 사전에 없으면 원문 유지."""
-    return SKILL_ALIASES.get(raw.lower().strip(), raw)
+    """원문 기술명을 표준 표기로 정규화. 사전에 없으면 smart_title로 표기(대소문자) 통일."""
+    key = raw.lower().strip()
+    if key in SKILL_ALIASES:
+        return SKILL_ALIASES[key]
+    return smart_title(raw.strip())
 
 
 def normalize_job_title(raw_title: str, client: OpenAI | None = None) -> str:

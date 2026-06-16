@@ -18,3 +18,16 @@ from src.extraction.normalizer import normalize_skill
 ])
 def test_normalize_skill(raw: str, expected: str) -> None:
     assert normalize_skill(raw) == expected
+
+
+def test_normalize_skill_unifies_case_for_unmapped():
+    # 사전 미등록 스킬도 표기 통일 — 대소문자만 다른 중복 방지
+    a = normalize_skill("machine learning")
+    b = normalize_skill("Machine Learning")
+    c = normalize_skill("MACHINE LEARNING")
+    assert a == b == c == "Machine Learning"
+
+
+def test_normalize_skill_keeps_acronym_case():
+    # 약어는 대문자 유지 (smart_title)
+    assert normalize_skill("mlops") == "MLOps" or normalize_skill("mlops") == "MLOPS"
