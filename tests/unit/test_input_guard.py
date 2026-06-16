@@ -12,6 +12,10 @@ class _FakeGraph:
         self.invoked = True
         return {"final_report": {"gap": {}}}
 
+    def stream(self, *args, **kwargs):
+        self.invoked = True
+        return iter([{"synthesizer": {"final_report": {"gap": {}}}}])
+
 
 def test_no_input_returns_error_without_invoking():
     g = _FakeGraph()

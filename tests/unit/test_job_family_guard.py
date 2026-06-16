@@ -10,6 +10,10 @@ class _FakeGraph:
         self.invoked = True
         return {"final_report": {"gap": {}}}
 
+    def stream(self, *args, **kwargs):
+        self.invoked = True
+        return iter([{"synthesizer": {"final_report": {"gap": {}}}}])
+
 
 class _FakeNeo4j:
     def list_job_families(self):

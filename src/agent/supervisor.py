@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from langchain_core.messages import ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
@@ -214,6 +214,7 @@ def run_supervisor(
     portfolio_path: str | None = None,
     deploy_urls: list[str] | None = None,
     neo4j: "Neo4jClient | None" = None,
+    progress_cb: "Callable[[str], None] | None" = None,
 ) -> dict:
     """Supervisor 그래프를 실행하고 final_report를 반환한다.
 
@@ -261,7 +262,16 @@ def run_supervisor(
         "critic_report": None,
         "resume_eval": None, "github_eval": None, "portfolio_eval": None, "deploy_eval": None, "consensus": None,
     }
-    result = graph.invoke(initial, config)
+    final_state: dict = dict(initial)
+    for chunk in graph.stream(initial, config, stream_mode="updates"):
+        if not isinstance(chunk, dict):
+            continue
+        for node, update in chunk.items():
+            if progress_cb:
+                progress_cb(node)
+            if isinstance(update, dict):
+                final_state.update(update)
+    result = final_state
     final = result.get("final_report") or {}
     if neo4j and final and not final.get("error"):
         from src.analysis.capability import (
