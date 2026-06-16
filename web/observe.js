@@ -131,8 +131,18 @@ function stageData(key, t, report) {
   }
   if (key === "critic")
     return `제거된 주장: ${(t.critic && t.critic.removed_skills || []).map(esc).join(", ") || "없음"} · 교정 ${(t.critic && t.critic.corrected) || 0}건`;
-  if (key === "coach")
-    return `프로젝트 보강 ${(t.coach && t.coach.project_suggestion_count) || 0}개 · 연계 학습 ${(t.coach && t.coach.learning_count) || 0}개`;
+  if (key === "coach") {
+    const c = t.coach || {};
+    const profiles = (c.github_profiles || [])
+      .map((p) => `${esc(p.repo)}: ${(p.observations || []).map(esc).join(", ") || "—"}`).join("<br>");
+    const missing = (c.missing_skills || []).map(esc).join(", ");
+    const projects = (report.project_suggestions || [])
+      .map((s) => `${esc(s.add_skill)}${s.repo ? ` (${esc(s.repo)})` : ""} — ${esc(s.how)}`).join("<br>");
+    const learnings = (report.learning_recommendations || [])
+      .map((s) => `${esc(s.skill)} — ${esc(s.reason)}`).join("<br>");
+    return `<b>본 것</b><br>GitHub: ${profiles || "없음"}<br>부족 스킬: ${missing || "없음"}<br><br>`
+      + `<b>만든 것</b><br>프로젝트 보강: ${projects || "없음"}<br>연계 학습: ${learnings || "없음"}`;
+  }
   return "";
 }
 
