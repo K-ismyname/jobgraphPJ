@@ -21,20 +21,11 @@ load_dotenv(ROOT / ".env")
 
 from src.ingestion.adzuna_client import fetch_jobs
 
-# 부족 직군 보강용 검색어 — 직군별 특화어 포함 (SE·DE·DA는 이미 충분해 제외)
+# Security 직군 특화 보강용 검색어
 QUERIES = [
-    # Frontend
-    "frontend react", "frontend vue typescript", "react developer",
-    # ML
-    "machine learning engineer", "mlops engineer", "ml engineer pytorch",
-    # Security
-    "security engineer", "cybersecurity siem soc", "application security",
-    # AI/LLM
-    "llm engineer", "generative ai engineer", "ai engineer rag langchain",
-    # Data Scientist
-    "data scientist", "data scientist machine learning", "data scientist statistics",
-    # DevOps
-    "devops engineer", "site reliability engineer", "platform engineer kubernetes",
+    "security engineer siem", "soc analyst", "threat detection engineer",
+    "penetration testing", "incident response security", "cloud security engineer",
+    "application security appsec", "vulnerability management",
 ]
 
 RESULTS_PER_QUERY = 15   # 쿼리당 최대 공고 수
