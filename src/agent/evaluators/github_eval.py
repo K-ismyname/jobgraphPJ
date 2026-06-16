@@ -102,7 +102,7 @@ def _profile_one(openai, owner: str, repo: str, readme: str, description: str,
         f"파일 구조: {', '.join(file_names[:50])}\n"
         f"의존성: {manifest_text[:1000]}\n\n"
         '형식(코드펜스 없이): {"summary": "이 프로젝트가 무엇을 하는지 한두 문장", '
-        '"tech_stack": ["사용 기술"], '
+        '"tech_stack": ["핵심 기술명만, 버전 없이 5~8개. 의존성 목록을 그대로 복사하지 말 것"], '
         '"observations": ["눈에 띄는 점·빠진 것, 예: Dockerfile 없음·테스트 없음·CI 없음"]}'
     )
     try:
