@@ -123,12 +123,16 @@ function renderReport(d) {
       <span class="badge ${s.verification}">${esc(s.verification)}</span>
       <span class="src">${(s.sources || []).map(esc).join(", ")}</span></div>`)
     .join("");
-  const suggestions = (d.suggestions || [])
+  const projects = (d.project_suggestions || [])
     .map((s) => `<div class="suggestion">
-      <div class="head">${esc(s.missing_skill)} → ${esc(s.target_section)}
-        <span class="prio">[${esc(s.priority)}${s.verified ? " · 검증됨" : ""}]</span></div>
-      <div class="rew">${esc(s.rewritten_text)}</div>
-      <div class="prio">기대효과: ${esc(s.expected_impact)}</div></div>`)
+      <div class="head">${esc(s.add_skill)}${s.repo ? ` <span class="prio">(${esc(s.repo)})</span>` : ""}</div>
+      <div class="rew">${esc(s.how)}</div>
+      <div class="prio">왜: ${esc(s.why)}</div></div>`)
+    .join("");
+  const learnings = (d.learning_recommendations || [])
+    .map((s) => `<div class="suggestion">
+      <div class="head">${esc(s.skill)}</div>
+      <div class="prio">${esc(s.reason)}</div></div>`)
     .join("");
 
   $("result").innerHTML = `
@@ -141,7 +145,8 @@ function renderReport(d) {
     <h3>검증된 스킬</h3>${skills || "<p class='prio'>없음</p>"}
     <h3>코칭</h3>
     ${d.coaching_summary ? `<p>${esc(d.coaching_summary)}</p>` : ""}
-    ${suggestions || "<p class='prio'>제안 없음</p>"}
+    <h4>프로젝트 보강</h4>${projects || "<p class='prio'>제안 없음</p>"}
+    <h4>배우면 좋은 연계 스킬</h4>${learnings || "<p class='prio'>추천 없음</p>"}
     <p style="margin-top:16px"><a href="/observe?report_id=${encodeURIComponent(state.reportId)}&tab=workflow">→ 이 분석의 실행 과정 보기</a></p>
   `;
 }

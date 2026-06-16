@@ -13,7 +13,7 @@ function flowSummary(report) {
   const cf = report.capability_fit || {};
   const met = (cf.met || []).length, unmet = (cf.unmet || []).length;
   const corrected = (t.critic && t.critic.corrected) || 0;
-  const suggestions = (t.coach && t.coach.suggestion_count) || 0;
+  const suggestions = ((t.coach && t.coach.project_suggestion_count) || 0) + ((t.coach && t.coach.learning_count) || 0);
   return `스킬 ${extracted} 추출 → 합의 ${cons.length}(Verified ${verified}) → 부족 역량 ${unmet} → 적합도 ${met}/${met + unmet} → 교정 ${corrected} → 제안 ${suggestions}`;
 }
 
@@ -43,7 +43,7 @@ function stageBadges(key, report) {
     const cr = t.critic || {};
     return [`제거 ${(cr.removed_skills || []).length}`, `교정 ${cr.corrected || 0}`];
   }
-  if (key === "coach") return [`제안 ${(t.coach && t.coach.suggestion_count) || 0}`];
+  if (key === "coach") return [`프로젝트 ${(t.coach && t.coach.project_suggestion_count) || 0}`, `학습 ${(t.coach && t.coach.learning_count) || 0}`];
   return [];
 }
 
@@ -132,7 +132,7 @@ function stageData(key, t, report) {
   if (key === "critic")
     return `제거된 주장: ${(t.critic && t.critic.removed_skills || []).map(esc).join(", ") || "없음"} · 교정 ${(t.critic && t.critic.corrected) || 0}건`;
   if (key === "coach")
-    return `개선 제안 ${(t.coach && t.coach.suggestion_count) || 0}개`;
+    return `프로젝트 보강 ${(t.coach && t.coach.project_suggestion_count) || 0}개 · 연계 학습 ${(t.coach && t.coach.learning_count) || 0}개`;
   return "";
 }
 
