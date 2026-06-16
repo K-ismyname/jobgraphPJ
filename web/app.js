@@ -83,6 +83,7 @@ async function pollReport(attempt) {
     }
     const data = await res.json();
     if (data.status === "processing") {
+      $("progress").innerHTML = `<span class="spinner"></span> ${esc(data.phase || "분석 중…")}`;
       setTimeout(() => pollReport(attempt + 1), 3000);
       return;
     }
