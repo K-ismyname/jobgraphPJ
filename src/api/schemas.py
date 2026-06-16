@@ -94,14 +94,16 @@ class AnalyzeAccepted(BaseModel):
     message: str = "분석을 시작합니다. GET /portfolio/report/{report_id}로 결과를 확인하세요."
 
 
-class SuggestionItem(BaseModel):
-    target_section: str
-    missing_skill: str
-    original_text: str | None = None
-    rewritten_text: str
-    expected_impact: str
-    priority: Literal["high", "medium", "low"]
-    verified: bool = False
+class ProjectSuggestion(BaseModel):
+    repo: str = ""
+    add_skill: str
+    why: str
+    how: str
+
+
+class LearningRecommendation(BaseModel):
+    skill: str
+    reason: str
 
 
 class VerificationItem(BaseModel):
@@ -121,7 +123,8 @@ class ReportResponse(BaseModel):
     verification_counts: dict[str, int] = Field(default_factory=dict)
     verified_skills: list[VerificationItem] = Field(default_factory=list)
     coaching_summary: str | None = None
-    suggestions: list[SuggestionItem] = Field(default_factory=list)
+    project_suggestions: list[ProjectSuggestion] = Field(default_factory=list)
+    learning_recommendations: list[LearningRecommendation] = Field(default_factory=list)
     error_detail: str | None = None
     generated_at: str | None = None
     trace: dict | None = None

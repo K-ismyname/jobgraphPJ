@@ -12,8 +12,9 @@ from src.api.deps import get_graph, get_neo4j, get_reports, get_uploads
 from src.api.schemas import (
     AnalyzeAccepted,
     AnalyzeRequest,
+    LearningRecommendation,
+    ProjectSuggestion,
     ReportResponse,
-    SuggestionItem,
     UploadResponse,
     VerificationItem,
 )
@@ -24,8 +25,6 @@ from src.storage.neo4j_client import Neo4jClient
 router = APIRouter()
 
 _MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MB
-_SUGGESTION_FIELDS = ("target_section", "missing_skill", "original_text",
-                      "rewritten_text", "expected_impact", "priority", "verified")
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -112,10 +111,17 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
     gap = final.get("gap") or {}
     ver = final.get("verification") or {}
     coaching = final.get("coaching") if isinstance(final.get("coaching"), dict) else {}
-    suggestions = []
-    for s in (coaching.get("suggestions") or []):
-        if isinstance(s, dict) and s.get("rewritten_text"):
-            suggestions.append(SuggestionItem(**{k: s.get(k) for k in _SUGGESTION_FIELDS if k in s}))
+    project_suggestions = [
+        ProjectSuggestion(repo=s.get("repo", ""), add_skill=s.get("add_skill", ""),
+                          why=s.get("why", ""), how=s.get("how", ""))
+        for s in (coaching.get("project_suggestions") or [])
+        if isinstance(s, dict) and s.get("add_skill")
+    ]
+    learning_recommendations = [
+        LearningRecommendation(skill=s.get("skill", ""), reason=s.get("reason", ""))
+        for s in (coaching.get("learning_recommendations") or [])
+        if isinstance(s, dict) and s.get("skill")
+    ]
     return ReportResponse(
         report_id=report_id, status="done", owner=owner, job_family=job_family,
         match_rate=gap.get("match_rate") or 0.0,
@@ -125,7 +131,8 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         verified_skills=[VerificationItem(**s) for s in (ver.get("skills") or [])
                          if isinstance(s, dict) and s.get("skill")],
         coaching_summary=coaching.get("summary"),
-        suggestions=suggestions,
+        project_suggestions=project_suggestions,
+        learning_recommendations=learning_recommendations,
         generated_at=datetime.now(timezone.utc).isoformat(),
         trace=final.get("trace"),
         capability_fit=final.get("capability_fit"),

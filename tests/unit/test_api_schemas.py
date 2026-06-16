@@ -1,5 +1,5 @@
 # v3 API 스키마 검증
-from src.api.schemas import AnalyzeRequest, ReportResponse, VerificationItem, SuggestionItem
+from src.api.schemas import AnalyzeRequest, ReportResponse, VerificationItem, ProjectSuggestion, LearningRecommendation
 
 
 def test_analyze_request_v3_fields():
@@ -18,8 +18,8 @@ def test_report_response_v3_shape():
         verification_counts={"Verified": 2, "Corroborated": 0, "Claimed": 1},
         verified_skills=[VerificationItem(skill="React", verification="Verified", sources=["github"])],
         coaching_summary="요약",
-        suggestions=[SuggestionItem(target_section="경력", missing_skill="K8s",
-                                    rewritten_text="...", expected_impact="...", priority="high")],
+        project_suggestions=[ProjectSuggestion(repo="me/app", add_skill="K8s", why="...", how="...")],
+        learning_recommendations=[LearningRecommendation(skill="Helm", reason="K8s와 연계")],
     )
     assert r.match_rate == 0.44
     assert r.verified_skills[0].skill == "React"
