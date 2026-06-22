@@ -13,7 +13,7 @@ load_dotenv(ROOT / ".env")
 
 from openai import OpenAI
 
-from src.ingestion.preprocessor import preprocess_file, preprocess_remoteok_file
+from src.ingestion.preprocessor import preprocess_file
 from src.extraction.skill_extractor import extract_skills_from_posting
 from src.extraction.normalizer import normalize_skill
 
@@ -66,11 +66,6 @@ def _normalize_skills(skills: dict) -> dict:
 _DEFAULT_RAW = ROOT / "data" / "raw" / "jobs_data_analytics.json"
 _DEFAULT_PROCESSED = ROOT / "data" / "processed" / "jobs_da_processed.json"
 _DEFAULT_WITH_SKILLS = ROOT / "data" / "processed" / "jobs_da_with_skills.json"
-
-# RemoteOK 경로
-_REMOTEOK_RAW = ROOT / "data" / "raw" / "jobs_remoteok.json"
-_REMOTEOK_PROCESSED = ROOT / "data" / "processed" / "jobs_remoteok_processed.json"
-_REMOTEOK_WITH_SKILLS = ROOT / "data" / "processed" / "jobs_remoteok_with_skills.json"
 
 
 def _get_openai() -> OpenAI:
@@ -161,45 +156,6 @@ def step_ingest(jobs: list[dict]) -> None:
         print(f"적재 완료: {success}/{len(ingestible)}개")
     finally:
         neo4j.close()
-
-
-def step_preprocess_remoteok(
-    raw_path: Path = _REMOTEOK_RAW,
-    processed_path: Path = _REMOTEOK_PROCESSED,
-    *,
-    force: bool = False,
-) -> list[dict]:
-    """Step 1 (RemoteOK): raw JSON → 개발자 필터 + 텍스트 정제 + 섹션 분리."""
-    if not force and processed_path.exists():
-        print(f"[skip] 전처리 파일 존재: {processed_path}")
-        with open(processed_path, encoding="utf-8") as f:
-            return json.load(f)
-    print("=== Step 1: RemoteOK 전처리 ===")
-    return preprocess_remoteok_file(raw_path, processed_path)
-
-
-def run_remoteok_pipeline(
-    raw_path: str | Path = _REMOTEOK_RAW,
-    processed_path: str | Path = _REMOTEOK_PROCESSED,
-    with_skills_path: str | Path = _REMOTEOK_WITH_SKILLS,
-    *,
-    limit: int | None = None,
-    force_preprocess: bool = False,
-    skip_ingest: bool = False,
-) -> None:
-    """RemoteOK 전체 파이프라인 실행."""
-    jobs = step_preprocess_remoteok(
-        Path(raw_path), Path(processed_path), force=force_preprocess
-    )
-
-    if limit:
-        jobs = jobs[:limit]
-        print(f"(limit={limit})")
-
-    jobs = step_extract_skills(jobs, Path(with_skills_path))
-
-    if not skip_ingest:
-        step_ingest(jobs)
 
 
 def run_pipeline(
