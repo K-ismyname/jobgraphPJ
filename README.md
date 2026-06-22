@@ -1,3 +1,13 @@
+---
+title: JobGraph — Agentic RAG Job Skill Analyzer
+emoji: 📊
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Job Skill Analyzer — 다중 소스 교차검증 Agentic RAG
 
 > 채용공고를 수집·분석하고, **이력서·포트폴리오·GitHub·배포 URL** 을 종합해
