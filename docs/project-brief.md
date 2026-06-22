@@ -56,7 +56,7 @@ An Agentic RAG system that ingests job postings and cross-verifies a candidate's
 | **Docker** | 컨테이너 패키징·기동 |
 | **정적 HTML/CSS/JS** | 업로드·분석·결과·관측 웹 UI |
 | **Mermaid.js** | 관측 페이지 LangGraph 워크플로우 다이어그램 |
-| **pytest** | 단위 테스트 179개 |
+| **pytest** | 단위 테스트 182개 |
 
 ## 아키텍처 (LangGraph 멀티에이전트)
 ```

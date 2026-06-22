@@ -120,7 +120,7 @@ job-skill-analyzer/
 
 ## 환경변수
 
-`.env` 파일에 아래 키가 있어야 합니다. 없으면 mock 모드로 동작합니다.
+`.env` 파일에 아래 키가 있어야 합니다. **Neo4j는 필수**(없으면 `EnvironmentError`로 기동 실패)이고, OpenAI·Adzuna·GitHub·Langfuse는 없으면 각각 mock·캐시·비활성으로 동작합니다.
 
 ```bash
 # LLM
@@ -130,7 +130,7 @@ OPENAI_API_KEY=
 ADZUNA_APP_ID=
 ADZUNA_APP_KEY=
 
-# 그래프 DB
+# 그래프 DB (필수 — 없으면 기동 실패)
 NEO4J_URI=neo4j+s://xxxx.databases.neo4j.io
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=
