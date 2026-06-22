@@ -8,7 +8,6 @@ langchain-openai>=0.2.0
 langchain-core>=0.3.0
 # Graph DB
 neo4j>=5.0.0
-networkx>=3.0
 
 # API client
 httpx>=0.27.0
