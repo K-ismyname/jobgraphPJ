@@ -70,7 +70,8 @@ job-skill-analyzer/
 ├── src/
 │   ├── ingestion/              # Layer 1: 데이터 수집
 │   │   ├── adzuna_client.py    # Adzuna API 호출
-│   │   └── scheduler.py        # 월별 자동 업데이트
+│   │   ├── preprocessor.py     # 공고 텍스트 정제·섹션 분리
+│   │   └── pipeline.py         # 수집→추출→Neo4j 적재 파이프라인
 │   │
 │   ├── extraction/             # 기술 추출·정규화
 │   │   ├── skill_extractor.py  # LLM 기반 구조화 추출
@@ -81,28 +82,33 @@ job-skill-analyzer/
 │   │
 │   ├── agent/                  # Layer 3: LangGraph 에이전트
 │   │   ├── state.py            # AgentState TypedDict
-│   │   ├── nodes.py            # 각 노드 함수
+│   │   ├── nodes.py            # 각 노드 함수 (Gap 루프·코칭 포함)
 │   │   ├── tools.py            # 에이전트 툴 정의
-│   │   └── graph.py            # StateGraph 조립
+│   │   ├── consensus.py        # 교차검증 신뢰도 등급 판정
+│   │   ├── critic.py           # 환각 제거·라벨 교정
+│   │   ├── evaluators/         # 소스별 전용 평가자 (resume·github·portfolio·deploy)
+│   │   └── supervisor.py       # StateGraph 조립·실행
 │   │
 │   ├── portfolio/              # 포트폴리오 처리
 │   │   ├── pdf_parser.py       # PDF → 텍스트 추출
 │   │   └── github_connector.py # GitHub API (선택)
 │   │
 │   ├── analysis/               # Layer 4: 핵심 기능
+│   │   ├── capability.py       # 직군 핵심 스킬 대비 적합도·역방향 추천
 │   │   ├── gap_analyzer.py     # 갭 분석 + 매칭률
-│   │   ├── salary_analyzer.py  # 연봉 영향도
-│   │   └── coach.py            # 이력서 개선 제안
+│   │   └── salary_analyzer.py  # 연봉 영향도 (보조 지표)
 │   │
 │   ├── evaluation/             # Layer 5: 평가
 │   │   ├── ragas_eval.py       # RAGAS 지표 측정
 │   │   └── langfuse_tracer.py  # 트레이싱 데코레이터
 │   │
 │   └── api/                    # Layer 6: FastAPI
-│       ├── main.py
+│       ├── main.py             # 앱 진입점·lifespan
+│       ├── deps.py             # 의존성 주입 (neo4j·openai)
 │       ├── routers/
-│       │   ├── jobs.py         # 공고 조회 엔드포인트
-│       │   └── portfolio.py    # 이력서 업로드·갭 분석
+│       │   ├── jobs.py         # 공고 조회·통계 엔드포인트
+│       │   ├── portfolio.py    # 이력서 업로드·갭 분석
+│       │   └── system.py       # 그래프 구조 조회 (관측 페이지)
 │       └── schemas.py          # Pydantic 모델
 │
 └── tests/
