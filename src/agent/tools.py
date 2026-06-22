@@ -56,7 +56,7 @@ def create_tools(neo4j: "Neo4jClient") -> list:
 
     @tool
     def gap_analysis(
-        job_family: Annotated[str, "분석할 직군명. 반드시 아래 중 하나: Software Engineer / Data Engineer / Data Analyst / Data Scientist / AI/LLM Engineer / ML Engineer / DevOps/SRE / Security Engineer / Frontend Engineer / Architect"],
+        job_family: Annotated[str, "분석할 직군명. 반드시 아래 중 하나: Software Engineer / Data Engineer / Data Analyst / Data Scientist / AI/LLM Engineer / ML Engineer / DevOps/SRE / Security Engineer / Frontend Engineer"],
         portfolio_skills: Annotated[list[str], "보유 기술 목록 (이력서에서 추출된 스킬명)"],
         owner: Annotated[str, "지원자 이름 — Neo4j에서 최신 confidence를 조회하는 데 사용"],
     ) -> dict:
@@ -192,7 +192,7 @@ def create_tools(neo4j: "Neo4jClient") -> list:
 
     @tool
     def graph_query(
-        job_family: Annotated[str, "직군명. 반드시 아래 중 하나: Software Engineer / Data Engineer / Data Analyst / Data Scientist / AI/LLM Engineer / ML Engineer / DevOps/SRE / Security Engineer / Frontend Engineer / Architect"],
+        job_family: Annotated[str, "직군명. 반드시 아래 중 하나: Software Engineer / Data Engineer / Data Analyst / Data Scientist / AI/LLM Engineer / ML Engineer / DevOps/SRE / Security Engineer / Frontend Engineer"],
     ) -> list[dict]:
         """Neo4j에서 직군별 필수·우대 기술과 가중치를 조회한다."""
         try:
