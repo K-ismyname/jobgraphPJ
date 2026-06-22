@@ -31,13 +31,24 @@ RETURN s.name AS skill, r.confidence AS confidence, r.evidence AS evidence
 """
 
 
-def _evidence_sentence(skill: str, text: str) -> str:
-    """텍스트에서 스킬 키워드가 든 문장을 근거로. 없으면 앞부분."""
+def _evidence_snippet(skill: str, text: str, max_sentences: int = 2, cap: int = 450) -> str:
+    """텍스트에서 스킬 키워드가 든 문장을 최대 max_sentences개 모아 근거로.
+
+    단편 1문장은 "그 스킬이 required인지" 문맥이 빈약해 RAGAS faithfulness를
+    떨어뜨린다. 키워드 문장을 여러 개 묶어 근거의 충실도를 높인다.
+    키워드 문장이 없으면 앞부분을 cap 길이만큼 반환한다.
+    """
     kws = _keywords_for(skill)
+    matched: list[str] = []
     for sent in re.split(r"[.\n•]", text or ""):
-        if any(_word_match(kw, sent.lower()) for kw in kws):
-            return sent.strip()[:300]
-    return (text or "").strip()[:300]
+        s = sent.strip()
+        if s and any(_word_match(kw, s.lower()) for kw in kws):
+            matched.append(s)
+            if len(matched) >= max_sentences:
+                break
+    if matched:
+        return ". ".join(matched)[:cap]
+    return (text or "").strip()[:cap]
 
 
 def create_tools(neo4j: "Neo4jClient") -> list:
@@ -117,12 +128,12 @@ def create_tools(neo4j: "Neo4jClient") -> list:
         results: dict = {}
         try:
             for skill in skill_names[:5]:
-                posting_ids = neo4j.get_postings_requiring_skill(skill, limit=3)
+                posting_ids = neo4j.get_postings_requiring_skill(skill, limit=5)
                 evidence = []
                 if posting_ids:
                     for s in neo4j.get_posting_sections(posting_ids):
                         text = f"{s.get('required_section') or ''} {s.get('preferred_section') or ''}"
-                        sent = _evidence_sentence(skill, text)
+                        sent = _evidence_snippet(skill, text)
                         if sent:
                             evidence.append({"source_id": s["source_id"], "company": s.get("company") or "", "text": sent})
                 if evidence:
