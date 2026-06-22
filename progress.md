@@ -770,3 +770,30 @@ RAGAS 파이프라인은 v3에서 실행됐으나(`run_analysis`가 반환하는
 - `.dockerignore` 추가 — `data`(23M)·`chroma_db`·`__pycache__`·`.venv`·`tests`·`docs` 등 빌드 컨텍스트에서 제외.
 - `docker build` 성공(exit 0): **requirements 정합이 실제 빌드에서 검증됨** — ragas-0.4.3·langfuse-4.7.1 정상 설치, 전체 의존성 import 깨짐 없음. 이미지 `job-skill-analyzer:latest` 생성(torch+CUDA로 빌드 14분).
 - 기동 검증: 첫 시도는 포트 8000이 다른 앱(ClaBi)에 점유돼 무효(curl이 그 앱 응답을 잡음) → 8123 포트로 재검증, 우리 앱 `/health` = `{"status":"ok","has_openai":true}` 정상.
+
+---
+
+## [2026-06-22] 전체 점검 — 문서↔코드 정합·죽은 코드 제거·근거 풍부화·통합 테스트 복구
+
+### 작업 절차
+
+프로젝트 전반의 "고쳐야 할 것"을 코드 기준으로 훑고 하나씩 처리했다.
+
+1. **문서 ↔ 코드 정합 (Chroma·연봉·구조 트리)**: CLAUDE.md가 Chroma를 "확정 기술"·구조(`chroma_client.py`)로 박아뒀으나 실제 제거됨(README는 이미 정확) → "사용하지 않는 것"에 측정 후 제거 사유로 이동. 핵심 기능 #1의 "연봉 영향도 분석"을 보조 지표로 정정. 구조 트리의 없는 파일(`scheduler.py`·`graph.py`·`coach.py`)을 실재 파일(`consensus.py`·`critic.py`·`evaluators/`·`capability.py`·`supervisor.py` 등)로 갱신.
+2. **RemoteOK 죽은 코드 제거**: 라이브·스크립트·테스트 어디서도 호출 안 됨, 수집 데이터 파일도 없음 → `remoteok_client.py` 삭제 + `pipeline.py`·`preprocessor.py`의 RemoteOK 경로 제거.
+3. **verify_skills 근거 풍부화**: `_evidence_sentence`(300자 단문 1개) → `_evidence_snippet`(키워드 문장 최대 2개·450자), 공고 검색 `limit 3→5`.
+4. **Architect 유령 직군 제거**: `_job_family`가 의도적으로 미분류(테스트로 보장)인데 gap_analysis·graph_query 툴 안내와 웹 드롭다운이 "Architect"를 유효 직군으로 제시 → 선택 시 "데이터 없음" 오류. 툴 2곳·웹에서 제거.
+5. **환경변수·브리프 정합**: Neo4j 필수(없으면 `EnvironmentError`) 명시, `.env.example` USE_LOCAL_MODEL "예정/미구현" 정정, 테스트 수 179→182.
+6. **통합 테스트 복구 + normalize_job_title 죽은 코드 제거**.
+
+### 발생 문제
+
+- **연봉 기능의 정체**: 데이터를 직접 확인하니 560개 공고 중 연봉 보유 21개(3%), 타겟 AI/LLM Engineer는 88개 중 1개. baseline이 표본 1개라 통계적으로 무의미 → "되살릴 기능"이 아니라 "데이터가 못 받쳐주는 기능". 미노출 유지로 결론.
+- **RAGAS faithfulness가 안 오름**: 근거 풍부화 후 0.167→0.200(미미). 샘플 분해상 컨텍스트를 늘린 샘플도 대부분 0 → 양이 병목이 아니었음. 진짜 원인은 response의 과일반화("직군 전체의 필수 스킬") ↔ 특정 공고 근거의 층위 불일치.
+- **통합 테스트 1건 실패**: `test_returns_dict`가 coach_tools 단계에서 `get_co_occurring_skills()`의 미설정 MagicMock을 `json.dumps`하다 TypeError. 코치 학습 추천(CO_OCCURS) 기능 추가 시 fixture 미갱신.
+
+### 해결 방법
+
+- **RAGAS response reframe 가설을 측정으로 기각**: response를 "이 공고들이 required로 명시한다"로 바꿔보니 오히려 faithfulness 0.200→0.000, answer_relevancy 0.87→0.54로 악화(yes/no 질문에 간접 답변이 됨) → 직감 대신 측정을 따라 복원. 풍부화만 유지(라이브 에이전트에도 이득). 합성 단문 평가에서 faithfulness는 0/1로 튀어 metric 추격은 비추.
+- **통합 테스트 fixture 보강**: LLM의 툴 선택이 비결정적이므로 에이전트가 호출 가능한 neo4j 메서드(`get_co_occurring_skills`·`get_posting_sections`·`get_postings_requiring_skill`·`get_skill_unlock_count`·`get_skill_trend`)를 모두 직렬화 가능한 값으로 mock → 단위 182 + 통합 14 전부 통과.
+- **죽은 코드 일괄 정리**: RemoteOK + `normalize_job_title`(LLM 직무 정규화, 미연결·미테스트) 제거, 고아 import(os·OpenAI) 정리.
