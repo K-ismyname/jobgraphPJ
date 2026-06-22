@@ -76,7 +76,7 @@ async def observe() -> FileResponse:
 
 @app.get("/health", tags=["system"])
 async def health(request: Request) -> dict:
-    """Neo4j·Chroma 연결 상태 반환. 헬스체크용."""
+    """서비스 상태·OpenAI 키 보유 여부 반환. 헬스체크용."""
     has_openai = request.app.state.openai is not None
     return {
         "status": "ok",
