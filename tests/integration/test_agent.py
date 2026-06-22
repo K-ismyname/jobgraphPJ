@@ -18,10 +18,19 @@ def mock_clients():
     neo4j = MagicMock()
     neo4j.execute_query.return_value = []
     neo4j.get_portfolio_demonstrated_skills.return_value = []
-    # Market 노드가 호출하는 메서드 — 직렬화 가능한 값으로 mock (MagicMock 반환 방지)
+    # 에이전트(Gap 루프·코치 툴)가 호출하는 메서드는 모두 직렬화 가능한 값으로 mock.
+    # 미설정 시 MagicMock이 반환돼 ToolMessage의 json.dumps에서 TypeError가 난다.
+    # LLM이 어떤 툴을 부를지 비결정적이므로 호출 가능한 메서드를 빠짐없이 채운다.
     neo4j.get_job_distribution.return_value = []
     neo4j.get_top_skills.return_value = []
     neo4j.get_location_distribution.return_value = []
+    neo4j.get_co_occurring_skills.return_value = []
+    neo4j.get_posting_sections.return_value = []
+    neo4j.get_postings_requiring_skill.return_value = []
+    neo4j.get_skill_unlock_count.return_value = 0
+    neo4j.get_skill_trend.return_value = {
+        "skill": "", "recent_count": 0, "prev_count": 0, "delta_pct": 0.0,
+    }
     openai = MagicMock()
     return neo4j, openai
 
