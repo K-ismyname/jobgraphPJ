@@ -21,11 +21,11 @@ load_dotenv(ROOT / ".env")
 
 from src.ingestion.adzuna_client import fetch_jobs
 
-# Security 직군 특화 보강용 검색어
+# AI/LLM 직군 특화 보강용 검색어
 QUERIES = [
-    "security engineer siem", "soc analyst", "threat detection engineer",
-    "penetration testing", "incident response security", "cloud security engineer",
-    "application security appsec", "vulnerability management",
+    "llm engineer", "rag engineer", "langchain developer",
+    "generative ai engineer", "agentic ai engineer", "prompt engineering",
+    "ai engineer pytorch", "llmops",
 ]
 
 RESULTS_PER_QUERY = 15   # 쿼리당 최대 공고 수
