@@ -31,3 +31,15 @@ def test_normalize_skill_unifies_case_for_unmapped():
 def test_normalize_skill_keeps_acronym_case():
     # 약어는 대문자 유지 (smart_title)
     assert normalize_skill("mlops") == "MLOps" or normalize_skill("mlops") == "MLOPS"
+
+
+def test_normalize_skill_ai_ml_synonyms():
+    assert normalize_skill("ML") == "Machine Learning"
+    assert normalize_skill("machine learning") == "Machine Learning"
+    assert normalize_skill("Artificial Intelligence") == "AI"
+    assert normalize_skill("AI") == "AI"
+    assert normalize_skill("LLMs") == "LLM"
+    assert normalize_skill("LLM") == "LLM"
+    assert normalize_skill("GenAI") == "GenAI"
+    assert normalize_skill("generative ai") == "GenAI"
+    assert normalize_skill("Retrieval Augmented Generation") == "RAG"

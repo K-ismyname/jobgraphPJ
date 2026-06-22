@@ -53,6 +53,13 @@ SKILL_ALIASES: dict[str, str] = {
     "salesforce": "Salesforce", "salesForce": "Salesforce",
     "ci/cd": "CI/CD", "ci / cd": "CI/CD",
     "object-oriented programming": "OOP", "oop": "OOP",
+    # AI / ML / LLM 동의어 통합
+    "artificial intelligence": "AI",
+    "ml": "Machine Learning", "machine learning": "Machine Learning",
+    "llms": "LLM", "llm": "LLM",
+    "genai": "GenAI", "generative ai": "GenAI", "gen ai": "GenAI",
+    "rag": "RAG", "retrieval augmented generation": "RAG",
+    "retrieval-augmented generation": "RAG",
     # Korean
     "리액트": "React",
 }
