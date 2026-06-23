@@ -161,6 +161,56 @@ START
 
 ---
 
+## [시각화 추가 제안 — 디자인 의뢰용 스펙]
+
+> 아래는 "무엇을·어떤 축으로·어떤 데이터로" 그릴지에 대한 명세. 실제 렌더는 디자인 도구에 맡긴다.
+
+**디자인 공통 가이드**
+- 팔레트(블루/고급): 메인 `#1f5fe0`, 보조 그라데이션 `#4a90ff`, 잉크 `#0e1b33`, 배경 `#f4f7fc`, 경계 `#e8edf5`
+- 검증 등급 색: 검증됨 `#0e9f6e` · 교차확인 `#c77700` · 주장 `#94a3b8`
+- 폰트: Pretendard / system-ui, 둥근 모서리·부드러운 그림자
+
+**① 2축 산점도 (적합도 × 신뢰도)** — 최우선
+- 형태: 2D 산점도. X축=적합도(0~100), Y축=신뢰도(주장→교차확인→검증됨 순서, 또는 0~1).
+- 요소: 한 지원자의 스킬들을 점으로. 점 색=검증 등급(위 색), 점 라벨=스킬명.
+- 메시지: "적합도 높지만 신뢰도 낮은 점(주장만)"과 "적합도·신뢰도 모두 높은 점"이 사분면으로 갈림 → **두 축은 독립**임을 한 장으로 증명.
+- 데이터: 분석 결과의 `capability_fit`(충족 스킬+등급) — 샘플 분석 1건이면 충분.
+
+**② 직군 × 스킬 히트맵** — 강력 추천
+- 형태: 행=9개 직군, 열=핵심 스킬, 셀 색농도=공고 내 빈도(높을수록 진하게).
+- 메시지: Tableau·Power BI·Excel은 Data Analyst 행만, Snowflake·Spark는 Data Engineer 행만 진함 → **직군 고유 스킬이 도드라져 추출·분류 품질을 시각적으로 증명.**
+- 데이터(실측, 560개 기준 직군별 상위 스킬):
+
+  | 직군 | 공고 | 핵심 스킬(빈도순) |
+  |---|---|---|
+  | Software Engineer | 147 | Python, PostgreSQL, Docker, React, Java, TypeScript |
+  | Security Engineer | 107 | AWS, Python, SIEM, Terraform, CI/CD, GCP |
+  | AI/LLM Engineer | 88 | Python, AI, LLM, Machine Learning, Docker, PostgreSQL |
+  | Data Scientist | 51 | Python, SQL, Machine Learning, R, AI, GenAI |
+  | DevOps/SRE | 43 | Kubernetes, Docker, Python, Terraform, Go, PostgreSQL |
+  | ML Engineer | 39 | Python, Docker, PostgreSQL, Machine Learning, Azure, LLM |
+  | Data Engineer | 36 | Python, SQL, AWS, Java, Snowflake, Spark |
+  | Data Analyst | 31 | SQL, Tableau, Power BI, Python, dbt, Excel |
+  | Frontend Engineer | 18 | React, JavaScript, Vue.js, CSS, TypeScript, Git |
+
+**③ Neo4j 직군–스킬 관계 네트워크**
+- 형태: force-directed 그래프. 노드=직군(큰 원)·스킬(작은 원), 엣지=REQUIRES(직군→스킬)·CO_OCCURS(스킬↔스킬).
+- 메시지: 공유 스킬(Python·Docker)은 중앙 허브, 고유 스킬(Tableau·SIEM)은 직군 주변에 위성처럼 → **그래프DB를 택한 이유를 시각적으로 정당화.**
+- 데이터: 위 히트맵 데이터 + 직군 공유 스킬(Python은 8/9 직군 공통 등).
+
+**④ Before/After 막대 차트**
+- 형태: 항목별 전/후 막대 2개씩.
+- 데이터: 적합도 30→83 · RAGAS relevancy 0.36→0.90 · faithfulness 0→0.20 · Security 공고 15→107.
+- 메시지: 개선폭을 3초 안에.
+
+**⑤ 측정 기반 의사결정 도식 (Chroma)**
+- 형태: 도넛/막대 — "검색 12건 중 11건 키워드와 동일(92%)".
+- 메시지: 효과 ≈0을 측정 → 제거. "측정해서 결정"을 시각화.
+
+(아키텍처 흐름도는 관측 페이지의 Mermaid 다이어그램을 포트폴리오용으로 다듬어 재사용.)
+
+---
+
 ## [⑧] 회고
 
 **잘한 점**
@@ -169,10 +219,12 @@ START
 - 현상에서 멈추지 않고 **원인까지 추적**했다(적합도 30%의 원인=평균 편향, 적재 누락의 원인=transient).
 
 **아쉬운 점**
+- **데이터가 한국이 아니다.** 합법·무료·구조화 JSON이라는 이유로 Adzuna(영국·글로벌)를 썼는데, 한국 채용 시장과는 직군 구성·핵심 스킬·연봉 공개 관행이 달라 **국내 사용자 체감이 떨어진다.** (국내 잡보드는 약관상 직접 크롤링이 어려워 처음부터 Adzuna로 갔던 것이 한계로 남았다.)
 - 연봉 데이터 공개율이 **3%**에 그쳐 연봉 분석을 보조 지표로 격하해야 했다 — 데이터 소스 한계를 늦게 확인했다.
 - RAGAS faithfulness가 합성 단문 평가의 특성상 **~0.2에서 한계**였다 — 평가 설계를 처음부터 더 정교히 했어야 했다.
 - 공고 데이터에 LangChain 명시가 적어 타겟 직군 핵심 스킬에 LangChain이 상위로 드러나지 않았다.
 
 **다시 한다면 / 다음 프로젝트 연결**
+- **한국 채용 데이터로 재구축하겠다** — 합법적 경로(공개 API·제휴 등)로 국내 공고를 확보하면 직군·스킬·연봉 분석이 국내 사용자에게 실제로 쓸모 있어진다. (아키텍처는 데이터 소스에 독립적으로 설계해 두어, 수집 어댑터만 교체하면 된다.)
 - 데이터 소스를 다변화(연봉·LangChain 커버리지 확보)하고, **평가 지표를 설계 초기에 먼저 정의**한 뒤 기능을 붙이겠다.
 - 다음으로는 **평가 파이프라인을 상시 관측(observability)에 통합**하고, 사용자 데이터가 쌓이면 **추출 모델 파인튜닝(QLoRA)** 으로 비용·정확도를 함께 잡는 방향으로 확장하겠다.
