@@ -102,12 +102,24 @@ async function pollReport(attempt) {
   }
 }
 
+// 신뢰도 등급 한국어 라벨 (class는 영문 유지 — CSS .badge.Verified 등)
+const TRUST_KO = { Verified: "검증됨", Corroborated: "교차확인", Claimed: "주장" };
+const trustKo = (v) => TRUST_KO[v] || v || "-";
+
+// 신뢰도 용어 설명 범례
+const TRUST_LEGEND = `
+  <div class="legend">
+    <div class="lg"><span class="dotc Verified"></span><b>검증됨</b><span class="en">Verified</span> — GitHub 코드·배포 URL로 실제 확인</div>
+    <div class="lg"><span class="dotc Corroborated"></span><b>교차확인</b><span class="en">Corroborated</span> — 2개 이상 출처가 일치</div>
+    <div class="lg"><span class="dotc Claimed"></span><b>주장</b><span class="en">Claimed</span> — 이력서 진술만, 코드 미확인</div>
+  </div>`;
+
 function renderCapability(d) {
   const cf = d.capability_fit;
   if (!cf) return "";
   const metN = (cf.met || []).length;
   const met = (cf.met || []).map((m) =>
-    `<span class="cap met">${esc(m.skill)} ✓ <span class="badge ${m.verification}">${esc(m.verification)}</span></span>`).join("");
+    `<span class="cap met">${esc(m.skill)} ✓ <span class="badge ${m.verification}">${trustKo(m.verification)}</span></span>`).join("");
   const unmet = (cf.unmet || []).map((s) => `<span class="cap unmet">${esc(s)} ✗</span>`).join("");
   const rec = (d.recommended_families || [])
     .map((r) => `<div class="fam-row"><span>${esc(r.job_family)}</span><span>${r.matched_count}개 일치</span></div>`
@@ -125,7 +137,7 @@ function renderReport(d) {
   const counts = d.verification_counts || {};
   const skills = (d.verified_skills || [])
     .map((s) => `<div class="skill-row"><span>${esc(s.skill)}</span>
-      <span class="badge ${s.verification}">${esc(s.verification)}</span>
+      <span class="badge ${s.verification}">${trustKo(s.verification)}</span>
       <span class="src">${(s.sources || []).map(esc).join(", ")}</span></div>`)
     .join("");
   const projects = (d.project_suggestions || [])
@@ -140,12 +152,23 @@ function renderReport(d) {
       <div class="prio">${esc(s.reason)}</div></div>`)
     .join("");
 
+  const cf = d.capability_fit || {};
+  const fitN = (cf.met || []).length, fitT = cf.total || 0;
+  const fitPct = fitT ? Math.round((fitN / fitT) * 100) : 0;
+
   $("result").innerHTML = `
-    ${renderCapability(d)}
     <div class="metrics">
-      <div class="metric"><div>신뢰도</div><div class="big">${d.confidence_level ? esc(d.confidence_level) : "-"}</div>
-        <div class="prio">Verified ${counts.Verified || 0} · Corroborated ${counts.Corroborated || 0} · Claimed ${counts.Claimed || 0}</div></div>
+      <div class="metric"><div class="k">적합도 (핵심 스킬 충족)</div>
+        <div class="big">${fitPct}<small style="font-size:1rem;color:var(--muted)">/100</small></div>
+        <div class="gauge"><span style="width:${fitPct}%"></span></div></div>
+      <div class="metric"><div class="k">신뢰도 (근거가 얼마나 확실한가)</div>
+        <div class="trust-pills">
+          <span class="tpill Verified">● 검증됨 ${counts.Verified || 0}</span>
+          <span class="tpill Corroborated">● 교차확인 ${counts.Corroborated || 0}</span>
+          <span class="tpill Claimed">● 주장 ${counts.Claimed || 0}</span></div></div>
     </div>
+    ${TRUST_LEGEND}
+    ${renderCapability(d)}
     ${d.advice ? `<p>${esc(d.advice)}</p>` : ""}
     <h3>검증된 스킬</h3>${skills || "<p class='prio'>없음</p>"}
     <h3>코칭</h3>

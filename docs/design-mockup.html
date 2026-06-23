@@ -1,0 +1,160 @@
+<title>JobGraph — 디자인 리뉴얼 시안</title>
+<style>
+  :root{
+    --ink:#0e1b33; --muted:#64748b; --line:#e8edf5; --line2:#dce5f1;
+    --accent:#1f5fe0; --accent-2:#4a90ff; --accent-soft:#eaf2ff;
+    --verified:#0e9f6e; --corro:#c77700; --claimed:#94a3b8;
+    --bg:#f4f7fc; --card:#ffffff;
+    --r:16px; --shadow:0 1px 2px rgba(14,27,51,.05),0 14px 34px -16px rgba(31,95,224,.22);
+    --font:"Pretendard",system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--font);color:var(--ink);background:var(--bg);
+    line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:760px;margin:0 auto;padding:0 20px;}
+  .label{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);font-weight:700;}
+
+  /* nav */
+  nav{position:sticky;top:0;background:rgba(255,255,255,.82);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);z-index:10;}
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;max-width:760px;margin:0 auto;}
+  .logo{font-weight:800;font-size:1.05rem;letter-spacing:-.02em;display:flex;align-items:center;gap:8px;}
+  .logo .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    display:inline-block;}
+  .nav .menu a{color:var(--muted);text-decoration:none;margin-left:20px;font-size:.9rem;font-weight:500;}
+
+  /* hero */
+  .hero{text-align:center;padding:72px 20px 40px;background:
+    radial-gradient(60% 120% at 50% -10%, var(--accent-soft) 0%, rgba(241,239,255,0) 70%);}
+  .hero h1{font-size:2.5rem;line-height:1.18;letter-spacing:-.03em;margin:14px 0 16px;font-weight:800;}
+  .hero h1 .grad{background:linear-gradient(120deg,var(--accent),var(--accent-2));
+    -webkit-background-clip:text;background-clip:text;color:transparent;}
+  .hero p{color:var(--muted);font-size:1.08rem;max-width:520px;margin:0 auto 28px;}
+  .cta{display:inline-block;background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;
+    text-decoration:none;padding:14px 30px;border-radius:12px;font-weight:700;font-size:1rem;
+    box-shadow:0 10px 24px -10px var(--accent);transition:transform .15s;}
+  .cta:hover{transform:translateY(-1px);}
+
+  /* section */
+  section{padding:14px 0;}
+  h2{font-size:1.25rem;letter-spacing:-.02em;margin:30px 0 14px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+    padding:24px;box-shadow:var(--shadow);margin-bottom:16px;}
+
+  /* metrics */
+  .metrics{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;}
+  .metric{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;}
+  .metric .k{font-size:.8rem;color:var(--muted);font-weight:600;}
+  .metric .big{font-size:2.1rem;font-weight:800;letter-spacing:-.03em;margin-top:2px;}
+  .metric .big small{font-size:1rem;color:var(--muted);font-weight:600;}
+  .gauge{height:9px;background:var(--line2);border-radius:999px;overflow:hidden;margin-top:12px;}
+  .gauge>span{display:block;height:100%;border-radius:999px;
+    background:linear-gradient(90deg,var(--accent),var(--accent-2));}
+  .trust{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;}
+  .pill{font-size:.74rem;font-weight:700;padding:4px 11px;border-radius:999px;}
+  .pill.v{background:#e3f6ee;color:var(--verified);}
+  .pill.c{background:#fcefda;color:var(--corro);}
+  .pill.cl{background:#eef1f6;color:#5b6573;}
+
+  /* 신뢰도 범례 — 용어 설명 */
+  .legend{display:flex;flex-direction:column;gap:8px;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:-2px 0 18px;
+    font-size:.85rem;color:var(--muted);}
+  .lg{display:flex;align-items:center;gap:8px;}
+  .lg b{color:var(--ink);font-weight:700;}
+  .lg .en{font-size:.7rem;color:#9aa6b6;letter-spacing:.02em;margin-left:-3px;}
+  .lg u{text-decoration-color:var(--accent);text-underline-offset:2px;}
+  .dotc{width:9px;height:9px;border-radius:50%;flex:none;}
+  .dotc.v{background:var(--verified);} .dotc.c{background:var(--corro);} .dotc.cl{background:var(--claimed);}
+
+  /* skill rows */
+  .srow{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);}
+  .srow:last-child{border-bottom:0;}
+  .srow .name{font-weight:600;font-size:.95rem;}
+  .srow .src{margin-left:auto;color:var(--muted);font-size:.78rem;}
+  .badge{font-size:.7rem;font-weight:700;padding:3px 9px;border-radius:999px;color:#fff;}
+  .badge.v{background:var(--verified);} .badge.c{background:var(--corro);} .badge.cl{background:var(--claimed);}
+
+  /* caps */
+  .caps{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px;}
+  .cap{font-size:.82rem;padding:5px 12px;border-radius:9px;border:1px solid var(--line2);font-weight:600;}
+  .cap.met{background:var(--accent-soft);border-color:#cadcff;color:var(--accent);}
+  .cap.unmet{background:#fff5f5;border-color:#ffd9d9;color:#d83a3a;}
+
+  /* coach */
+  .coach{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:12px;
+    padding:16px 18px;margin-top:12px;background:linear-gradient(180deg,#f5f9ff,#fff);}
+  .coach .h{font-weight:700;font-size:.95rem;margin-bottom:4px;}
+  .coach .why{color:var(--muted);font-size:.88rem;}
+  .tag{display:inline-block;font-size:.74rem;font-weight:700;color:var(--accent);
+    background:var(--accent-soft);padding:2px 9px;border-radius:7px;margin-right:6px;}
+  .note{color:var(--muted);font-size:.85rem;margin:24px 0 60px;text-align:center;}
+</style>
+
+<nav><div class="nav">
+  <span class="logo"><span class="dot"></span>JobGraph</span>
+  <span class="menu"><a>소개</a><a>사용법</a><a>관측</a></span>
+</div></nav>
+
+<header class="hero">
+  <span class="label">Agentic RAG · 다중 소스 교차검증</span>
+  <h1>이력서 한 장으로<br><span class="grad">직무 적합도</span>를 진단하세요</h1>
+  <p>GitHub·배포까지 교차검증하는 분석. <b>적합도</b>와 그 판단의 <b>신뢰도</b>를 분리해서 보여줍니다.</p>
+  <a class="cta" href="#">지금 분석하기 →</a>
+</header>
+
+<main class="wrap">
+  <h2>분석 결과 <span style="color:var(--muted);font-weight:600;font-size:.9rem;">· AI/LLM Engineer</span></h2>
+
+  <div class="metrics">
+    <div class="metric">
+      <div class="k">적합도 (핵심 스킬 충족)</div>
+      <div class="big">70<small>/100</small></div>
+      <div class="gauge"><span style="width:70%"></span></div>
+    </div>
+    <div class="metric">
+      <div class="k">신뢰도 (근거가 얼마나 확실한가)</div>
+      <div class="trust">
+        <span class="pill v">● 검증됨 4</span>
+        <span class="pill c">● 교차확인 2</span>
+        <span class="pill cl">● 주장 3</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="lg"><span class="dotc v"></span><b>검증됨</b><span class="en">Verified</span> — GitHub 코드·배포 URL로 <u>실제 확인</u></div>
+    <div class="lg"><span class="dotc c"></span><b>교차확인</b><span class="en">Corroborated</span> — 2개 이상 출처가 일치</div>
+    <div class="lg"><span class="dotc cl"></span><b>주장</b><span class="en">Claimed</span> — 이력서 진술만, 코드 <u>미확인</u></div>
+  </div>
+
+  <div class="card">
+    <div class="label" style="color:var(--muted)">핵심 스킬 충족</div>
+    <div class="caps">
+      <span class="cap met">Python</span><span class="cap met">LLM</span>
+      <span class="cap met">PyTorch</span><span class="cap met">Docker</span>
+      <span class="cap unmet">LangChain</span><span class="cap unmet">RAG</span>
+    </div>
+
+    <h2 style="font-size:1.05rem;margin:22px 0 6px;">스킬별 검증 등급</h2>
+    <div class="srow"><span class="name">Python</span><span class="badge v">검증됨</span><span class="src">resume · github</span></div>
+    <div class="srow"><span class="name">PyTorch</span><span class="badge v">검증됨</span><span class="src">github</span></div>
+    <div class="srow"><span class="name">Docker</span><span class="badge c">교차확인</span><span class="src">resume · deploy</span></div>
+    <div class="srow"><span class="name">LLM</span><span class="badge cl">주장</span><span class="src">resume</span></div>
+  </div>
+
+  <div class="card">
+    <div class="label">성장 코칭</div>
+    <h2 style="font-size:1.05rem;margin:6px 0 2px;">부족 스킬을 실증하려면</h2>
+    <div class="coach">
+      <div class="h"><span class="tag">LangChain</span>your-repo/rag-chatbot 에 추가</div>
+      <div class="why">현재 OpenAI SDK를 직접 호출 중. LangChain의 <code>LCEL</code> 체인으로 리팩터링하면 LangChain 실사용을 코드로 증명할 수 있습니다.</div>
+    </div>
+    <div class="coach">
+      <div class="h"><span class="tag">RAG</span>연계 학습 추천</div>
+      <div class="why">LLM·PyTorch 보유 → 벡터 검색 + 재순위(Re-ranking)까지 이으면 AI/LLM 직군 핵심 흐름이 완성됩니다.</div>
+    </div>
+  </div>
+
+  <p class="note">— 디자인 리뉴얼 시안 (실제 데이터 예시) —</p>
+</main>
