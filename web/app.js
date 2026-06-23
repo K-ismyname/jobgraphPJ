@@ -52,6 +52,10 @@ async function startAnalysis() {
     });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
+      // 429: 데모 일일 한도 — "실패"가 아니라 안내로 표시
+      if (res.status === 429) {
+        return setMsg($("analyze-msg"), e.detail || "오늘 데모 분석 한도가 모두 사용되었습니다.", true);
+      }
       return setMsg($("analyze-msg"), `분석 시작 실패: ${e.detail || res.status}`, true);
     }
     $("step-result").classList.remove("disabled");

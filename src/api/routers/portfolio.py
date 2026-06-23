@@ -25,6 +25,28 @@ from src.storage.neo4j_client import Neo4jClient
 router = APIRouter()
 
 _MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MB
+
+# 데모 비용 보호 — 하루 분석 횟수 상한(메모리, 날짜 바뀌면 리셋).
+# DEMO_DAILY_LIMIT 미설정/0이면 무제한(로컬 개발). 공개 데모는 HF 시크릿으로 설정.
+_demo_usage: dict = {"date": None, "count": 0}
+
+
+def _enforce_daily_limit() -> None:
+    """오늘 분석 횟수가 상한을 넘으면 429를 던지고, 아니면 카운트를 1 올린다."""
+    limit = int(os.getenv("DEMO_DAILY_LIMIT", "0") or "0")
+    if limit <= 0:
+        return
+    today = datetime.now(timezone.utc).date().isoformat()
+    if _demo_usage["date"] != today:
+        _demo_usage["date"] = today
+        _demo_usage["count"] = 0
+    if _demo_usage["count"] >= limit:
+        raise HTTPException(
+            429,
+            f"오늘 데모 분석 한도({limit}회)가 모두 사용되었습니다. "
+            "공개 데모 비용 보호를 위한 제한이며, 내일 다시 시도해 주세요.",
+        )
+    _demo_usage["count"] += 1
 _NODE_PHASE = {
     "resume_eval": "소스 평가 중", "github_eval": "소스 평가 중",
     "portfolio_eval": "소스 평가 중", "deploy_eval": "소스 평가 중",
@@ -87,6 +109,9 @@ async def analyze_portfolio(
     existing = reports.get(req.report_id)
     if existing and getattr(existing, "status", None) == "processing":
         raise HTTPException(409, "이미 분석 중입니다.")
+
+    # 공개 데모 비용 보호 — 분석(=OpenAI 호출) 시작 직전에 일일 상한 검사
+    _enforce_daily_limit()
 
     reports[req.report_id] = ReportResponse(
         report_id=req.report_id, status="processing", phase="소스 평가 중",
