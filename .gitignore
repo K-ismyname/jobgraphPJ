@@ -21,5 +21,14 @@ chroma/
 *.sqlite3
 .DS_Store
 
+# 수집/가공 데이터 (재생성 가능, seeds는 추적)
+data/raw/
+data/processed/
+data/chroma/
+jobs.json
+
+# 개인 문서 (이력서·포트폴리오 — 공개 저장소 제외)
+*.pdf
+
 # 파인튜닝 체크포인트
 finetune/checkpoints/

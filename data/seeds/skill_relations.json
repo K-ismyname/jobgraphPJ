@@ -1,0 +1,17 @@
+[
+  {"from": "LangGraph", "to": "LangChain", "relation": "PART_OF"},
+  {"from": "langchain-anthropic", "to": "LangChain", "relation": "PART_OF"},
+  {"from": "langchain-chroma", "to": "LangChain", "relation": "PART_OF"},
+  {"from": "QLoRA", "to": "LoRA", "relation": "PART_OF"},
+  {"from": "FastAPI", "to": "Python", "relation": "PART_OF"},
+  {"from": "Uvicorn", "to": "FastAPI", "relation": "PART_OF"},
+  {"from": "Hugging Face Transformers", "to": "Hugging Face", "relation": "PART_OF"},
+  {"from": "PEFT", "to": "Hugging Face", "relation": "PART_OF"},
+  {"from": "Unsloth", "to": "QLoRA", "relation": "PART_OF"},
+  {"from": "ChromaDB", "to": "Vector Database", "relation": "PART_OF"},
+  {"from": "Neo4j", "to": "Graph Database", "relation": "PART_OF"},
+  {"from": "PyTorch", "to": "Python", "relation": "PART_OF"},
+  {"from": "vLLM", "to": "LLM Serving", "relation": "PART_OF"},
+  {"from": "RAGAS", "to": "RAG Evaluation", "relation": "PART_OF"},
+  {"from": "Langfuse", "to": "LLM Observability", "relation": "PART_OF"}
+]
