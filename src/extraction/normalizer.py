@@ -56,6 +56,16 @@ SKILL_ALIASES: dict[str, str] = {
     "genai": "GenAI", "generative ai": "GenAI", "gen ai": "GenAI",
     "rag": "RAG", "retrieval augmented generation": "RAG",
     "retrieval-augmented generation": "RAG",
+    # 약어·브랜드 표기 정규화 (smart_title가 잘못 처리하는 것들)
+    "mlops": "MLOps", "ml ops": "MLOps",
+    "devops": "DevOps", "dev ops": "DevOps",
+    "siem": "SIEM",
+    "github": "GitHub",
+    "power bi": "Power BI", "powerbi": "Power BI",
+    "dbt": "dbt",
+    "css": "CSS", "css3": "CSS",
+    "html": "HTML", "html5": "HTML5",
+    "cloud security": "Cloud Security",
     # Korean
     "리액트": "React",
 }

@@ -43,3 +43,15 @@ def test_normalize_skill_ai_ml_synonyms():
     assert normalize_skill("GenAI") == "GenAI"
     assert normalize_skill("generative ai") == "GenAI"
     assert normalize_skill("Retrieval Augmented Generation") == "RAG"
+
+
+def test_normalize_skill_brand_casing():
+    # 약어·브랜드 표기가 깔끔하게 (smart_title가 틀리던 것들)
+    assert normalize_skill("mlops") == "MLOps"
+    assert normalize_skill("DEVOPS") == "DevOps"
+    assert normalize_skill("siem") == "SIEM"
+    assert normalize_skill("github") == "GitHub"
+    assert normalize_skill("power bi") == "Power BI"
+    assert normalize_skill("dbt") == "dbt"
+    assert normalize_skill("css") == "CSS"
+    assert normalize_skill("html") == "HTML"
