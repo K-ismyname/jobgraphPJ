@@ -119,7 +119,9 @@ LIMIT $limit
 QUERY_POSTINGS_FOR_SKILL = """
 MATCH (jp:JobPosting)-[:REQUIRES]->(s:Skill)
 WHERE toLower(s.name) = toLower($skill_name)
-RETURN jp.source_id AS source_id
+RETURN jp.source_id AS source_id,
+       CASE WHEN jp.required_section IS NOT NULL AND jp.required_section <> '' THEN 0 ELSE 1 END AS priority
+ORDER BY priority
 LIMIT $limit
 """
 
@@ -278,6 +280,12 @@ class Neo4jClient:
                         sess.run(UPSERT_CO_OCCURS, skill_a=name_a, skill_b=name_b)
                     except Exception as e:
                         print(f"[warn] CO_OCCURS 실패 ({name_a}, {name_b}): {e}")
+
+        # 섹션 텍스트는 MERGE와 별도로 SET — 기존 공고도 업데이트 가능
+        req = posting.get("required_section", "")
+        pref = posting.get("preferred_section", "")
+        if req or pref:
+            self.set_posting_sections(source_id, req, pref)
 
     def save_portfolio(self, extraction: ResumeExtraction) -> None:
         """이력서 추출 결과를 PortfolioItem + DEMONSTRATES 관계로 Neo4j에 저장."""

@@ -102,11 +102,14 @@ def extract_sections(contents: str) -> tuple[str, str]:
 
 _BULLET_RE = re.compile(r"^[•\-\*]\s+.{10,}")  # 최소 10자 이상인 불릿 라인
 
-# 요건 클러스터 점수 올리는 패턴
+# 요건 클러스터 점수 올리는 패턴 (Muse HTML + Adzuna 평문 공통)
 _REQ_SIGNALS = re.compile(
     r"\d+\+?\s*years?|experience\s+with|proficient\s+in|knowledge\s+of"
     r"|familiarity\s+with|strong\s+understanding|ability\s+to|skilled\s+in"
-    r"|background\s+in|expertise\s+in|demonstrated|degree\s+in|bachelor",
+    r"|background\s+in|expertise\s+in|demonstrated|degree\s+in|bachelor"
+    r"|must\s+have|must\s+be|you\s+must|you\s+will\s+have|you\s+'ll\s+have"
+    r"|you\s+should\s+have|we\s+require|required\s+to|looking\s+for"
+    r"|ideal\s+candidate|at\s+least|minimum\s+of|\bessential\b|proven\s+experience",
     re.IGNORECASE,
 )
 

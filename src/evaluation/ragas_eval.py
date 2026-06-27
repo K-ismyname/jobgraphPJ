@@ -264,17 +264,16 @@ if __name__ == "__main__":
     openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if os.getenv("OPENAI_API_KEY") else None
     graph = create_supervisor_graph(neo4j, openai_client)
 
-    # Software Engineer: 127개로 가장 많은 데이터 보유 → 신뢰도 높음
     test_cases = [
         {
-            "job_family": "Software Engineer",
-            "skills": ["Python", "Java", "SQL", "Git", "Docker"],
-            "owner": "평가_SE",
+            "job_family": "AI/LLM Engineer",
+            "skills": ["Python", "LangChain", "Docker"],
+            "owner": "평가_LLM1",
         },
         {
-            "job_family": "Software Engineer",
-            "skills": ["Python", "React", "TypeScript", "AWS", "PostgreSQL", "Redis"],
-            "owner": "평가_SE2",
+            "job_family": "AI/LLM Engineer",
+            "skills": ["Python", "FastAPI", "PostgreSQL", "Docker"],
+            "owner": "평가_LLM2",
         },
         {
             "job_family": "Data Engineer",
@@ -283,7 +282,7 @@ if __name__ == "__main__":
         },
     ]
 
-    print("=== 갭 분석 에이전트 RAGAS 평가 (Software Engineer 중심) ===\n")
+    print("=== 갭 분석 에이전트 RAGAS 평가 (AI/LLM Engineer 중심) ===\n")
     report = run_ragas_eval(test_cases, graph)
 
     if report.error:
