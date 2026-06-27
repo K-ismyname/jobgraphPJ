@@ -127,14 +127,15 @@ def extract_skills_from_posting(
 
 아래 JSON 형식으로만 응답하세요. 다른 텍스트 없이:
 {{
-  "required": ["Python", "PostgreSQL", "Docker"],
-  "preferred": ["Kubernetes", "Terraform"]
+  "required": ["스킬A", "스킬B"],
+  "preferred": ["스킬C"]
 }}
 
 규칙:
 - 기술명은 표준 표기로 정규화 (React.js → React, LangChain → LangChain)
 - 연차·학위·소프트스킬(커뮤니케이션 등)은 제외
-- 기술이 아닌 도메인 지식(금융, 의료 등)도 제외"""
+- 기술이 아닌 도메인 지식(금융, 의료 등)도 제외
+- 공고에 명시되지 않은 기술은 절대 추가하지 마세요"""
     else:
         full_text = (job.get("text_clean") or "")[:_POSTING_TEXT_CAP]
         prompt = f"""다음 채용공고에서 요구하는 기술명만 추출하세요.
@@ -145,8 +146,8 @@ def extract_skills_from_posting(
 
 아래 JSON 형식으로만 응답하세요. 다른 텍스트 없이:
 {{
-  "required": ["Python", "PostgreSQL", "Docker"],
-  "preferred": ["Kubernetes", "Terraform"]
+  "required": ["스킬A", "스킬B"],
+  "preferred": ["스킬C"]
 }}
 
 규칙:

@@ -107,6 +107,9 @@ related_skills 툴에 보유 스킬을 넘겨, 자주 함께 요구되는 스킬
 규칙:
 - 2단계 판단 기준: "이 프로젝트 코드 어디에 어떻게 추가하는가"가 구체적으로 보여야 YES.
   "이 직군에 중요하다", "있으면 도움된다" 수준이면 NO → learning_recommendations.
+- code_anchor=false인 스킬은 project_suggestions 후보에서 즉시 제외하세요 → learning_recommendations로.
+- 현재 프로젝트 주 언어·런타임과 다른 언어(Python 프로젝트에 Java·JavaScript, Node 프로젝트에 Python 등)는
+  절대 project_suggestions에 넣지 마세요 → 반드시 learning_recommendations로.
 - 갖지 않은 스킬을 이력서에 써넣으라고 하지 마세요. 프로젝트로 실증하거나 학습하라고 안내하세요.
 - GitHub 소스코드가 없으면 project_suggestions는 비우고 연계 학습 위주로 작성하세요.
 - 필요하면 verify_suggestion으로 공고 근거를 확인하세요.
@@ -311,6 +314,10 @@ def create_nodes(
 
         # Coach 루프 시작 메시지 초기화 — 갭 분석 + GitHub 소스코드 분석 결과
         contexts = (state.get("github_eval") or {}).get("project_contexts") or []
+        # relevant_files가 없는 스킬에 code_anchor=false 표시 — Coach가 파일 없는 스킬을 project_suggestions에 넣지 않도록
+        for ctx in contexts:
+            for sa in (ctx.get("skill_assessments") or []):
+                sa["code_anchor"] = bool(sa.get("relevant_files"))
         coach_init = (
             "아래 갭 분석을 바탕으로 코칭하세요.\n"
             + json.dumps(report, ensure_ascii=False, indent=2)
