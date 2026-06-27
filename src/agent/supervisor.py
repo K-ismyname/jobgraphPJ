@@ -284,6 +284,8 @@ def run_supervisor(
         core_skills = job_family_core_skills(neo4j, job_family, 10)
         final["capability_fit"] = {"job_family": job_family,
                                    **skill_fit(names, core_skills, result.get("consensus") or {})}
+        common_skills = neo4j.get_common_skills(threshold=5, n=10)
+        final["common_skill_fit"] = skill_fit(names, common_skills, result.get("consensus") or {})
         final["recommended_families"] = recommend_families(neo4j, names, neo4j.list_job_families())[:3]
         verified_names = [
             s["skill"] for s in (result.get("consensus") or {}).get("skills", [])

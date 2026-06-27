@@ -417,18 +417,32 @@ class Neo4jClient:
             print(f"[neo4j] 직군 스킬 조회 실패: {e}")
             return []
 
-    def get_common_skills(self, threshold: int = 8) -> list[str]:
-        """threshold개 이상 직군에 공통 등장하는 기초 스킬 목록."""
+    def get_common_skills(self, threshold: int = 5, n: int = 10) -> list[str]:
+        """threshold개 이상 직군에 공통 등장하는 기초 스킬 (공고 수 많은 순 상위 n개)."""
         query = """
-        MATCH (jf:JobFamily)<-[:INSTANCE_OF]-(:JobPosting)-[:REQUIRES|PREFERS]->(s:Skill)
-        WITH s, count(DISTINCT jf) AS family_count
+        MATCH (jp:JobPosting)-[:INSTANCE_OF]->(jf:JobFamily)
+        MATCH (jp)-[:REQUIRES]->(s:Skill)
+        WITH s, count(DISTINCT jf) AS family_count, count(DISTINCT jp) AS posting_count
         WHERE family_count >= $threshold
         RETURN s.name AS skill
-        ORDER BY family_count DESC, s.name
+        ORDER BY posting_count DESC
+        LIMIT $n
         """
         try:
-            rows = self.execute_query(query, threshold=threshold)
-            return [r["skill"] for r in rows if r.get("skill")]
+            from src.extraction.normalizer import normalize_skill, is_noise_skill
+            rows = self.execute_query(query, threshold=threshold, n=n)
+            seen: set[str] = set()
+            result: list[str] = []
+            for r in rows:
+                raw = r.get("skill")
+                if not raw:
+                    continue
+                normalized = normalize_skill(raw)
+                if is_noise_skill(normalized) or normalized in seen:
+                    continue
+                seen.add(normalized)
+                result.append(normalized)
+            return result
         except Exception as e:
             print(f"[neo4j] 공통 스킬 조회 실패: {e}")
             return []

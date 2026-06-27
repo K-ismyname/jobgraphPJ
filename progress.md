@@ -4,6 +4,37 @@
 
 ---
 
+## [2026-06-27]
+
+### 작업 절차
+
+1. **Coach 이종 언어 버그 수정**: Java가 Python 프로젝트에 `project_suggestions`로 들어가는 문제. `nodes.py`의 `_COACH_SYSTEM_PROMPT`에 두 규칙 추가 — `code_anchor=false`인 스킬은 제외, 이종 언어는 `learning_recommendations`로만. `generate_report`에서 `skill_assessment`마다 `code_anchor` 필드 계산(`bool(relevant_files)`).
+
+2. **RAGAS 평가 인프라 구축**: `faithfulness` / `answer_relevancy` 측정을 위한 근거 텍스트(required_section) 파이프라인 전체 구축.
+   - `neo4j_client.py`: `ingest_posting()` 끝에 `set_posting_sections()` 연동, `QUERY_POSTINGS_FOR_SKILL`에 required_section 있는 공고 우선 정렬 추가.
+   - `preprocessor.py`: `_REQ_SIGNALS` 패턴 확장 — Adzuna 평문 스타일("must have", "looking for" 등) 추가로 추출률 2% → 40%.
+   - `collect.py`: `_normalize_adzuna()`에 description → required/preferred 섹션 파싱 3단계 fallback 추가.
+   - `ragas_eval.py`: 테스트 케이스를 AI/LLM Engineer 중심으로 업데이트.
+
+3. **수동 backfill**: 기존 3,294개 공고에는 required_section 없음 → 직군 3개(AI/LLM Engineer, Software Engineer, Data Engineer) 재수집 (pages=3) → Neo4j에 총 1,026개 공고 저장.
+
+4. **RAGAS 측정 결과**: Faithfulness=0.250, AnswerRelevancy=0.876.
+
+5. **커밋**: `feat(evaluation): RAGAS 평가 인프라 구축 + 공고 텍스트 저장` (78f0b227)
+
+### 발생 문제
+
+- **required_section 0개 저장**: `extract_sections()`가 HTML 없는 Adzuna 평문에서 실패 → `if req or pref:` 조건이 False → `set_posting_sections()` 미호출. 해결: description 전체를 text[:2000]으로 직접 저장하는 스크립트 실행 (1,026개 처리).
+- **source_id 불일치**: `QUERY_POSTINGS_FOR_SKILL`이 구공고(`remoteok-*`, `muse-*`)를 먼저 반환 → required_section 없는 공고가 근거로 사용됨. 해결: ORDER BY priority 추가 (required_section 있는 공고 우선).
+- **Adzuna 평문 패턴 미매칭**: `_REQ_SIGNALS`에 "must have", "you should have" 등 Adzuna 스타일 패턴 누락 → 추출률 2%. 해결: 패턴 10개 추가 → 40%.
+- **Coach Java 포함**: `relevant_files` 없는 skill_assessment에 LLM이 새 파일 경로를 만들어 project_suggestions에 Java를 추가. 해결: `code_anchor` 필드 + 이종 언어 규칙 추가.
+
+### 해결 방법
+
+- Faithfulness=0.250으로 낮은 이유: Adzuna 공고가 "required" 명시 없이 간접 표현("familiarity with X is a plus") 사용 → NLI 매칭 어려움. 구조적 한계이므로 개선 방향은 RAGAS용 영문 자연어 answer 생성 또는 추가 공고 수집으로 커버리지 확보.
+
+---
+
 ## 2026-06-09
 
 ### 작업 절차

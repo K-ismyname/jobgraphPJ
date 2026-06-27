@@ -29,6 +29,7 @@ class AnalyzeRequest(BaseModel):
     owner_name: str | None = None         # None이면 PDF에서 추출한 이름 사용
     github_urls: list[str] = Field(default_factory=list)   # 선택 — 코드 검증 (여러 개)
     deploy_urls: list[str] = Field(default_factory=list)   # 선택 — 작동 실증 (여러 개)
+    portfolio_report_id: str | None = None  # 선택 — 포트폴리오 PDF 업로드 ID
 
 
 # ── Jobs Response ───────────────────────────────────────────────
@@ -88,6 +89,12 @@ class UploadResponse(BaseModel):
     status: Literal["uploaded"]
 
 
+class PortfolioUploadResponse(BaseModel):
+    portfolio_report_id: str
+    page_count: int
+    status: Literal["uploaded"]
+
+
 class AnalyzeAccepted(BaseModel):
     report_id: str
     status: Literal["processing"]
@@ -130,6 +137,7 @@ class ReportResponse(BaseModel):
     generated_at: str | None = None
     trace: dict | None = None
     capability_fit: dict | None = None
+    common_skill_fit: dict | None = None
     recommended_families: list[dict] = Field(default_factory=list)
 
 

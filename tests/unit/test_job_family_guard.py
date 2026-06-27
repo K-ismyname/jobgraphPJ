@@ -25,6 +25,9 @@ class _FakeNeo4j:
     def recommend_job_postings(self, skills: list, top_n: int = 5) -> list:
         return []
 
+    def get_common_skills(self, threshold: int = 5, n: int = 10) -> list:
+        return []
+
 
 def test_invalid_job_family_blocks():
     g = _FakeGraph()

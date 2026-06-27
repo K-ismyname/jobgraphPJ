@@ -1,5 +1,5 @@
 // 이력서 분석 데모 — 업로드→분석→폴링→결과 렌더 (바닐라 JS)
-const state = { reportId: null };
+const state = { reportId: null, portfolioReportId: null };
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,6 +34,27 @@ async function uploadResume() {
   }
 }
 
+// 1-b. 포트폴리오 PDF 업로드 (선택)
+async function uploadPortfolio() {
+  const file = $("portfolio-file").files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append("file", file);
+  setMsg($("portfolio-msg"), "업로드 중…");
+  try {
+    const res = await fetch("/portfolio/upload-portfolio", { method: "POST", body: fd });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      return setMsg($("portfolio-msg"), `실패: ${e.detail || res.status}`, true);
+    }
+    const data = await res.json();
+    state.portfolioReportId = data.portfolio_report_id;
+    setMsg($("portfolio-msg"), `업로드됨 (${data.page_count}쪽)`);
+  } catch (err) {
+    setMsg($("portfolio-msg"), `네트워크 오류: ${err.message}`, true);
+  }
+}
+
 // 2. 분석 시작
 async function startAnalysis() {
   if (!state.reportId) return;
@@ -42,6 +63,7 @@ async function startAnalysis() {
     job_family: $("job-family").value,
     github_urls: collectUrls("github-urls"),
     deploy_urls: collectUrls("deploy-urls"),
+    ...(state.portfolioReportId ? { portfolio_report_id: state.portfolioReportId } : {}),
   };
   setMsg($("analyze-msg"), "");
   try {
@@ -114,20 +136,31 @@ const TRUST_LEGEND = `
     <div class="lg"><span class="dotc Claimed"></span><b>주장</b><span class="en">Claimed</span> — 이력서 진술만, 코드 미확인</div>
   </div>`;
 
+function renderSkillBadges(met, unmet) {
+  const metHtml = (met || []).map((m) =>
+    `<span class="cap met">${esc(m.skill)} ✓ <span class="badge ${m.verification}">${trustKo(m.verification)}</span></span>`).join("");
+  const unmetHtml = (unmet || []).map((s) => `<span class="cap unmet">${esc(s)} ✗</span>`).join("");
+  return metHtml + unmetHtml;
+}
+
 function renderCapability(d) {
   const cf = d.capability_fit;
   if (!cf) return "";
   const metN = (cf.met || []).length;
-  const met = (cf.met || []).map((m) =>
-    `<span class="cap met">${esc(m.skill)} ✓ <span class="badge ${m.verification}">${trustKo(m.verification)}</span></span>`).join("");
-  const unmet = (cf.unmet || []).map((s) => `<span class="cap unmet">${esc(s)} ✗</span>`).join("");
   const rec = (d.recommended_families || [])
     .map((r) => `<div class="fam-row"><span>${esc(r.job_family)}</span><span>${r.matched_count}개 일치</span></div>`
       + ((r.matched_skills || []).length ? `<div class="cap-ev">${(r.matched_skills || []).map(esc).join(", ")}</div>` : ""))
     .join("");
+
+  const commonFit = d.common_skill_fit;
+  const commonHtml = commonFit ? `
+    <h3>공통 기초 스킬 ${(commonFit.met || []).length}/${commonFit.total || 0} 충족</h3>
+    <div>${renderSkillBadges(commonFit.met, commonFit.unmet)}</div>` : "";
+
   return `
     <h3>${esc(cf.job_family || "")} 핵심 스킬 ${metN}/${cf.total || 0} 충족</h3>
-    <div>${met}${unmet}</div>
+    <div>${renderSkillBadges(cf.met, cf.unmet)}</div>
+    ${commonHtml}
     ${rec ? `<h3>당신에게 맞는 직군</h3>${rec}` : ""}
   `;
 }
@@ -202,4 +235,5 @@ $("add-github").addEventListener("click", () => addUrlField("github-urls", "http
 $("add-deploy").addEventListener("click", () => addUrlField("deploy-urls", "https://my-service.example.com"));
 
 $("upload-btn").addEventListener("click", uploadResume);
+$("portfolio-upload-btn").addEventListener("click", uploadPortfolio);
 $("analyze-btn").addEventListener("click", startAnalysis);

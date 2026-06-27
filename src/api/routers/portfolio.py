@@ -13,6 +13,7 @@ from src.api.schemas import (
     AnalyzeAccepted,
     AnalyzeRequest,
     LearningRecommendation,
+    PortfolioUploadResponse,
     ProjectSuggestion,
     ReportResponse,
     UploadResponse,
@@ -88,6 +89,34 @@ async def upload_resume(
     )
 
 
+@router.post("/upload-portfolio", response_model=PortfolioUploadResponse)
+async def upload_portfolio(
+    file: UploadFile = File(...),
+    uploads: dict = Depends(get_uploads),
+) -> PortfolioUploadResponse:
+    """포트폴리오 PDF 업로드. 경로를 임시 저장 후 portfolio_report_id 반환."""
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(415, "PDF 파일만 업로드 가능합니다.")
+    content = await file.read()
+    if len(content) > _MAX_PDF_BYTES:
+        raise HTTPException(413, "파일 크기는 10MB 이하여야 합니다.")
+    import pdfplumber
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+    try:
+        with pdfplumber.open(tmp_path) as pdf:
+            page_count = len(pdf.pages)
+    except Exception:
+        os.unlink(tmp_path)
+        raise HTTPException(422, "PDF를 열 수 없습니다.")
+    portfolio_id = str(uuid.uuid4())
+    uploads[f"pf:{portfolio_id}"] = tmp_path   # 파일 경로 저장 (텍스트가 아님)
+    return PortfolioUploadResponse(
+        portfolio_report_id=portfolio_id, page_count=page_count, status="uploaded",
+    )
+
+
 @router.post("/analyze", response_model=AnalyzeAccepted)
 async def analyze_portfolio(
     req: AnalyzeRequest,
@@ -117,11 +146,13 @@ async def analyze_portfolio(
         report_id=req.report_id, status="processing", phase="소스 평가 중",
         owner=req.owner_name or "분석 중", job_family=req.job_family,
     )
+    portfolio_path = uploads.get(f"pf:{req.portfolio_report_id}") if req.portfolio_report_id else None
     background_tasks.add_task(
         _run_analysis,
         report_id=req.report_id, resume_text=uploads[req.report_id],
         job_family=req.job_family, owner_name=req.owner_name,
         github_urls=req.github_urls, deploy_urls=req.deploy_urls,
+        portfolio_path=portfolio_path,
         graph=graph, neo4j=neo4j, reports=reports,
     )
     return AnalyzeAccepted(report_id=req.report_id, status="processing")
@@ -170,6 +201,7 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         generated_at=datetime.now(timezone.utc).isoformat(),
         trace=final.get("trace"),
         capability_fit=final.get("capability_fit"),
+        common_skill_fit=final.get("common_skill_fit"),
         recommended_families=final.get("recommended_families") or [],
     )
 
@@ -179,8 +211,9 @@ def _run_analysis(
     report_id: str, resume_text: str, job_family: str, owner_name: str | None,
     github_urls: list[str], deploy_urls: list[str],
     graph, neo4j: Neo4jClient, reports: dict,
+    portfolio_path: str | None = None,
 ) -> None:
-    """업로드 이력서 + GitHub + 배포 URL → v3 그래프 → 2축·검증 리포트."""
+    """업로드 이력서 + GitHub + 배포 URL + 포트폴리오 PDF → v3 그래프 → 2축·검증 리포트."""
     owner = owner_name or "지원자"
 
     def _progress(node: str) -> None:
@@ -192,6 +225,7 @@ def _run_analysis(
         out = run_supervisor(
             graph, job_family=job_family, owner=owner,
             resume_text=resume_text, github_urls=github_urls, deploy_urls=deploy_urls,
+            portfolio_path=portfolio_path,
             neo4j=neo4j, progress_cb=_progress,
         )
         if out.get("error"):
