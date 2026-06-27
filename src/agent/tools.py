@@ -9,6 +9,7 @@ from langchain_core.tools import tool
 from langgraph.types import interrupt
 
 from src.agent.evaluators.github_eval import _keywords_for, _word_match
+from src.extraction.normalizer import normalize_skill
 
 if TYPE_CHECKING:
     from src.storage.neo4j_client import Neo4jClient
@@ -115,7 +116,7 @@ def create_tools(neo4j: "Neo4jClient") -> list:
                     for r in missing_req
                 ],
                 "have_preferred": [r["skill"] for r in have_pref],
-                "missing_preferred": [r["skill"] for r in missing_pref],
+                "missing_preferred": [normalize_skill(r["skill"]) for r in missing_pref],
             }
         except Exception as e:
             return {"error": str(e)}

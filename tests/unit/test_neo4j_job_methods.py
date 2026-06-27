@@ -13,7 +13,7 @@ class _Fake:
 def test_get_job_family_skills_maps_names():
     fake = _Fake([{"skill": "Java", "weight": 20}, {"skill": "Spring", "weight": 15}])
     names = Neo4jClient.get_job_family_skills(fake, "Software Engineer")
-    assert names == ["Java", "Spring"]
+    assert names == ["Java", "Spring Boot"]
 
 
 def test_list_job_families_filters_empty():

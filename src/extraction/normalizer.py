@@ -6,7 +6,7 @@ SKILL_ALIASES: dict[str, str] = {
     "javascript": "JavaScript", "js": "JavaScript",
     "vue.js": "Vue.js", "vuejs": "Vue.js", "vue": "Vue.js",
     "next.js": "Next.js", "nextjs": "Next.js",
-    "tailwind": "Tailwind CSS", "tailwindcss": "Tailwind CSS",
+    "tailwind": "Tailwind CSS", "tailwindcss": "Tailwind CSS", "tailwind css": "Tailwind CSS",
     # Backend / General
     "golang": "Go",
     "spring boot": "Spring Boot", "springboot": "Spring Boot",
@@ -68,7 +68,46 @@ SKILL_ALIASES: dict[str, str] = {
     "cloud security": "Cloud Security",
     # Korean
     "리액트": "React",
+    # 중복 정규화 (같은 스킬 다른 표기)
+    "apache spark": "Spark", "apache kafka": "Kafka",
+    "microsoft azure": "Azure", "ms azure": "Azure",
+    "amazon web services": "AWS",
+    "google cloud": "GCP", "google cloud platform": "GCP",
+    "scikit learn": "Scikit-learn", "sklearn": "Scikit-learn",
+    "restful apis": "REST", "restful api": "REST", "rest api": "REST",
+    "ci/cd pipelines": "CI/CD", "ci/cd pipeline": "CI/CD",
+    "large language models": "LLM", "large language model": "LLM",
+    "node": "Node.js",
+    "unix/linux": "Linux", "unix": "Linux",
+    "spring": "Spring Boot",
+    "databricks mlflow": "MLflow",
+    "gcp vertex": "Vertex AI",
+    "azure ml": "Azure ML",
 }
+
+# 스킬이 아닌 것들 — 자격증·소프트스킬·방법론·협업도구·제네릭 용어
+SKILL_BLOCKLIST: frozenset[str] = frozenset({
+    # 소프트스킬 / 너무 generic
+    "coding", "testing", "troubleshooting", "design", "analytical thinking",
+    "problem solving", "communication", "open-source", "software integration",
+    "computer science", "mathematics", "data analytics", "data analysis",
+    # 방법론 / 협업 도구
+    "agile", "scrum", "jira", "confluence", "sdlc",
+    # 자격증 (스킬이 아닌 자격 취득)
+    "cissp", "cism", "cisa", "crisc", "c|eh", "sans giac", "cis",
+    "iso", "aws certified security - specialty", "nist",
+    # 비스킬 표현
+    "apis", "orchestration", "cloud infrastructure", "finops",
+    "ai-assisted engineering workflows", "ssh", "open-source",
+    # 너무 broad
+    "cloud", "windows", "data science",
+})
+
+
+def is_noise_skill(name: str) -> bool:
+    """블록리스트에 속하거나 너무 짧은 스킬명이면 True."""
+    return name.lower().strip() in SKILL_BLOCKLIST or len(name.strip()) <= 1
+
 
 # 대문자 유지가 필요한 약어/브랜드
 _KEEP_UPPER = {

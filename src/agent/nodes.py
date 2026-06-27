@@ -84,14 +84,31 @@ verification 값의 의미:
 }}"""
 
 # ── Coach Agent 프롬프트 ─────────────────────────────────────────
-_COACH_SYSTEM_PROMPT = """당신은 커리어 코치입니다. 지원자의 GitHub 프로젝트와 직군 부족 스킬을 보고 두 종류의 코칭을 합니다.
+_COACH_SYSTEM_PROMPT = """당신은 커리어 코치입니다. GitHub 소스코드 분석 결과와 직군 갭을 바탕으로 두 종류의 코칭을 합니다.
 
-1. 프로젝트 보강: 각 GitHub 프로젝트 프로필(summary·tech_stack·observations)과 직군 부족 스킬을 보고, "이 프로젝트에 무엇을 추가/발전시키면 부족 스킬이 코드로 실증되는가"를 제안하세요. observations(예: Dockerfile 없음·테스트 없음)를 우선 활용하세요.
-2. 연계 학습: related_skills 툴에 보유 스킬을 넘겨, 자주 함께 요구되는 스킬 중 미보유를 학습 추천하세요.
+[GitHub 분석 데이터 읽는 법]
+project_contexts 안에 skill_assessments 목록이 있습니다. 각 항목:
+- current_usage: 현재 수준 (기본 사용 / 중급 패턴 / 고급 패턴)
+- used_patterns: 코드에서 이미 확인된 패턴
+- missing_patterns: 이 스킬의 고급 패턴 중 아직 없는 것
+- how_to_add: 이 프로젝트 파일 기준 구체적 보강 방법
+
+[프로젝트 보강 — 2단계 판단]
+1단계: skill_assessments에 있는 스킬 → missing_patterns + how_to_add로 project_suggestions 작성.
+
+2단계: 갭 분석의 missing_required 스킬마다 판단하세요.
+  project_contexts(코드 구조)를 보고 이 스킬이 이 프로젝트에 자연스럽게 추가될 수 있는가?
+  YES — 구체적 파일명·함수명이 보이는가? → project_suggestions에 추가
+  NO  — '이 직군에 필요하다'는 이유뿐이거나 코드에 연결점이 없는가? → learning_recommendations에만
+
+[연계 학습]
+related_skills 툴에 보유 스킬을 넘겨, 자주 함께 요구되는 스킬 중 미보유를 학습 추천하세요.
 
 규칙:
+- 2단계 판단 기준: "이 프로젝트 코드 어디에 어떻게 추가하는가"가 구체적으로 보여야 YES.
+  "이 직군에 중요하다", "있으면 도움된다" 수준이면 NO → learning_recommendations.
 - 갖지 않은 스킬을 이력서에 써넣으라고 하지 마세요. 프로젝트로 실증하거나 학습하라고 안내하세요.
-- GitHub 프로젝트가 없으면 project_suggestions는 비우고 연계 학습 위주로 작성하세요.
+- GitHub 소스코드가 없으면 project_suggestions는 비우고 연계 학습 위주로 작성하세요.
 - 필요하면 verify_suggestion으로 공고 근거를 확인하세요.
 - 모든 검토가 끝나면 도구 호출 없이 최종 JSON을 반환하세요.
 
@@ -99,8 +116,9 @@ _COACH_SYSTEM_PROMPT = """당신은 커리어 코치입니다. 지원자의 GitH
 {{
   "summary": "전체 코칭 방향 2-3문장",
   "project_suggestions": [
-    {{"repo": "owner/repo (일반 제안이면 빈 문자열)", "add_skill": "추가하면 좋은 스킬",
-      "why": "직군/실증 관점 이유", "how": "이 프로젝트에 어떻게 적용하는지"}}
+    {{"repo": "owner/repo", "skill": "보강 대상 스킬",
+      "missing_pattern": "추가하면 좋은 패턴",
+      "how": "구체적 파일명·함수명 포함 보강 방법"}}
   ],
   "learning_recommendations": [
     {{"skill": "연계 스킬", "reason": "어떤 보유 스킬과 이어지는지"}}
@@ -291,13 +309,13 @@ def create_nodes(
         except json.JSONDecodeError:
             report = {"raw": raw, "error": "JSON 파싱 실패"}
 
-        # Coach 루프 시작 메시지 초기화 — 갭 분석 + GitHub 프로젝트 프로필
-        profiles = (state.get("github_eval") or {}).get("profiles") or []
+        # Coach 루프 시작 메시지 초기화 — 갭 분석 + GitHub 소스코드 분석 결과
+        contexts = (state.get("github_eval") or {}).get("project_contexts") or []
         coach_init = (
             "아래 갭 분석을 바탕으로 코칭하세요.\n"
             + json.dumps(report, ensure_ascii=False, indent=2)
-            + (("\n\n[GitHub 프로젝트 프로필]\n" + json.dumps(profiles, ensure_ascii=False, indent=2))
-               if profiles else "\n\n[GitHub 프로젝트] 없음 — 연계 학습 위주로 코칭하세요.")
+            + (("\n\n[GitHub 프로젝트 분석]\n" + json.dumps(contexts, ensure_ascii=False, indent=2))
+               if contexts else "\n\n[GitHub 프로젝트] 소스코드 없음 — 연계 학습 위주로 코칭하세요.")
         )
 
         return {

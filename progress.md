@@ -797,3 +797,38 @@ RAGAS 파이프라인은 v3에서 실행됐으나(`run_analysis`가 반환하는
 - **RAGAS response reframe 가설을 측정으로 기각**: response를 "이 공고들이 required로 명시한다"로 바꿔보니 오히려 faithfulness 0.200→0.000, answer_relevancy 0.87→0.54로 악화(yes/no 질문에 간접 답변이 됨) → 직감 대신 측정을 따라 복원. 풍부화만 유지(라이브 에이전트에도 이득). 합성 단문 평가에서 faithfulness는 0/1로 튀어 metric 추격은 비추.
 - **통합 테스트 fixture 보강**: LLM의 툴 선택이 비결정적이므로 에이전트가 호출 가능한 neo4j 메서드(`get_co_occurring_skills`·`get_posting_sections`·`get_postings_requiring_skill`·`get_skill_unlock_count`·`get_skill_trend`)를 모두 직렬화 가능한 값으로 mock → 단위 182 + 통합 14 전부 통과.
 - **죽은 코드 일괄 정리**: RemoteOK + `normalize_job_title`(LLM 직무 정규화, 미연결·미테스트) 제거, 고아 import(os·OpenAI) 정리.
+
+## 2026-06-27
+
+### 작업 절차
+
+**코칭 품질 개선 (github_eval + Coach 구조 개선)**
+
+1. **Coach 2단계 판단 구조 도입**: `applicable_gaps`를 github_eval에서 제거하고, Coach agent가 `missing_required` 스킬을 프로젝트 코드 컨텍스트로 직접 판단하도록 재설계. project_suggestions(코드 연결 가능) vs learning_recommendations(코드 연결 불가) 분리.
+
+2. **ecosystem mapping 추가** (`github_eval.py`): `_PKG_TO_SKILL` 딕셔너리로 package.json 패키지 → 표준 스킬명 매핑 (drizzle-orm → PostgreSQL 등 35개). `_skills_from_pkg_json()` 함수 구현.
+
+3. **vocab 확장** (`github_eval.evaluate()`): `exclude_common_threshold=None`으로 Docker·AWS·CI/CD 등 공통 스킬도 코칭 vocab에 포함. resume_skills도 vocab에 추가해 직군 외 스킬도 GitHub에서 검증 가능하게.
+
+4. **detected_skills fallback**: LLM이 pkg_json 감지 스킬을 `current_usage: "없음"`으로 처리하면 기본 "기본 사용" assessment로 보장.
+
+5. **정규화 수정**: `missing_preferred`에 `normalize_skill()` 적용 (CI/CD Pipelines → CI/CD). `normalize_skill()`을 LLM 출력 후 적용해 대소문자 오류 제거.
+
+6. **추천 공고 Top5 추가** (`neo4j_client.recommend_job_postings()`): Verified 스킬 기준으로 매칭률 상위 채용공고 5개 반환. `min_required=4` 조건으로 3개짜리 고정 추출 노이즈 공고 제거.
+
+### 발생 문제
+
+- **applicable_gaps 오탐**: Git·Java 등 프로젝트와 무관한 스킬이 코칭에 포함됨. 원인: github_eval이 gap 분석 컨텍스트 없이 "이 스킬이 이 프로젝트에 맞냐"를 판단해서. 해결: applicable_gaps 제거, Coach가 두 컨텍스트를 모두 보고 판단.
+- **PostgreSQL Claimed 유지**: Frontend Engineer vocab에 PostgreSQL이 없어서 pkg_json 감지도 skip됨. 해결: resume_skills를 vocab에 추가.
+- **3개짜리 공고 노이즈**: 요구 스킬 3개 공고가 1,507개로 압도적 다수(LLM 고정 추출 패턴). 100% 매칭이지만 의미 없음. 해결: `min_required=4` 조건 추가.
+
+### 해결 방법
+
+- Coach 2단계 프롬프트: "project_contexts에서 구체적 파일명·함수명이 보이는가? YES → project_suggestions, NO → learning_recommendations"
+- vocab = job_family_skills + resume_skills 합집합으로 검증 범위 확장
+- Neo4j 데이터 분포 확인 후 min_required 값 결정 (4개 이상이 적정)
+
+### 최종 상태 (192/192 테스트 통과)
+
+- Frontend Engineer + the_formula 기준: 매칭률 60%, Verified 10개, Claimed 1개 (Docker)
+- PostgreSQL Verified (drizzle-orm 감지), missing_preferred 정규화, 추천 공고 Top5 포함

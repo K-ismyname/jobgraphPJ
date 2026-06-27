@@ -360,19 +360,69 @@ class Neo4jClient:
             print(f"[neo4j] 직군 목록 조회 실패: {e}")
             return []
 
-    def get_job_family_skills(self, job_family: str) -> list[str]:
-        """직군의 상위 요구/우대 스킬명 (gap_analysis와 동일 패턴, 공고수 빈도순)."""
-        query = """
-        MATCH (:JobFamily {name: $job_family})<-[:INSTANCE_OF]-(jp)-[r:REQUIRES|PREFERS]->(s:Skill)
-        RETURN s.name AS skill, count(jp) AS weight
-        ORDER BY weight DESC
-        LIMIT 30
+    def get_job_family_skills(
+        self, job_family: str, exclude_common_threshold: int | None = 8
+    ) -> list[str]:
+        """직군의 상위 요구/우대 스킬명 (공고수 빈도순).
+
+        exclude_common_threshold: 이 값 이상의 직군에 공통 등장하는 스킬은 제외.
+            None이면 필터 없이 전체 반환. 기본값 8 = 9개 직군 중 8개 이상 등장한 스킬 제외.
         """
+        if exclude_common_threshold is None:
+            query = """
+            MATCH (:JobFamily {name: $job_family})<-[:INSTANCE_OF]-(jp)-[:REQUIRES|PREFERS]->(s:Skill)
+            RETURN s.name AS skill, count(jp) AS weight
+            ORDER BY weight DESC
+            LIMIT 30
+            """
+            params = {"job_family": job_family}
+        else:
+            query = """
+            MATCH (:JobFamily {name: $job_family})<-[:INSTANCE_OF]-(jp)-[:REQUIRES|PREFERS]->(s:Skill)
+            WITH s, count(DISTINCT jp) AS weight
+            MATCH (jf2:JobFamily)<-[:INSTANCE_OF]-(:JobPosting)-[:REQUIRES|PREFERS]->(s)
+            WITH s, weight, count(DISTINCT jf2) AS family_count
+            WHERE family_count < $threshold
+            RETURN s.name AS skill, weight
+            ORDER BY weight DESC
+            LIMIT 30
+            """
+            params = {"job_family": job_family, "threshold": exclude_common_threshold}
         try:
-            rows = self.execute_query(query, job_family=job_family)
-            return [r["skill"] for r in rows if r.get("skill")]
+            from src.extraction.normalizer import normalize_skill, is_noise_skill
+            rows = self.execute_query(query, **params)
+            seen: set[str] = set()
+            result: list[str] = []
+            for r in rows:
+                raw = r.get("skill")
+                if not raw:
+                    continue
+                normalized = normalize_skill(raw)
+                if is_noise_skill(normalized) or normalized in seen:
+                    continue
+                seen.add(normalized)
+                result.append(normalized)
+                if len(result) >= 30:
+                    break
+            return result
         except Exception as e:
             print(f"[neo4j] 직군 스킬 조회 실패: {e}")
+            return []
+
+    def get_common_skills(self, threshold: int = 8) -> list[str]:
+        """threshold개 이상 직군에 공통 등장하는 기초 스킬 목록."""
+        query = """
+        MATCH (jf:JobFamily)<-[:INSTANCE_OF]-(:JobPosting)-[:REQUIRES|PREFERS]->(s:Skill)
+        WITH s, count(DISTINCT jf) AS family_count
+        WHERE family_count >= $threshold
+        RETURN s.name AS skill
+        ORDER BY family_count DESC, s.name
+        """
+        try:
+            rows = self.execute_query(query, threshold=threshold)
+            return [r["skill"] for r in rows if r.get("skill")]
+        except Exception as e:
+            print(f"[neo4j] 공통 스킬 조회 실패: {e}")
             return []
 
     def get_co_occurring_skills(self, skills: list[str], top_n: int = 8) -> list[str]:
@@ -391,6 +441,47 @@ class Neo4jClient:
             return [r["skill"] for r in rows if r.get("skill")]
         except Exception as e:
             print(f"[neo4j] CO_OCCURS 조회 실패: {e}")
+            return []
+
+    def recommend_job_postings(self, skills: list[str], top_n: int = 5, min_required: int = 4) -> list[dict]:
+        """보유 스킬과 매칭률이 높은 채용공고 상위 N개를 반환한다.
+
+        min_required: 요구 스킬이 이 수 미만인 공고는 제외 (노이즈 방지).
+        """
+        if not skills:
+            return []
+        query = """
+        WITH $skills AS portfolio
+        MATCH (jp:JobPosting)-[:REQUIRES]->(s:Skill)
+        WHERE s.name IN portfolio
+        WITH jp, count(DISTINCT s) AS matched
+        MATCH (jp)-[:REQUIRES]->(ts:Skill)
+        WITH jp, matched, count(DISTINCT ts) AS total
+        WHERE total >= $min_required
+        MATCH (jp)-[:POSTED_BY]->(c:Company)
+        MATCH (jp)-[:INSTANCE_OF]->(jf:JobFamily)
+        RETURN jp.title AS title, c.name AS company, jp.url AS url,
+               jf.name AS job_family, matched, total,
+               round(toFloat(matched) / total * 100) AS match_pct
+        ORDER BY match_pct DESC, matched DESC
+        LIMIT $n
+        """
+        try:
+            rows = self.execute_query(query, skills=skills, n=top_n, min_required=min_required)
+            return [
+                {
+                    "title": r["title"],
+                    "company": r["company"],
+                    "job_family": r["job_family"],
+                    "match_pct": r["match_pct"],
+                    "matched": r["matched"],
+                    "total": r["total"],
+                    "url": r["url"],
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            print(f"[neo4j] 공고 추천 조회 실패: {e}")
             return []
 
     def update_portfolio_confidence(self, owner: str, changes: dict[str, str]) -> None:

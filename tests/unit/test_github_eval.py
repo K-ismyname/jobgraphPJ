@@ -1,10 +1,12 @@
 # GitHub 평가자 — 직군 스킬 사전 매칭, 별칭, 오프라인 가드
+import json
 from src.agent.evaluators.github_eval import (
     create_github_evaluator,
     _word_match,
     _manifest_match,
     _keywords_for,
     _skills_from_sources,
+    _skills_from_pkg_json,
 )
 from src.portfolio.github_connector import parse_github_repo
 
@@ -13,7 +15,7 @@ class _FakeNeo4j:
     def __init__(self, skills):
         self._skills = skills
 
-    def get_job_family_skills(self, job_family):
+    def get_job_family_skills(self, job_family, **kwargs):
         return self._skills
 
 
@@ -93,7 +95,7 @@ def test_skills_none_when_no_match():
 
 
 import types
-from src.agent.evaluators.github_eval import _profile_one
+from src.agent.evaluators.github_eval import _assess_project_and_skills
 
 
 def _fake_openai(content):
@@ -103,20 +105,66 @@ def _fake_openai(content):
         chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=lambda **k: resp)))
 
 
-def test_profile_one_parses_llm_json():
-    oa = _fake_openai('{"summary":"RAG 챗봇","tech_stack":["Python","FastAPI"],"observations":["Dockerfile 없음"]}')
-    p = _profile_one(oa, "me", "proj", "readme", "desc", ["llm"], ["main.py"], "fastapi")
-    assert p["repo"] == "me/proj"
-    assert p["summary"] == "RAG 챗봇"
-    assert p["tech_stack"] == ["Python", "FastAPI"]
-    assert p["observations"] == ["Dockerfile 없음"]
+def test_assess_parses_llm_json():
+    payload = json.dumps({
+        "project_type": "FastAPI 백엔드",
+        "structure_summary": "RAG 챗봇 API",
+        "skill_assessments": [
+            {"skill": "Python", "current_usage": "고급 패턴",
+             "fit_assessment": "핵심 언어", "how_to_add": "이미 사용 중", "relevant_files": ["main.py"]}
+        ]
+    })
+    result = _assess_project_and_skills(_fake_openai(payload), "me", "proj",
+                                        {"main.py": "print('hello')"}, ["Python"], "readme")
+    assert result["repo"] == "me/proj"
+    assert result["project_type"] == "FastAPI 백엔드"
+    assert result["skill_assessments"][0]["skill"] == "Python"
 
 
-def test_profile_one_no_openai_returns_empty():
-    p = _profile_one(None, "me", "proj", "", "", [], [], "")
-    assert p == {"repo": "me/proj", "summary": "", "tech_stack": [], "observations": []}
+def test_skills_from_pkg_json_maps_ecosystem():
+    pkg = json.dumps({"dependencies": {
+        "drizzle-orm": "^0.30.0",
+        "@neondatabase/serverless": "^0.9.0",
+        "next-auth": "^5.0.0",
+    }, "devDependencies": {"drizzle-kit": "^0.20.0"}})
+    vocab = ["PostgreSQL", "NextAuth.js", "React", "Docker"]
+    results = _skills_from_pkg_json(pkg, vocab)
+    by_skill = {r["skill"]: r for r in results}
+    assert "PostgreSQL" in by_skill
+    assert "NextAuth.js" in by_skill
+    pg_evidence = by_skill["PostgreSQL"]["evidence"]
+    assert any(p in pg_evidence for p in ("drizzle-orm", "@neondatabase/serverless", "drizzle-kit"))
+    assert by_skill["PostgreSQL"]["source"] == "github"
 
 
-def test_profile_one_bad_json_returns_empty():
-    p = _profile_one(_fake_openai("not json"), "me", "proj", "r", "d", [], [], "")
-    assert p == {"repo": "me/proj", "summary": "", "tech_stack": [], "observations": []}
+def test_skills_from_pkg_json_no_out_of_vocab():
+    pkg = json.dumps({"dependencies": {"redis": "^4.0.0"}})
+    # Redis not in vocab
+    results = _skills_from_pkg_json(pkg, ["PostgreSQL", "Docker"])
+    assert results == []
+
+
+def test_skills_from_pkg_json_deduplicates():
+    # drizzle-orm, drizzle-kit, @neondatabase/serverless all → PostgreSQL
+    pkg = json.dumps({"dependencies": {
+        "drizzle-orm": "^0.30.0",
+        "drizzle-kit": "^0.20.0",
+        "@neondatabase/serverless": "^0.9.0",
+    }})
+    results = _skills_from_pkg_json(pkg, ["PostgreSQL"])
+    assert len([r for r in results if r["skill"] == "PostgreSQL"]) == 1
+
+
+def test_skills_from_pkg_json_invalid_json_returns_empty():
+    assert _skills_from_pkg_json("not json", ["PostgreSQL"]) == []
+
+
+def test_assess_no_openai_returns_empty():
+    result = _assess_project_and_skills(None, "me", "proj", {}, ["Python"], "")
+    assert result == {}
+
+
+def test_assess_bad_json_returns_empty():
+    result = _assess_project_and_skills(_fake_openai("not json"), "me", "proj",
+                                        {"f.py": "x=1"}, ["Python"], "")
+    assert result == {}
