@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # ── startup ──────────────────────────────────────────────────
     app.state.neo4j = Neo4jClient()
     app.state.openai = (
-        OpenAI() if os.getenv("OPENAI_API_KEY") else None
+        OpenAI(max_retries=6) if os.getenv("OPENAI_API_KEY") else None
     )
     app.state.uploads: dict[str, str] = {}   # report_id → PDF 텍스트
     app.state.reports: dict = {}             # report_id → ReportResponse

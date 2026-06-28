@@ -81,8 +81,10 @@ async def upload_resume(
     finally:
         os.unlink(tmp_path)
 
+    # 병렬 평가자 4개가 동시에 이 텍스트를 LLM에 넘기므로 TPM 초과 방지
+    _MAX_RESUME_CHARS = 12_000
     report_id = str(uuid.uuid4())
-    uploads[report_id] = text
+    uploads[report_id] = text[:_MAX_RESUME_CHARS]
     name_hint = (text.split("\n")[0].strip()[:60]) if text else "Unknown"
     return UploadResponse(
         report_id=report_id, candidate_name_hint=name_hint,

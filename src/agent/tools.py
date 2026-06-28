@@ -6,7 +6,6 @@ import re
 from typing import TYPE_CHECKING, Annotated
 
 from langchain_core.tools import tool
-from langgraph.types import interrupt
 
 from src.agent.evaluators.github_eval import _keywords_for, _word_match
 from src.extraction.normalizer import normalize_skill
@@ -209,9 +208,13 @@ def create_tools(neo4j: "Neo4jClient") -> list:
         question: Annotated[str, "사용자에게 물어볼 구체적인 질문"],
     ) -> str:
         """이력서 내용이 불명확하거나 핵심 정보가 누락된 경우 사용자에게 질문한다."""
-        if os.getenv("HITL_ENABLED", "true").lower() != "true":
+        if os.getenv("HITL_ENABLED", "false").lower() != "true":
             return "[자동 모드] 사용자 확인 없이 진행합니다."
-        answer: str = interrupt({"question": question})
+        try:
+            from langgraph.types import interrupt as _interrupt  # >=0.3
+        except ImportError:
+            return "[HITL 미지원 버전] 자동 모드로 진행합니다."
+        answer: str = _interrupt({"question": question})
         return answer
 
     return [gap_analysis, verify_skills, skill_unlock, posting_trend,

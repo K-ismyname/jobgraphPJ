@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Callable
 from langchain_core.messages import ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import tools_condition
+
 from langgraph.types import Send
 
 from src.agent.state import COACH_MAX_ITERATIONS, MAX_ITERATIONS, AppState
@@ -137,8 +137,8 @@ def create_supervisor_graph(neo4j, openai_client):
     def route_gap_loop(state: AppState) -> str:
         if state.get("iteration", 0) >= MAX_ITERATIONS:
             return "synthesizer"
-        routing = tools_condition(state)
-        return "synthesizer" if routing == END else routing
+        last = (list(state.get("messages") or [None]))[-1]
+        return "tools" if (last and getattr(last, "tool_calls", None)) else "synthesizer"
 
     def route_coach_loop(state: AppState) -> str:
         if state.get("coach_iteration", 0) >= COACH_MAX_ITERATIONS:

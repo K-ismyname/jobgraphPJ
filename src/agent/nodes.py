@@ -129,26 +129,40 @@ related_skills 툴에 보유 스킬을 넘겨, 자주 함께 요구되는 스킬
 보유 스킬과 갭을 바탕으로 면접 전략을 코칭하세요. 질문 목록이 아니라 "어떻게 말해야 하는가"를 알려주는 코칭입니다.
 
 두 가지 유형:
-- strength(강점 어필): Verified/Corroborated 스킬 — 어떤 구현을 했는지 + 왜 그 선택인지 + 면접관이 파고들 때 어떻게 답할지
-- gap(갭 대응): missing_required 스킬 — 보유 스킬에서 인접 경험을 찾아 연결. "모른다 → 배우겠다"가 아니라 "모르지만 X를 해봤어서 핵심 목적은 이해한다"
+- strength(강점 어필): [강점 어필 대상] 목록의 스킬을 **목록 순서 그대로** 상위 3개 선택. 순서가 중요도 순이므로 절대 바꾸지 말 것. 어떤 구현을 했는지 + 왜 그 선택인지 + 면접관이 파고들 때 어떻게 답할지.
+- gap(갭 대응): missing_required 스킬 — 보유 스킬에서 인접 경험을 연결. 금지: "모른다", "배우겠다", "배울 준비가 되어 있다", "기초 지식이 있다".
 
 [좋은 코칭 예시 — 이 수준으로 작성할 것]
-strength 예시:
+strength 예시 1:
   title: "LangGraph Corrective RAG 설계"
   coaching: "Send API로 4개 평가자를 병렬 fan-out하고 consensus 노드에서 합류시킨 구조를 설명하세요. '왜 LangGraph를 썼냐'는 질문엔 조건 분기·루프·HITL 세 가지를 동시에 구현해야 했기 때문이라고 답하세요. LangChain 체인만으로는 이 구조가 불가능하다는 걸 한 줄 덧붙이면 차별화됩니다."
+
+strength 예시 2:
+  title: "Docker 배포 실증"
+  coaching: "단순히 Docker를 쓴 게 아니라 실제 서비스가 동작 중인 URL이 있다면 그걸 증거로 제시하세요. '컨테이너화한 이유'는 환경 차이 없이 재현 가능한 실행 환경을 만들기 위해서라고 답하고, docker-compose로 여러 서비스를 엮은 경험이 있으면 반드시 언급하세요."
 
 gap 예시:
   title: "Kubernetes 미경험"
   coaching: "Docker로 컨테이너화한 경험이 있으니 '단일 컨테이너에서 다중 서비스로 규모가 커졌을 때 오케스트레이션이 왜 필요한지는 이해한다'고 연결하세요. 모른다고만 하면 탈락이지만 인접 경험으로 개념 이해를 보여주면 플러스입니다."
 
-strength 최대 3개, gap 최대 3개. 임팩트 높은 것부터.
+[나쁜 코칭 예시 — 절대 이렇게 쓰지 말 것]
+gap 나쁜 예:
+  coaching: "Python으로 데이터 분석을 해봤으니 머신러닝을 배울 준비가 되어 있다고 강조하면 좋습니다."
+  → 금지 이유: "배울 준비"는 지원자가 해당 역량이 없다고 스스로 인정하는 표현. 면접관이 "그럼 지금은 못 한다는 거네요"로 역공한다.
+
+strength 나쁜 예:
+  title: "AI 모델 통합 경험"
+  coaching: "AI 모델 학습 로직을 추가한 경험을 강조하세요."
+  → 금지 이유: 어떤 모델인지, 왜 그 선택인지, 어떤 구조인지가 없으면 모든 지원자가 동일하게 답할 수 있어 차별화가 안 됨.
+
+strength 최소 2개 최대 3개, gap 최대 3개. 임팩트 높은 것부터.
 
 최종 출력 형식 (코드 펜스 없이):
 {{
   "summary": "전체 코칭 방향 2-3문장",
   "project_suggestions": [
-    {{"repo": "owner/repo", "skill": "보강 대상 스킬",
-      "missing_pattern": "추가하면 좋은 패턴",
+    {{"repo": "owner/repo", "add_skill": "보강 대상 스킬",
+      "why": "이 스킬이 이 프로젝트에 필요한 이유",
       "how": "구체적 파일명·함수명 포함 보강 방법"}}
   ],
   "learning_recommendations": [
@@ -307,7 +321,7 @@ def create_nodes(
     if not os.getenv("OPENAI_API_KEY"):
         raise EnvironmentError("OPENAI_API_KEY 환경변수가 필요합니다.")
 
-    _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_retries=6)
     _llm_with_tools = _llm.bind_tools(tools)
 
     def call_model(state: AppState) -> dict:
@@ -365,8 +379,24 @@ def create_nodes(
         gap_skills = _gap_missing_names(report)
         skill_context = _load_skill_context(gap_skills)
 
+        # Verified/Corroborated 스킬 — strength 코칭 대상 + 면접 컨텍스트
+        # 포트폴리오 핵심 스킬을 코드에서 우선순위로 보장 (LLM에 맡기지 않음)
+        _STRENGTH_PRIORITY = ["LangGraph", "RAG", "LLM", "Docker", "Python", "PostgreSQL"]
+        verified_skills = [
+            skill for skill, info in (consensus or {}).items()
+            if (info or {}).get("verification") in ("Verified", "Corroborated")
+        ]
+        verified_skills = sorted(
+            verified_skills,
+            key=lambda s: (_STRENGTH_PRIORITY.index(s) if s in _STRENGTH_PRIORITY else len(_STRENGTH_PRIORITY))
+        )
+        strength_context = _load_skill_context(verified_skills)
+        strength_list = "\n".join(f"- {s}" for s in verified_skills) or "(없음)"
+
         coach_init = (
-            _PROJECT_DESIGN_CONTEXT
+            f"[강점 어필 대상 — Verified/Corroborated 스킬]\n{strength_list}"
+            + (("\n\n[강점 스킬 면접 컨텍스트]\n" + json.dumps(strength_context, ensure_ascii=False, indent=2))
+               if strength_context else "")
             + (("\n\n[GAP 스킬 면접 컨텍스트]\n" + json.dumps(skill_context, ensure_ascii=False, indent=2))
                if skill_context else "")
             + "\n\n아래 갭 분석을 바탕으로 코칭하세요.\n"
@@ -389,12 +419,12 @@ def create_coach_nodes(coach_tools: list["BaseTool"]):
     if not os.getenv("OPENAI_API_KEY"):
         raise EnvironmentError("OPENAI_API_KEY 환경변수가 필요합니다.")
 
-    _coach_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    _coach_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_retries=6)
     _coach_llm_with_tools = _coach_llm.bind_tools(coach_tools)
 
     def coach_call_model(state: AppState) -> dict:
         iteration = state.get("coach_iteration", 0) + 1
-        system = SystemMessage(content=_COACH_SYSTEM_PROMPT)
+        system = SystemMessage(content=_COACH_SYSTEM_PROMPT + "\n\n" + _PROJECT_DESIGN_CONTEXT)
         response = _coach_llm_with_tools.invoke([system] + list(state["coach_messages"]))
         return {"coach_messages": [response], "coach_iteration": iteration}
 

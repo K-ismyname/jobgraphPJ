@@ -296,6 +296,7 @@ def _assess_project_and_skills(
         f"### {path}\n{content}" for path, content in file_contents.items()
     )[:_MAX_CODE_CHARS]
 
+    valid_paths = sorted(file_contents.keys())
     detected_hint = (
         f"\n이미 확인된 스킬 (반드시 포함): {', '.join(detected_skills)}"
         if detected_skills else ""
@@ -305,9 +306,11 @@ def _assess_project_and_skills(
         f"README:\n{readme[:2000]}\n\n"
         f"소스 파일:\n{code_block}\n\n"
         f"직군 핵심 스킬 목록: {', '.join(vocab)}{detected_hint}\n\n"
+        f"유효한 파일 경로 목록 (relevant_files는 반드시 이 목록에서만 선택):\n"
+        + "\n".join(f"  {p}" for p in valid_paths) + "\n\n"
         "위 코드를 분석해 JSON으로만 답하세요 (코드펜스 없이). 모든 문자열 값은 한국어로.\n"
         "{\n"
-        '  "project_type": "Next.js 기반 풀스택 뉴스 피드 앱",\n'
+        '  "project_type": "FastAPI + LangGraph 기반 Agentic RAG 백엔드",\n'
         '  "structure_summary": "프로젝트 구조 2-3문장",\n'
         '  "skill_assessments": [\n'
         "    {\n"
@@ -316,7 +319,7 @@ def _assess_project_and_skills(
         '      "used_patterns": ["코드에서 실제 사용 중인 구체적 패턴"],\n'
         '      "missing_patterns": ["이 스킬의 고급 패턴 중 이 코드에 없는 것"],\n'
         '      "how_to_add": "[파일명]의 [함수명]에 [missing_patterns[0]] 추가 — [구체적 변경 한 문장]",\n'
-        '      "relevant_files": ["관련 파일 경로 최대 3개"]\n'
+        '      "relevant_files": ["위 유효한 파일 경로 목록에서만 선택, 최대 3개"]\n'
         "    }\n"
         "  ]\n"
         "}\n"
@@ -324,6 +327,7 @@ def _assess_project_and_skills(
         "- '이미 확인된 스킬'은 반드시 skill_assessments에 포함할 것.\n"
         "- 코드나 의존성 파일에서 실제로 확인된 스킬만 포함. 추측 금지.\n"
         "- current_usage '없음'인 스킬은 제외.\n"
+        "- relevant_files는 반드시 '유효한 파일 경로 목록'에 있는 경로만 사용. 없으면 빈 배열.\n"
         "- how_to_add는 이 레포의 실제 파일명·함수명 포함 필수. 추상적 조언 금지."
     )
 
