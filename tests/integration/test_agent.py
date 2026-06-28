@@ -45,12 +45,12 @@ class TestCreateSupervisorGraph:
 
     @requires_api_key
     def test_graph_has_gap_loop_nodes(self, mock_clients) -> None:
-        """Gap 루프 노드(call_model, tools, synthesizer)가 모두 존재한다."""
+        """Gap 루프(gap_agent 서브그래프)와 synthesizer가 최상위 그래프에 존재한다.
+        call_model·tools는 gap_agent 서브그래프 내부 노드라 최상위에서 보이지 않는다."""
         neo4j, openai = mock_clients
         graph = create_supervisor_graph(neo4j, openai)
         node_names = set(graph.get_graph().nodes.keys())
-        assert "call_model"  in node_names
-        assert "tools"       in node_names
+        assert "gap_agent"   in node_names
         assert "synthesizer" in node_names
 
     @requires_api_key
@@ -64,12 +64,12 @@ class TestCreateSupervisorGraph:
 
     @requires_api_key
     def test_graph_has_coach_nodes(self, mock_clients) -> None:
-        """Coach 파이프라인 노드가 모두 존재한다."""
+        """Coach 파이프라인(coach_agent 서브그래프)이 최상위 그래프에 존재한다.
+        coach_call_model·finalize_coach는 서브그래프 내부 노드라 최상위에서 보이지 않는다."""
         neo4j, openai = mock_clients
         graph = create_supervisor_graph(neo4j, openai)
         node_names = set(graph.get_graph().nodes.keys())
-        assert "coach_call_model" in node_names
-        assert "finalize_coach"   in node_names
+        assert "coach_agent" in node_names
 
 
 class TestRunAnalysis:

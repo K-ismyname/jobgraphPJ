@@ -230,9 +230,9 @@ def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
     tool_calls: list[str] = _gt.get("tool_calls") or []
     gap_iterations: int = _gt.get("iterations") or 0
 
+    executed.append("synthesizer")  # Supervisor 레벨 노드 — 항상 실행됨
     if state.get("gap_result"):
         executed += ["seed_gap", "gap_agent", "call_model", "tools"]
-        executed.append("synthesizer")
 
     critic = state.get("critic_report") or {}
     removed = critic.get("removed_claims") or []

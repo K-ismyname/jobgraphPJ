@@ -14,11 +14,8 @@ def test_build_trace_assembles_from_state():
             "Python": {"verification": "Verified", "evidences": [{"source": "github"}]},
             "SQL": {"verification": "Claimed", "evidences": [{"source": "resume"}]},
         },
-        "messages": [
-            ToolMessage(content="{}", name="gap_analysis", tool_call_id="1"),
-            ToolMessage(content="{}", name="verify_skills", tool_call_id="2"),
-        ],
-        "iteration": 2,
+        "gap_trace": {"tool_calls": ["gap_analysis", "verify_skills"], "iterations": 2},
+        "gap_result": {"skills": [], "missing_required": []},
         "critic_report": {"removed_claims": ["X"], "corrections": [{"skill": "Y"}]},
         "coaching_result": {"project_suggestions": [1, 2, 3]},
     }
@@ -48,7 +45,7 @@ def test_build_trace_empty_state_safe():
     assert t["consensus"]["counts"] == {"Verified": 0, "Corroborated": 0, "Claimed": 0}
     assert t["gap_loop"] == {"tool_calls": [], "iterations": 0}
     assert t["critic"]["removed_skills"] == []
-    assert t["executed_nodes"] == ["synthesizer"]
+    assert t["executed_nodes"] == ["synthesizer"]  # gap_result 없어도 synthesizer는 항상 실행
     assert t["coach"]["project_suggestion_count"] == 0
 
 
