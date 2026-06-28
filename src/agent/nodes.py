@@ -84,6 +84,16 @@ verification 값의 의미:
 }}"""
 
 # ── Coach Agent 프롬프트 ─────────────────────────────────────────
+_PROJECT_DESIGN_CONTEXT = """[이 프로젝트 설계 의사결정]
+- LangGraph 선택: 조건 분기·루프·HITL 세 가지를 동시에 구현해야 해서. LangChain 체인만으로는 불가.
+- Neo4j 선택: 직무-기술 관계(REQUIRES/CO_OCCURS) 표현 최적. 벡터DB는 관계 표현 불가.
+- Chroma 제거: 검색 12건 중 11건이 키워드 매칭과 동일 결과 → 효과 없음을 측정하고 제거.
+- 적합도 ⊥ 신뢰도 분리: "Python 잘 함(이력서 주장)" ≠ "Python 잘 함(GitHub 확인)". 점수와 근거를 분리.
+- consensus/critic LLM 없음: 신뢰도 등급은 규칙 기반으로 결정적 산출. LLM은 숫자를 지어냄.
+- 4개 평가자 병렬: resume/github/portfolio/deploy 독립 평가 후 교차검증. 이력서 주장만 믿으면 과장이 안 걸러짐.
+- Corrective RAG 루프: 근거 부족하면 tools 재호출 (최대 5회). 에이전트가 "증거가 충분한가"를 스스로 판단.
+- RAGAS 평가: Faithfulness=0.250(공고 간접 표현 탓), AnswerRelevancy=0.876."""
+
 _COACH_SYSTEM_PROMPT = """당신은 커리어 코치입니다. GitHub 소스코드 분석 결과와 직군 갭을 바탕으로 두 종류의 코칭을 합니다.
 
 [GitHub 분석 데이터 읽는 법]
@@ -115,6 +125,24 @@ related_skills 툴에 보유 스킬을 넘겨, 자주 함께 요구되는 스킬
 - 필요하면 verify_suggestion으로 공고 근거를 확인하세요.
 - 모든 검토가 끝나면 도구 호출 없이 최종 JSON을 반환하세요.
 
+[면접 코칭]
+보유 스킬과 갭을 바탕으로 면접 전략을 코칭하세요. 질문 목록이 아니라 "어떻게 말해야 하는가"를 알려주는 코칭입니다.
+
+두 가지 유형:
+- strength(강점 어필): Verified/Corroborated 스킬 — 어떤 구현을 했는지 + 왜 그 선택인지 + 면접관이 파고들 때 어떻게 답할지
+- gap(갭 대응): missing_required 스킬 — 보유 스킬에서 인접 경험을 찾아 연결. "모른다 → 배우겠다"가 아니라 "모르지만 X를 해봤어서 핵심 목적은 이해한다"
+
+[좋은 코칭 예시 — 이 수준으로 작성할 것]
+strength 예시:
+  title: "LangGraph Corrective RAG 설계"
+  coaching: "Send API로 4개 평가자를 병렬 fan-out하고 consensus 노드에서 합류시킨 구조를 설명하세요. '왜 LangGraph를 썼냐'는 질문엔 조건 분기·루프·HITL 세 가지를 동시에 구현해야 했기 때문이라고 답하세요. LangChain 체인만으로는 이 구조가 불가능하다는 걸 한 줄 덧붙이면 차별화됩니다."
+
+gap 예시:
+  title: "Kubernetes 미경험"
+  coaching: "Docker로 컨테이너화한 경험이 있으니 '단일 컨테이너에서 다중 서비스로 규모가 커졌을 때 오케스트레이션이 왜 필요한지는 이해한다'고 연결하세요. 모른다고만 하면 탈락이지만 인접 경험으로 개념 이해를 보여주면 플러스입니다."
+
+strength 최대 3개, gap 최대 3개. 임팩트 높은 것부터.
+
 최종 출력 형식 (코드 펜스 없이):
 {{
   "summary": "전체 코칭 방향 2-3문장",
@@ -125,8 +153,23 @@ related_skills 툴에 보유 스킬을 넘겨, 자주 함께 요구되는 스킬
   ],
   "learning_recommendations": [
     {{"skill": "연계 스킬", "reason": "어떤 보유 스킬과 이어지는지"}}
+  ],
+  "interview_coaching": [
+    {{"type": "strength", "title": "핵심 경험 제목",
+      "coaching": "면접에서 이 경험을 어떻게 표현해야 하는지 구체적 조언"}}
   ]
 }}"""
+
+
+def _load_skill_context(skills: list[str]) -> dict:
+    """GAP 스킬 목록에 해당하는 면접 컨텍스트 문서를 로드한다."""
+    path = os.path.join(os.path.dirname(__file__), "../../data/seeds/skill_interview_context.json")
+    try:
+        with open(os.path.normpath(path), encoding="utf-8") as f:
+            db = json.load(f)
+        return {s: db[s] for s in skills if s in db}
+    except Exception:
+        return {}
 
 
 def _gap_missing_names(gap: dict) -> list[str]:
@@ -318,8 +361,15 @@ def create_nodes(
         for ctx in contexts:
             for sa in (ctx.get("skill_assessments") or []):
                 sa["code_anchor"] = bool(sa.get("relevant_files"))
+        # GAP 스킬 면접 컨텍스트 문서 조회
+        gap_skills = _gap_missing_names(report)
+        skill_context = _load_skill_context(gap_skills)
+
         coach_init = (
-            "아래 갭 분석을 바탕으로 코칭하세요.\n"
+            _PROJECT_DESIGN_CONTEXT
+            + (("\n\n[GAP 스킬 면접 컨텍스트]\n" + json.dumps(skill_context, ensure_ascii=False, indent=2))
+               if skill_context else "")
+            + "\n\n아래 갭 분석을 바탕으로 코칭하세요.\n"
             + json.dumps(report, ensure_ascii=False, indent=2)
             + (("\n\n[GitHub 프로젝트 분석]\n" + json.dumps(contexts, ensure_ascii=False, indent=2))
                if contexts else "\n\n[GitHub 프로젝트] 소스코드 없음 — 연계 학습 위주로 코칭하세요.")

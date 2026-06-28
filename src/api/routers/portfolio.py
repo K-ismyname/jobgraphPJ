@@ -12,6 +12,7 @@ from src.api.deps import get_graph, get_neo4j, get_reports, get_uploads
 from src.api.schemas import (
     AnalyzeAccepted,
     AnalyzeRequest,
+    InterviewCoaching,
     LearningRecommendation,
     PortfolioUploadResponse,
     ProjectSuggestion,
@@ -187,6 +188,12 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         for s in (coaching.get("learning_recommendations") or [])
         if isinstance(s, dict) and s.get("skill")
     ]
+    interview_coaching = [
+        InterviewCoaching(type=s.get("type", "strength"), title=s.get("title", ""),
+                          coaching=s.get("coaching", ""))
+        for s in (coaching.get("interview_coaching") or [])
+        if isinstance(s, dict) and s.get("title") and s.get("coaching")
+    ]
     return ReportResponse(
         report_id=report_id, status="done", owner=owner, job_family=job_family,
         match_rate=gap.get("match_rate") or 0.0,
@@ -198,6 +205,7 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         coaching_summary=coaching.get("summary"),
         project_suggestions=project_suggestions,
         learning_recommendations=learning_recommendations,
+        interview_coaching=interview_coaching,
         generated_at=datetime.now(timezone.utc).isoformat(),
         trace=final.get("trace"),
         capability_fit=final.get("capability_fit"),

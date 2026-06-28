@@ -208,8 +208,19 @@ function renderReport(d) {
     ${d.coaching_summary ? `<p>${esc(d.coaching_summary)}</p>` : ""}
     <h4>프로젝트 보강</h4>${projects || "<p class='prio'>제안 없음</p>"}
     <h4>배우면 좋은 연계 스킬</h4>${learnings || "<p class='prio'>추천 없음</p>"}
+    ${renderInterviewCoaching(d.interview_coaching)}
     <p style="margin-top:16px"><a href="/observe?report_id=${encodeURIComponent(state.reportId)}&tab=workflow">→ 이 분석의 실행 과정 보기</a></p>
   `;
+}
+
+function renderInterviewCoaching(items) {
+  if (!items || !items.length) return "";
+  const rows = items.map((c) => `
+    <div class="suggestion">
+      <div class="head">${esc(c.title)} <span class="prio">${c.type === "gap" ? "갭 대응" : "강점 어필"}</span></div>
+      <div class="rew">${esc(c.coaching)}</div>
+    </div>`).join("");
+  return `<h3>면접 코칭</h3>${rows}`;
 }
 
 // URL 입력칸 수집·추가

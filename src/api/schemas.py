@@ -119,6 +119,12 @@ class VerificationItem(BaseModel):
     sources: list[str]
 
 
+class InterviewCoaching(BaseModel):
+    type: Literal["strength", "gap"]
+    title: str
+    coaching: str
+
+
 class ReportResponse(BaseModel):
     report_id: str
     status: Literal["processing", "done", "error"]
@@ -133,6 +139,7 @@ class ReportResponse(BaseModel):
     coaching_summary: str | None = None
     project_suggestions: list[ProjectSuggestion] = Field(default_factory=list)
     learning_recommendations: list[LearningRecommendation] = Field(default_factory=list)
+    interview_coaching: list[InterviewCoaching] = Field(default_factory=list)
     error_detail: str | None = None
     generated_at: str | None = None
     trace: dict | None = None
