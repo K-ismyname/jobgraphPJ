@@ -229,9 +229,11 @@ def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
     for m in state.get("messages") or []:
         if isinstance(m, ToolMessage) and getattr(m, "name", None) and m.name not in tool_calls:
             tool_calls.append(m.name)
-    if state.get("messages"):
-        executed += ["seed_gap", "call_model", "tools"]
-    executed.append("synthesizer")
+    # CoachState에는 messages가 없으므로 gap_result로 gap_agent 실행 여부를 판단한다
+    if state.get("messages") or state.get("gap_result"):
+        executed += ["seed_gap", "gap_agent", "call_model", "tools"]
+    if state.get("gap_result"):
+        executed.append("synthesizer")
 
     critic = state.get("critic_report") or {}
     removed = critic.get("removed_claims") or []
@@ -240,8 +242,8 @@ def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
         executed.append("critic")
 
     coaching = coaching if coaching is not None else (state.get("coaching_result") or {})
-    if state.get("coaching_result"):
-        executed += ["coach_call_model", "finalize_coach"]
+    if coaching:
+        executed += ["coach_agent", "finalize_coach"]
 
     return {
         "executed_nodes": executed,
@@ -370,7 +372,12 @@ def create_nodes(
             report = {"raw": raw, "error": "JSON 파싱 실패"}
 
         # Coach 루프 시작 메시지 초기화 — 갭 분석 + GitHub 소스코드 분석 결과
-        contexts = (state.get("github_eval") or {}).get("project_contexts") or []
+        # GapState(서브그래프)에서는 project_contexts 직접, AppState에서는 github_eval 경유
+        contexts = (
+            state.get("project_contexts")
+            or (state.get("github_eval") or {}).get("project_contexts")
+            or []
+        )
         # relevant_files가 없는 스킬에 code_anchor=false 표시 — Coach가 파일 없는 스킬을 project_suggestions에 넣지 않도록
         for ctx in contexts:
             for sa in (ctx.get("skill_assessments") or []):
@@ -407,11 +414,85 @@ def create_nodes(
 
         return {
             "gap_result": report,
+            "project_contexts": contexts,       # CoachAgent가 AppState에서 읽을 수 있도록 저장
             "coach_messages": [HumanMessage(content=coach_init)],
             "coach_iteration": 0,
         }
 
     return call_model, generate_report
+
+
+def make_tools_node(tools_list: list):
+    """Gap Agent용 커스텀 tools 노드 — source_id dedup 포함."""
+    tool_map = {t.name: t for t in tools_list}
+
+    def tools_node(state) -> dict:
+        last_msg = state["messages"][-1]
+        seen: set[str] = set(state.get("seen_source_ids") or [])
+        new_seen: set[str] = set(seen)
+        new_messages: list[ToolMessage] = []
+
+        for tc in last_msg.tool_calls:
+            fn = tool_map[tc["name"]]
+            try:
+                result = fn.invoke(tc["args"])
+            except Exception as e:
+                result = [{"error": str(e)}]
+
+            if tc["name"] == "verify_skills" and isinstance(result, dict):
+                for skill_data in result.values():
+                    if not isinstance(skill_data, dict):
+                        continue
+                    evidence = skill_data.get("evidence", [])
+                    if not isinstance(evidence, list):
+                        continue
+                    fresh = [e for e in evidence if e.get("source_id") not in seen]
+                    new_seen.update(e["source_id"] for e in fresh if "source_id" in e)
+                    skill_data["evidence"] = fresh
+
+            content = (
+                result if isinstance(result, str)
+                else json.dumps(result, ensure_ascii=False)
+            )
+            new_messages.append(ToolMessage(
+                content=content,
+                tool_call_id=tc["id"],
+                name=tc["name"],
+            ))
+
+        return {"messages": new_messages, "seen_source_ids": list(new_seen)}
+
+    return tools_node
+
+
+def make_coach_tools_node(coach_tools_list: list):
+    """Coach Agent용 tools 노드 — coach_messages에 결과를 추가한다."""
+    tool_map = {t.name: t for t in coach_tools_list}
+
+    def coach_tools_node(state) -> dict:
+        last_msg = list(state.get("coach_messages") or [])[-1]
+        new_messages: list[ToolMessage] = []
+
+        for tc in last_msg.tool_calls:
+            fn = tool_map[tc["name"]]
+            try:
+                result = fn.invoke(tc["args"])
+            except Exception as e:
+                result = {"error": str(e)}
+
+            content = (
+                result if isinstance(result, str)
+                else json.dumps(result, ensure_ascii=False)
+            )
+            new_messages.append(ToolMessage(
+                content=content,
+                tool_call_id=tc["id"],
+                name=tc["name"],
+            ))
+
+        return {"coach_messages": new_messages}
+
+    return coach_tools_node
 
 
 def create_coach_nodes(coach_tools: list["BaseTool"]):

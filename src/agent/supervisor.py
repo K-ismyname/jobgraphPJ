@@ -12,7 +12,7 @@ from langgraph.graph import END, START, StateGraph
 
 from langgraph.types import Send
 
-from src.agent.state import COACH_MAX_ITERATIONS, MAX_ITERATIONS, AppState
+from src.agent.state import AppState
 from src.evaluation.langfuse_tracer import langfuse_callbacks
 
 if TYPE_CHECKING:
@@ -110,46 +110,38 @@ def evaluator_dispatch(state: AppState) -> list[Send]:
 
 
 def create_supervisor_graph(neo4j, openai_client):
-    """v3 단계1: 평가자 병렬 → 합의 → Gap 적합도 → Critic → Coach."""
+    """Supervisor + 서브 에이전트: 평가자 병렬 → 합의 → GapAgent → Critic → CoachAgent."""
     from src.agent.tools import create_tools, create_coach_tools
-    from src.agent.nodes import create_nodes, create_coach_nodes
     from src.agent.evaluators.resume_eval import create_resume_evaluator
     from src.agent.evaluators.github_eval import create_github_evaluator
     from src.agent.evaluators.portfolio_eval import create_portfolio_evaluator
     from src.agent.evaluators.deploy_eval import create_deploy_evaluator
     from src.agent.consensus import create_consensus_node
     from src.agent.critic import create_critic_node
+    from src.agent.gap_agent import create_gap_graph
+    from src.agent.coach_agent import create_coach_graph
 
-    gap_tools = create_tools(neo4j)
+    from src.agent.nodes import create_nodes
+
+    gap_tools   = create_tools(neo4j)
     coach_tools = create_coach_tools(neo4j)
-    call_model, generate_report = create_nodes(gap_tools, neo4j)
-    coach_call_model, finalize_coach = create_coach_nodes(coach_tools)
-    tools_node = _make_tools_node(gap_tools)
-    coach_tools_node = _make_coach_tools_node(coach_tools)
 
-    resume_eval = create_resume_evaluator(openai_client)
-    github_eval = create_github_evaluator(neo4j, openai_client)
+    # 서브 에이전트 — 독립 CompiledGraph
+    gap_graph   = create_gap_graph(gap_tools)
+    coach_graph = create_coach_graph(coach_tools)
+
+    # synthesizer — AppState에서 실행해야 coach_messages가 AppState에 직접 반영됨
+    _, synthesizer = create_nodes(gap_tools, neo4j=None)
+
+    resume_eval    = create_resume_evaluator(openai_client)
+    github_eval    = create_github_evaluator(neo4j, openai_client)
     portfolio_eval = create_portfolio_evaluator(openai_client)
-    deploy_eval = create_deploy_evaluator(neo4j)
+    deploy_eval    = create_deploy_evaluator(neo4j)
     consensus_node = create_consensus_node()
-    critic_node = create_critic_node(openai_client)
+    critic_node    = create_critic_node(openai_client)
 
-    def route_gap_loop(state: AppState) -> str:
-        if state.get("iteration", 0) >= MAX_ITERATIONS:
-            return "synthesizer"
-        last = (list(state.get("messages") or [None]))[-1]
-        return "tools" if (last and getattr(last, "tool_calls", None)) else "synthesizer"
-
-    def route_coach_loop(state: AppState) -> str:
-        if state.get("coach_iteration", 0) >= COACH_MAX_ITERATIONS:
-            return "finalize_coach"
-        last = (list(state.get("coach_messages") or [None]))[-1]
-        if last and getattr(last, "tool_calls", None):
-            return "coach_tools"
-        return "finalize_coach"
-
-    # 합의 결과(보유 스킬 + 검증상태)를 Gap 루프 진입 메시지로 시드
     def seed_gap(state: AppState) -> dict:
+        """consensus + github project_contexts를 GapAgent 진입 상태로 변환 — Supervisor → GapAgent 브릿지."""
         from langchain_core.messages import HumanMessage
         consensus = state.get("consensus") or {}
         held = ", ".join(f"{s}({d['verification']})" for s, d in consensus.items()) or "없음"
@@ -159,46 +151,40 @@ def create_supervisor_graph(neo4j, openai_client):
             f"보유 스킬(검증상태 포함): {held}\n"
             f"각 스킬을 직무 요구 수준과 비교해 적합도와 갭을 산출하세요."
         )
-        return {"messages": [HumanMessage(content=user_msg)], "iteration": 0, "seen_source_ids": []}
+        project_contexts = (state.get("github_eval") or {}).get("project_contexts") or []
+        return {
+            "messages": [HumanMessage(content=user_msg)],
+            "iteration": 0,
+            "seen_source_ids": [],
+            "project_contexts": project_contexts,  # GapAgent synthesizer가 읽음
+        }
 
     workflow = StateGraph(AppState)
-    workflow.add_node("resume_eval",      resume_eval)
-    workflow.add_node("github_eval",      github_eval)
-    workflow.add_node("portfolio_eval",   portfolio_eval)
-    workflow.add_node("deploy_eval",      deploy_eval)
-    workflow.add_node("consensus",        consensus_node)
-    workflow.add_node("seed_gap",         seed_gap)
-    workflow.add_node("call_model",       call_model)
-    workflow.add_node("tools",            tools_node)
-    workflow.add_node("synthesizer",      generate_report)   # gap_result + coach 시드 생성
-    workflow.add_node("critic",           critic_node)
-    workflow.add_node("coach_call_model", coach_call_model)
-    workflow.add_node("coach_tools",      coach_tools_node)
-    workflow.add_node("finalize_coach",   finalize_coach)
+    workflow.add_node("resume_eval",   resume_eval)
+    workflow.add_node("github_eval",   github_eval)
+    workflow.add_node("portfolio_eval", portfolio_eval)
+    workflow.add_node("deploy_eval",   deploy_eval)
+    workflow.add_node("consensus",     consensus_node)
+    workflow.add_node("seed_gap",      seed_gap)
+    workflow.add_node("gap_agent",     gap_graph)    # ← GapAgent 서브그래프
+    workflow.add_node("synthesizer",   synthesizer)  # ← AppState에서 실행 (coach_messages 초기화)
+    workflow.add_node("critic",        critic_node)
+    workflow.add_node("coach_agent",   coach_graph)  # ← CoachAgent 서브그래프
 
-    # 평가자 병렬 fan-out → 합의 barrier
+    # 평가자 병렬 fan-out → consensus barrier
     workflow.add_conditional_edges(START, evaluator_dispatch,
                                    ["resume_eval", "github_eval", "portfolio_eval", "deploy_eval"])
-    workflow.add_edge("resume_eval", "consensus")
-    workflow.add_edge("github_eval", "consensus")
+    workflow.add_edge("resume_eval",   "consensus")
+    workflow.add_edge("github_eval",   "consensus")
     workflow.add_edge("portfolio_eval", "consensus")
-    workflow.add_edge("deploy_eval", "consensus")
-    workflow.add_edge("consensus", "seed_gap")
-    workflow.add_edge("seed_gap", "call_model")
-    # Gap 루프
-    workflow.add_conditional_edges("call_model", route_gap_loop,
-                                   {"tools": "tools", "synthesizer": "synthesizer"})
-    workflow.add_edge("tools", "call_model")
-    # Synthesizer → Critic → Coach (재검색 루프 없음)
-    # critic은 결정적 검증기: gap_result의 보유 스킬을 consensus와 대조해
-    # 합의에 없는 환각 주장을 제거하고 verification 라벨을 교정한다(LLM·replan 없음).
-    workflow.add_edge("synthesizer", "critic")
-    workflow.add_edge("critic", "coach_call_model")
-    # Coach 루프
-    workflow.add_conditional_edges("coach_call_model", route_coach_loop,
-                                   {"coach_tools": "coach_tools", "finalize_coach": "finalize_coach"})
-    workflow.add_edge("coach_tools", "coach_call_model")
-    workflow.add_edge("finalize_coach", END)
+    workflow.add_edge("deploy_eval",   "consensus")
+    # Supervisor → GapAgent → synthesizer → Critic → CoachAgent
+    workflow.add_edge("consensus",    "seed_gap")
+    workflow.add_edge("seed_gap",     "gap_agent")    # GapAgent ReAct 루프
+    workflow.add_edge("gap_agent",    "synthesizer")  # AppState에서 리포트 생성
+    workflow.add_edge("synthesizer",  "critic")
+    workflow.add_edge("critic",       "coach_agent")  # CoachAgent에 위임
+    workflow.add_edge("coach_agent",  END)
 
     return workflow.compile(checkpointer=MemorySaver())
 

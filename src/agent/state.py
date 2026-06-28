@@ -1,4 +1,4 @@
-# LangGraph 에이전트 공유 상태 정의 — 단일 AppState로 통합
+# LangGraph 에이전트 공유 상태 정의 — Supervisor + 서브 에이전트 State
 from __future__ import annotations
 
 from typing import Annotated
@@ -10,6 +10,32 @@ from typing_extensions import TypedDict
 # 무한 루프 방지 상수
 MAX_ITERATIONS = 5
 COACH_MAX_ITERATIONS = 3
+
+
+class GapState(TypedDict):
+    """GapAgent 전용 State — Supervisor에서 받아서 gap_result 반환."""
+    job_family: str
+    owner: str
+    consensus: dict | None
+    project_contexts: list       # seed_gap에서 github_eval 결과를 받아 synthesizer에 전달
+    messages: Annotated[list[BaseMessage], add_messages]
+    iteration: int
+    seen_source_ids: list[str]
+    gap_result: dict | None
+
+
+class CoachState(TypedDict):
+    """CoachAgent 전용 State — Supervisor에서 받아서 final_report 반환."""
+    job_family: str
+    owner: str
+    consensus: dict | None
+    gap_result: dict | None
+    project_contexts: list
+    coach_messages: Annotated[list[BaseMessage], add_messages]
+    coach_iteration: int
+    coaching_result: dict | None
+    final_report: dict | None
+    critic_report: dict | None
 
 
 class AppState(TypedDict):
@@ -53,3 +79,6 @@ class AppState(TypedDict):
     portfolio_eval: dict | None
     deploy_eval: dict | None
     consensus: dict | None       # {skill: {verification, evidences, flags?}}
+
+    # ── 멀티 에이전트: 서브그래프 간 전달 데이터 ──
+    project_contexts: list       # github_eval → GapAgent(synthesizer) → CoachAgent
