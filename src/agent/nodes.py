@@ -225,14 +225,13 @@ def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
     if state.get("consensus"):
         executed.append("consensus")
 
-    tool_calls: list[str] = []
-    for m in state.get("messages") or []:
-        if isinstance(m, ToolMessage) and getattr(m, "name", None) and m.name not in tool_calls:
-            tool_calls.append(m.name)
-    # CoachState에는 messages가 없으므로 gap_result로 gap_agent 실행 여부를 판단한다
-    if state.get("messages") or state.get("gap_result"):
-        executed += ["seed_gap", "gap_agent", "call_model", "tools"]
+    # gap_trace는 synthesizer(AppState)가 채워서 CoachState에 전달 — messages/iteration을 직접 읽지 않아도 됨
+    _gt = state.get("gap_trace") or {}
+    tool_calls: list[str] = _gt.get("tool_calls") or []
+    gap_iterations: int = _gt.get("iterations") or 0
+
     if state.get("gap_result"):
+        executed += ["seed_gap", "gap_agent", "call_model", "tools"]
         executed.append("synthesizer")
 
     critic = state.get("critic_report") or {}
@@ -249,7 +248,7 @@ def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
         "executed_nodes": executed,
         "evaluators": evaluators,
         "consensus": cons,
-        "gap_loop": {"tool_calls": tool_calls, "iterations": state.get("iteration") or 0},
+        "gap_loop": {"tool_calls": tool_calls, "iterations": gap_iterations},
         "critic": {
             "removed": len(removed), "corrected": len(corrections),
             "removed_skills": removed, "corrections": corrections,
@@ -412,9 +411,20 @@ def create_nodes(
                if contexts else "\n\n[GitHub 프로젝트] 소스코드 없음 — 연계 학습 위주로 코칭하세요.")
         )
 
+        # gap 루프 정보 수집 — CoachState에는 messages/iteration이 없으므로 여기서 계산해 전달
+        tool_calls_seen: list[str] = []
+        for msg in state.get("messages") or []:
+            if isinstance(msg, ToolMessage) and getattr(msg, "name", None) and msg.name not in tool_calls_seen:
+                tool_calls_seen.append(msg.name)
+        gap_trace = {
+            "tool_calls": tool_calls_seen,
+            "iterations": state.get("iteration") or 0,
+        }
+
         return {
             "gap_result": report,
-            "project_contexts": contexts,       # CoachAgent가 AppState에서 읽을 수 있도록 저장
+            "project_contexts": contexts,
+            "gap_trace": gap_trace,             # _build_trace가 CoachState에서 읽을 수 있도록 저장
             "coach_messages": [HumanMessage(content=coach_init)],
             "coach_iteration": 0,
         }

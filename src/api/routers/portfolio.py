@@ -180,10 +180,11 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
     ver = final.get("verification") or {}
     coaching = final.get("coaching") if isinstance(final.get("coaching"), dict) else {}
     project_suggestions = [
-        ProjectSuggestion(repo=s.get("repo", ""), add_skill=s.get("add_skill", ""),
+        ProjectSuggestion(repo=s.get("repo", ""),
+                          add_skill=s.get("add_skill") or s.get("skill", ""),
                           why=s.get("why", ""), how=s.get("how", ""))
         for s in (coaching.get("project_suggestions") or [])
-        if isinstance(s, dict) and s.get("add_skill")
+        if isinstance(s, dict) and (s.get("add_skill") or s.get("skill"))
     ]
     learning_recommendations = [
         LearningRecommendation(skill=s.get("skill", ""), reason=s.get("reason", ""))

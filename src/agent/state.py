@@ -31,6 +31,7 @@ class CoachState(TypedDict):
     consensus: dict | None
     gap_result: dict | None
     project_contexts: list
+    gap_trace: dict | None        # synthesizer가 채운 gap 루프 정보 (iterations, tool_calls)
     coach_messages: Annotated[list[BaseMessage], add_messages]
     coach_iteration: int
     coaching_result: dict | None
@@ -82,3 +83,4 @@ class AppState(TypedDict):
 
     # ── 멀티 에이전트: 서브그래프 간 전달 데이터 ──
     project_contexts: list       # github_eval → GapAgent(synthesizer) → CoachAgent
+    gap_trace: dict | None       # synthesizer가 채운 gap 루프 정보 → _build_trace에서 읽음

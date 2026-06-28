@@ -247,6 +247,7 @@ def run_supervisor(
         "final_report": None,
         "critic_report": None,
         "resume_eval": None, "github_eval": None, "portfolio_eval": None, "deploy_eval": None, "consensus": None,
+        "gap_trace": None,
     }
     final_state: dict = dict(initial)
     for chunk in graph.stream(initial, config, stream_mode="updates"):
@@ -311,6 +312,7 @@ def run_analysis(
         "final_report": None,
         "critic_report": None,
         "resume_eval": None, "github_eval": None, "portfolio_eval": None, "deploy_eval": None, "consensus": None,
+        "gap_trace": None,
     }
     result = graph.invoke(initial, config)
     gap_result = result.get("gap_result") or {}
