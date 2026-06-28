@@ -4,6 +4,38 @@
 
 ---
 
+## [2026-06-29]
+
+### 작업 절차
+1. gap_trace 버그 수정 커밋 (`_build_trace`가 CoachState에서 `iteration`을 못 읽던 문제)
+2. 전체 프로젝트 진단 — 설계·워크플로·코드품질·테스트·환경 5개 축
+3. 진단 결과 체크리스트화 (`docs/checklist_diagnosis.md`)
+4. 🔴 C-1a·C-1b + 🟠 H-1 묶어서 처리
+5. 🟠 H-2 `gap_analyzer.py` 삭제
+6. 🟡 M-1·M-2·M-3 묶어서 처리
+
+### 발생 문제
+- `gap_trace` 커밋 후 테스트 4개 미확인 상태로 "검증 완료" 보고 → 진단 시 발견
+  - `test_build_trace` 2개: `_build_trace`가 이제 `gap_trace`에서 읽는데 테스트는 `messages` 주입 방식 유지
+  - `test_agent` 2개: `call_model`·`coach_call_model`이 서브그래프 내부로 이동했는데 최상위 노드로 기대
+- `gap_analyzer.py`가 `src/`에서 import 없이 테스트에서만 살아있던 데드코드 발견
+- `market_insights`·`graph_query` 툴이 프롬프트 안내 없이 바인딩만 된 상태 (토큰 낭비)
+
+### 해결 방법
+- H-1: `synthesizer`를 `gap_result` 가드 밖으로 이동 → 항상 executed_nodes에 포함
+- C-1a: `test_build_trace` — `gap_trace` 계약으로 갱신 (messages → gap_trace 주입)
+- C-1b: `test_agent` — 서브그래프 내부 노드 대신 부모 노드(`gap_agent`, `coach_agent`) 검증으로 변경
+- H-2: `gap_analyzer.py` + `test_gap_analyzer.py` 삭제 (실제 갭 분석은 `tools.py gap_analysis`가 담당)
+- M-1: `create_nodes()` 미사용 `neo4j` 파라미터 제거 (호출부 2곳 동시)
+- M-2: `market_insights`·`graph_query` 툴 목록에서 제거
+- M-3: `_STRENGTH_PRIORITY` ponytail 주석 추가
+
+### 결과
+- 186 passed (단위) / 통합 12 passed
+- 남은 항목: 🟢 L-1(iterations 라벨링), L-2(서브그래프 messages 전파 테스트) — 급하지 않음
+
+---
+
 ## [2026-06-27]
 
 ### 작업 절차
