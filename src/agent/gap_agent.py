@@ -19,7 +19,7 @@ def create_gap_graph(gap_tools: list["BaseTool"]):
     """
     from src.agent.nodes import create_nodes, make_tools_node
 
-    call_model, _ = create_nodes(gap_tools, neo4j=None)
+    call_model, _ = create_nodes(gap_tools)
     tools_node = make_tools_node(gap_tools)
 
     def route_gap_loop(state: GapState) -> str:

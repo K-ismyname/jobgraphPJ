@@ -174,36 +174,6 @@ def create_tools(neo4j: "Neo4jClient") -> list:
             return {"skill": skill_name, "recent_count": 0, "prev_count": 0, "delta_pct": 0.0, "error": str(e)}
 
     @tool
-    def market_insights(
-        job_title: Annotated[str, "시장 인사이트를 조회할 직무명"],
-    ) -> dict:
-        """직무별 공고 수 분포, 상위 요구 스킬, 지역 분포를 반환한다."""
-        try:
-            distribution = neo4j.get_job_distribution()
-            top_skills = neo4j.get_top_skills(job_title, limit=10)
-            location = neo4j.get_location_distribution(job_title, limit=5)
-            return {
-                "job_distribution": distribution,
-                "top_required_skills": top_skills,
-                "location_distribution": location,
-            }
-        except Exception as e:
-            return {"error": str(e)}
-
-    @tool
-    def graph_query(
-        job_family: Annotated[str, "직군명. 반드시 아래 중 하나: Software Engineer / Data Engineer / Data Analyst / Data Scientist / AI/LLM Engineer / ML Engineer / DevOps/SRE / Security Engineer / Frontend Engineer"],
-    ) -> list[dict]:
-        """Neo4j에서 직군별 필수·우대 기술과 가중치를 조회한다."""
-        try:
-            rows = neo4j.execute_query(_JOB_SKILLS_QUERY, job_family=job_family)
-            if not rows:
-                return [{"note": f"'{job_family}' 직군 데이터 없음"}]
-            return rows
-        except Exception as e:
-            return [{"error": str(e)}]
-
-    @tool
     def ask_human(
         question: Annotated[str, "사용자에게 물어볼 구체적인 질문"],
     ) -> str:
@@ -217,8 +187,7 @@ def create_tools(neo4j: "Neo4jClient") -> list:
         answer: str = _interrupt({"question": question})
         return answer
 
-    return [gap_analysis, verify_skills, skill_unlock, posting_trend,
-            market_insights, graph_query, ask_human]
+    return [gap_analysis, verify_skills, skill_unlock, posting_trend, ask_human]
 
 
 def create_coach_tools(neo4j: "Neo4jClient") -> list:

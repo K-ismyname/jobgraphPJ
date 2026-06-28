@@ -314,10 +314,7 @@ def _apply_deterministic_metrics(report: dict, consensus: dict, tool_results: li
     return report
 
 
-def create_nodes(
-    tools: list["BaseTool"],
-    neo4j: "Neo4jClient",
-):
+def create_nodes(tools: list["BaseTool"]):
     """Gap Agent 노드 팩토리 — call_model, generate_report 반환."""
     if not os.getenv("OPENAI_API_KEY"):
         raise EnvironmentError("OPENAI_API_KEY 환경변수가 필요합니다.")
@@ -387,6 +384,7 @@ def create_nodes(
 
         # Verified/Corroborated 스킬 — strength 코칭 대상 + 면접 컨텍스트
         # 포트폴리오 핵심 스킬을 코드에서 우선순위로 보장 (LLM에 맡기지 않음)
+        # ponytail: AI/LLM Engineer 전용 우선순위 — 다직군 지원 시 Neo4j 가중치로 동적화 필요
         _STRENGTH_PRIORITY = ["LangGraph", "RAG", "LLM", "Docker", "Python", "PostgreSQL"]
         verified_skills = [
             skill for skill, info in (consensus or {}).items()

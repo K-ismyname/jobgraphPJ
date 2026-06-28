@@ -131,7 +131,7 @@ def create_supervisor_graph(neo4j, openai_client):
     coach_graph = create_coach_graph(coach_tools)
 
     # synthesizer — AppState에서 실행해야 coach_messages가 AppState에 직접 반영됨
-    _, synthesizer = create_nodes(gap_tools, neo4j=None)
+    _, synthesizer = create_nodes(gap_tools)
 
     resume_eval    = create_resume_evaluator(openai_client)
     github_eval    = create_github_evaluator(neo4j, openai_client)
