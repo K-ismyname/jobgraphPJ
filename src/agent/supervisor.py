@@ -271,7 +271,9 @@ def run_supervisor(
         core_skills = job_family_core_skills(neo4j, job_family, 10)
         final["capability_fit"] = {"job_family": job_family,
                                    **skill_fit(names, core_skills, result.get("consensus") or {})}
-        common_skills = neo4j.get_common_skills(threshold=5, n=10)
+        # threshold=7: 9개 직군 중 7개 이상에 등장하는 스킬만 '공통'으로 — 5는 6직군이라
+        # ML/AI 같은 데이터 직군 편향 스킬이 섞임(측정 확인). 7이면 범용 인프라 스킬만 남음.
+        common_skills = neo4j.get_common_skills(threshold=7, n=10)
         final["common_skill_fit"] = skill_fit(names, common_skills, result.get("consensus") or {})
         final["recommended_families"] = recommend_families(neo4j, names, neo4j.list_job_families())[:3]
         verified_names = [
