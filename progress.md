@@ -895,3 +895,35 @@ RAGAS 파이프라인은 v3에서 실행됐으나(`run_analysis`가 반환하는
 
 - Frontend Engineer + the_formula 기준: 매칭률 60%, Verified 10개, Claimed 1개 (Docker)
 - PostgreSQL Verified (drizzle-orm 감지), missing_preferred 정규화, 추천 공고 Top5 포함
+
+---
+
+## [2026-06-30] 미분류 JobPosting 백필 시도 → 롤백 (Adzuna 데이터 품질 결함 발견)
+
+### 작업 절차
+
+1. **미분류 공고 발견**: 총 JobPosting 3,329건 중 `INSTANCE_OF`로 직군 연결된 건 560건뿐(분류율 17%). 나머지 2,769건(전부 Adzuna, source_id 순수 숫자)이 미분류.
+2. **백필 시도**: 미분류 2,769건을 `_job_family()`로 100% 재분류 가능 확인 후, INSTANCE_OF만 추가하는 백필 실행. 9개 직군 5~17배 증가(AI/LLM 88→390 등).
+3. **순도 점검에서 오염 발각**: 백필 후 9개 직군 중 8개의 상위 5개 스킬이 동일한 인프라 스킬(Docker/Python/Kubernetes/PostgreSQL/Terraform)로 도배됨. Frontend만 정상(React/JS/TS).
+4. **원인 규명**: 5개 인프라 동시 보유 공고 2,500건 중 2,458건(98%)이 Adzuna. Adzuna 공고 본문(required_section)을 직접 대조하니 "About the role We are looking for..." 한 문장뿐이거나 빈 값(63% empty) → 스킬 추출 LLM이 본문 없이 인프라 5종을 **환각**. Adzuna 2,769건의 89%가 동일 5스킬.
+5. **롤백**: Adzuna INSTANCE_OF 2,769개 전부 제거 → 백필 전 깨끗한 560건(muse+remoteok)으로 복귀. AI/LLM 상위 스킬 Python·LLM·AI·ML로 정상화 확인.
+
+### 발생 문제
+
+- **Adzuna 데이터는 본문 빈약 → 추출 환각**: 원본 description이 빈약해 재추출해도 환각 반복. 살릴 수 없는 데이터. 그동안 INSTANCE_OF 없이 떠 있던 게 (의도 무관) 오염 차단막 역할을 하고 있었음. 백필이 그 막을 걷어 직군 분석을 오염시킴.
+- **verify_skills 근거 결손(별개 문제)**: `required_section`이 muse·remoteok 100%, adzuna 63% 비어있음. verify_skills가 이걸 근거로 쓰는데 대부분 빈 값 → RAGAS Faithfulness 저하의 진짜 원인. 백필과 무관.
+- **RAGAS 재측정값(백필 상태)**: 평균 0.603, AnswerRelevancy ≈0.85, Faithfulness ≈0.37. metric이 0/1로 튀어 추격 비추(2026-06-13 결론 재확인).
+
+### 해결 방법 / 결론
+
+- **백필 롤백이 정답**: Adzuna는 본문 빈약으로 추출이 환각이라 직군 분석에 쓸 수 없음. 깨끗한 muse/remoteok 560건만 유지.
+- **데이터 보강이 필요하면 Adzuna가 아니라 본문 충실한 소스(The Muse/RemoteOK 등)로** 수집해야 함. Adzuna는 source로서 description 결함.
+- 미해결 과제: verify_skills 근거(required_section) 결손 → 전처리 섹션 분리 점검 필요.
+
+### 후속: 파이프라인 INSTANCE_OF 버그 수정 + Frontend 보충
+
+- **근본 버그 발견**: `collect.py`가 `filter_by_job_family`로 거르기만 하고 분류 결과(직군명)를 공고 dict에 안 써줌. `ingest_posting`은 `posting["job_family"]`가 있을 때만 INSTANCE_OF를 연결하므로, 수집해도 직군 연결이 누락됨. **옛 Adzuna가 미분류로 떠 있던 두 번째 원인**(첫째는 description 추출 환각).
+- **수정**: `collect_and_ingest`에서 filter 후 `j["job_family"] = _job_family(j["title"])` 부여(수집 family가 아닌 title 실분류 — 'react developer' 쿼리의 풀스택 공고가 Frontend로 오분류되는 것 방지).
+- **Adzuna 재평가**: 옛 적재본 오염은 Adzuna 결함이 아니라 옛 코드 버그였음. 현재 collect.py로 Frontend 시범 수집 시 React/TS/JS 정상 추출, 환각 없음. 단 Adzuna 무료 API는 description 500자 truncate → 수율 ~50%(앞 500자에 스킬 없으면 빈 추출).
+- **Frontend 보충 결과**: 18 → 59건. 순도 완벽(React 45·TypeScript 30·JavaScript 30·CSS 24·HTML 21..., 인프라 환각 0). 추출 데이터 재사용으로 재적재(OpenAI 비용 0).
+- 남은 여지: Frontend 59건은 갭 분석 임계(~100) 약간 미달 → `--pages 10`/`--country us`로 추가 보강 가능. 다른 직군도 동일 방식 적용 가능.

@@ -13,7 +13,7 @@ load_dotenv(ROOT / ".env")
 from openai import OpenAI
 
 from src.ingestion.adzuna_client import fetch_jobs
-from src.ingestion.pipeline import filter_by_job_family, step_extract_skills, step_ingest
+from src.ingestion.pipeline import _job_family, filter_by_job_family, step_extract_skills, step_ingest
 
 # 직군 → Adzuna 검색 쿼리 매핑
 _QUERIES: dict[str, list[str]] = {
@@ -110,6 +110,12 @@ def collect_and_ingest(
         if not filtered:
             print(f"  [{family}] 직군 필터 후 0개 — 건너뜀")
             continue
+
+        # 분류 결과를 공고에 부여 — ingest_posting이 이 값으로 INSTANCE_OF를 연결한다.
+        # title이 다른 직군 키워드에 걸릴 수 있어(예: 'react developer' 쿼리의 풀스택 공고)
+        # 수집 family가 아닌 _job_family(title)로 실제 분류한다.
+        for j in filtered:
+            j["job_family"] = _job_family(j["title"])
 
         processed_path = _PROCESSED_DIR / f"{family.replace('/', '_').replace(' ', '_')}_skills.json"
         _PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
