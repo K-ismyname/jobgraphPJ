@@ -99,8 +99,9 @@ async function renderWorkflow(g, report) {
     }
   }
 
+  const overview = g.overview ? `<p class="cap-ev" style="margin-bottom:12px;line-height:1.6">${esc(g.overview)}</p>` : "";
   const cards = (g.stages || []).map((st) => renderStage(st, report)).join("");
-  $("workflow").innerHTML = band + diagram + cards;
+  $("workflow").innerHTML = overview + band + diagram + cards;
 }
 
 function renderStage(st, report) {
