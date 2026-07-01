@@ -927,3 +927,39 @@ RAGAS 파이프라인은 v3에서 실행됐으나(`run_analysis`가 반환하는
 - **Adzuna 재평가**: 옛 적재본 오염은 Adzuna 결함이 아니라 옛 코드 버그였음. 현재 collect.py로 Frontend 시범 수집 시 React/TS/JS 정상 추출, 환각 없음. 단 Adzuna 무료 API는 description 500자 truncate → 수율 ~50%(앞 500자에 스킬 없으면 빈 추출).
 - **Frontend 보충 결과**: 18 → 59건. 순도 완벽(React 45·TypeScript 30·JavaScript 30·CSS 24·HTML 21..., 인프라 환각 0). 추출 데이터 재사용으로 재적재(OpenAI 비용 0).
 - 남은 여지: Frontend 59건은 갭 분석 임계(~100) 약간 미달 → `--pages 10`/`--country us`로 추가 보강 가능. 다른 직군도 동일 방식 적용 가능.
+
+---
+
+## [2026-07-01] 결과 화면 5개 구조 재설계 + 코칭 환각 제거
+
+### 작업 절차
+
+1. **5개 구조 재설계**(brainstorming→설계문서→구현): 적합도 점수(N/100) 제거. ①충족 ②채울것(학습) ③보강(코드) + 각 항목 설명·코칭. `LearningRecommendation`에 `how`(학습 코칭) 신설, Coach 프롬프트에 structure_summary 기반 how 생성. `renderReport` 재작성(면접코칭·추천직군·공통스킬은 화면 제거, 백엔드 데이터·/observe는 유지).
+2. **github_eval A**: 파일 선택을 골격 우선(매니페스트·엔트리·디렉토리 다양성)으로 재작성 + 전체 트리를 프롬프트에 추가 + how_to_add 형식 강제 완화.
+3. **github_eval B**: pass1에서 gpt-4o-mini가 트리 보고 핵심 파일 직접 선택(실패 시 A 휴리스틱 fallback). pass2를 파일레벨로 조임(실제 본 파일·함수만).
+4. **Coach 조이기**: ③ project_suggestions 환각 차단 — 설계 대체·패러다임 강요 금지.
+5. **두 레포 e2e 검증**: jobgraphPJ(커스텀 멀티에이전트), the_formula(Next.js 표준).
+
+### 발생 문제
+
+- **적합도 점수 무의미**: "10개 중 4개=40점"이 스킬 중요도 무시 + actionable하지 않음.
+- **③ 코칭 환각(치명적)**: "강화학습을 gap_analysis에", "Neo4j를 PostgreSQL로 전환", "규칙함수에 신경망" — 실재 파일명+환각 내용. 면접에서 망신급.
+- **근원 오진 위험**: github_eval의 how_to_add와 화면의 ③ project_suggestions는 다른 함수(Coach)가 생성. github_eval만 고쳐선 최종 ③ 환각 안 잡힘.
+- **직군 노이즈**: AI/LLM 핵심에 Java(6건). 진단 결과 경계선(Software Engineer의 Java는 정당).
+- **github_eval 일시 파싱 실패**: gpt-4o 빈 응답으로 project_context 빈 결과 → 코칭 degraded. 재시도로 대개 커버.
+
+### 해결 방법
+
+- **환각의 두 근원 분리 대응**: (A/B) github_eval의 GitHub 파악을 골격+LLM선택으로 정확화, (Coach) project_suggestions 생성 규칙을 같은 원칙(설계 대체 금지·본 코드만·애매하면 learning)으로 조임.
+- **측정으로 검증**: the_formula에서 "src/lib/queries.ts에 제네릭 Fetch 타입", "getArticles 반환 타입 제네릭 개선" 등 파일레벨 디테일 달성, 환각 0. jobgraphPJ는 커스텀 구조라 추상 스킬(AI·RAG)이 밋밋(파일은 맞음) — "완벽한 파악 불가"의 실제 모습.
+- **직군 노이즈는 수용**: 경계선이라 하드코딩/데이터작업 실익 없음. 롤백으로 인프라 도배는 이미 해결됨.
+
+### 커밋 (feat/multi-agent)
+
+`94d9b8a3` 5개 구조 · `79780126` github_eval A+B · `a3391017` Coach 조이기 · `f2b5ee39` threshold · `a1c55e63` collect.py INSTANCE_OF 버그.
+
+### 남은 과제
+
+- github_eval 파싱 실패 빈도 잦으면 안정화(현재 재시도로 커버).
+- jobgraphPJ 같은 커스텀 레포의 추상 스킬 코칭은 밋밋 — 근본 개선은 어려움(LLM 한계).
+- 미커밋: web/app.js의 renderSkillBadges 등은 5개 구조 커밋에 포함됨(확인 완료).
