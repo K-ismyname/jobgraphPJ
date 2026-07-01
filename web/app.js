@@ -186,10 +186,8 @@ function renderReport(d) {
     ${TRUST_LEGEND}
     <h3>충족한 스킬</h3>
     <div>${met || "<p class='prio'>없음</p>"}</div>
-    <h3>채우면 좋을 스킬</h3>
-    ${learnings || "<p class='prio'>추천 없음</p>"}
-    <h3>코드로 보강할 스킬</h3>
-    ${projects || "<p class='prio'>제안 없음</p>"}
+    ${learnings ? `<h3>채우면 좋을 스킬</h3>${learnings}` : ""}
+    ${projects ? `<h3>코드로 보강할 스킬</h3>${projects}` : ""}
     ${postings ? `<h3>지원해볼 만한 회사</h3>${postings}` : ""}
     <p style="margin-top:16px"><a href="/observe?report_id=${encodeURIComponent(state.reportId)}&tab=workflow">→ 이 분석의 실행 과정 보기</a></p>
   `;
