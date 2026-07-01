@@ -140,3 +140,8 @@ h3 { margin:18px 0 6px; font-size:.95rem; }
 .legend .dotc.Verified { background:var(--verified); }
 .legend .dotc.Corroborated { background:var(--corroborated); }
 .legend .dotc.Claimed { background:var(--claimed); }
+
+/* 관측 페이지 — 소스별 '무엇을 보나' 설명 */
+.src-list { margin: 10px 0; display: grid; gap: 5px; }
+.src-row { font-size: .85rem; padding: 6px 10px; background: #f8fafc; border: 1px solid var(--line); border-radius: 8px; }
+.src-row b { color: var(--accent); }

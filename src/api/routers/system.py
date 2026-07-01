@@ -10,7 +10,13 @@ router = APIRouter()
 _STAGES = [
     {"key": "evaluators", "title": "1. 다중 소스 평가자",
      "nodes": ["resume_eval", "github_eval", "portfolio_eval", "deploy_eval"],
-     "description": "이력서·GitHub·배포 URL을 각각 다른 평가자가 본다. 소스마다 형식(텍스트·코드·웹)이 달라 한 LLM에 합칠 수 없고, 무엇보다 '할 줄 안다는 주장(이력서)'과 '코드로 실증됨(GitHub·배포)'을 구분하려고 분리했다."},
+     "description": "입력한 소스만 각각 다른 평가자가 본다. 소스마다 형식(텍스트·코드·웹)이 달라 한 LLM에 합칠 수 없고, 무엇보다 '할 줄 안다는 주장(이력서)'과 '코드로 실증됨(GitHub·배포)'을 구분하려고 분리했다.",
+     "sources": [
+         {"name": "이력서 (PDF)", "sees": "텍스트를 읽어 보유 스킬을 추출", "verdict": "주장 (Claimed)"},
+         {"name": "포트폴리오 (PDF)", "sees": "텍스트 + 이미지(vision)로 프로젝트 규모·성과 파악", "verdict": "주장 보강"},
+         {"name": "GitHub", "sees": "레포 코드·README·의존성을 읽어 실제 사용을 확인", "verdict": "실증 (Verified)"},
+         {"name": "배포 URL", "sees": "작동하는 웹(HTML·헤더)을 확인", "verdict": "작동 실증 (Verified)"},
+     ]},
     {"key": "consensus", "title": "2. 교차검증 합의",
      "nodes": ["consensus"],
      "description": "여러 독립 소스가 같은 스킬을 가리키면 신뢰가 올라간다(법정·저널리즘의 교차검증 원칙). GitHub/배포로 실증되면 Verified, 2개 이상 소스가 일치하면 Corroborated, 한 소스(이력서)뿐이면 Claimed로 결정적으로 판정한다."},

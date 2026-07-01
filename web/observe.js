@@ -111,7 +111,10 @@ function renderStage(st, report) {
     : "";
   let data = "<div class='cap-ev'>분석하면 이 단계의 실제 처리 결과가 표시됩니다.</div>";
   if (report && t) data = `<div class="stage-data">${stageData(st.key, t, report)}</div>`;
-  return `<div class="step"><h4>${esc(st.title)} ${badges}</h4><p class="cap-ev">${esc(st.description)}</p>${data}</div>`;
+  const sources = (st.sources || []).map((s) =>
+    `<div class="src-row"><b>${esc(s.name)}</b> — ${esc(s.sees)} → <span class="prio">${esc(s.verdict)}</span></div>`).join("");
+  const sourcesHtml = sources ? `<div class="src-list">${sources}</div>` : "";
+  return `<div class="step"><h4>${esc(st.title)} ${badges}</h4><p class="cap-ev">${esc(st.description)}</p>${sourcesHtml}${data}</div>`;
 }
 
 function stageData(key, t, report) {
