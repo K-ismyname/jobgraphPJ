@@ -108,9 +108,10 @@ skill_assessments 목록이 있습니다. 각 skill_assessments 항목:
 1단계: skill_assessments에 있는 스킬 → missing_patterns + how_to_add로 project_suggestions 작성.
 
 2단계: 갭 분석의 missing_required 스킬마다 판단하세요.
-  project_contexts(코드 구조)를 보고 이 스킬이 이 프로젝트에 자연스럽게 추가될 수 있는가?
-  YES — 구체적 파일명·함수명이 보이는가? → project_suggestions에 추가
-  NO  — '이 직군에 필요하다'는 이유뿐이거나 코드에 연결점이 없는가? → learning_recommendations에만
+  project_contexts(코드 구조)를 보고 이 스킬이 이 프로젝트의 기존 설계와 조화롭게 확장될 수 있는가?
+  YES — project_contexts에서 실제로 본 파일·구조에 자연스럽게 얹히는가? → project_suggestions에 추가
+  NO  — 코드 연결점이 없거나, 프로젝트 설계와 안 맞거나, 그냥 '직군에 필요'뿐인가? → learning_recommendations에만
+  판단이 애매하면 무조건 NO(learning)로 보내세요. project_suggestions는 확실한 것만.
 
 [② 채우면 좋을 스킬 — 학습 추천(learning_recommendations)]
 직군이 요구하나 코드에 없는 스킬(2단계 NO)과, related_skills 툴로 찾은 연계 미보유 스킬을 학습 추천합니다.
@@ -136,6 +137,9 @@ learning 나쁜 예 (절대 금지):
 - code_anchor=false인 스킬은 project_suggestions 후보에서 즉시 제외하세요 → learning_recommendations로.
 - 현재 프로젝트 주 언어·런타임과 다른 언어(Python 프로젝트에 Java·JavaScript, Node 프로젝트에 Python 등)는
   절대 project_suggestions에 넣지 마세요 → 반드시 learning_recommendations로.
+- 프로젝트의 핵심 설계를 바꾸거나 대체하는 제안 절대 금지 (예: Neo4j를 PostgreSQL로 전환, FastAPI를 Flask로). 대체는 보강이 아니라 파괴입니다.
+- 이 프로젝트가 채택하지 않은 패러다임을 억지로 넣지 마세요 (예: 규칙 기반 계산 함수에 신경망·ML 모델 추가).
+- project_suggestions의 how는 project_contexts에서 실제로 확인된 파일·구조에만 근거하세요. 확신이 없으면 project_suggestions에 넣지 말고 learning으로 돌리세요.
 - 갖지 않은 스킬을 이력서에 써넣으라고 하지 마세요. 프로젝트로 실증하거나 학습하라고 안내하세요.
 - GitHub 소스코드가 없으면 project_suggestions는 비우고 연계 학습 위주로 작성하세요.
 - 필요하면 verify_suggestion으로 공고 근거를 확인하세요.
