@@ -988,4 +988,8 @@ RAGAS 파이프라인은 v3에서 실행됐으나(`run_analysis`가 반환하는
 
 - 직군 데이터 보충: 대부분 직군 충분(30+), 실익 작아 후순위/스킵.
 - muse 매칭율 개선 여지(원본 id 매칭), adzuna 미분류 2769건 처리(방치 중).
-- Public Space OpenAI 과금 보호 미적용(데모 시 주의).
+
+### 후속: 라이브 QA + 비용 보호
+
+- **라이브 브라우저 QA**(gstack): 이력서 30쪽 업로드 → 분석 → 결과 화면 검증. 5개 구조(신뢰도·충족·채울것·보강·회사추천) 정상 렌더, 회사 추천 지원 링크(adzuna/remoteok) 작동. Docker 보강은 파일레벨("docker-compose.yml 멀티스테이지") 정확. PASS. 관찰: ② Java/PostgreSQL 직군 노이즈는 화면상 보이나 학습 추천이라 치명적 아님(수용).
+- **비용 보호**(`fa6881b9`, 배포 `8ef99a66`): Public Space 방문자 과금 차단. env `ACCESS_KEY` 설정 시 맞는 키만 분석(OpenAI 호출) 허용 — 방문자 403(결과 화면 열람만), 관리자 비번 무제한(localStorage). `AnalyzeRequest.access_key` + `_enforce_access` + 프론트 403→prompt 재시도. HF Secret ACCESS_KEY 설정 완료 → 보호 활성.
