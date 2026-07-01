@@ -387,8 +387,8 @@ def _assess_project_and_skills(
         '      "skill": "스킬명 (핵심 스킬 목록에서만)",\n'
         '      "current_usage": "기본 사용 | 중급 패턴 | 고급 패턴",\n'
         '      "used_patterns": ["코드에서 실제 사용 중인 구체적 패턴"],\n'
-        '      "missing_patterns": ["이 스킬의 고급 패턴 중 이 코드에 없는 것"],\n'
-        '      "how_to_add": "위에서 실제로 본 파일명·함수명을 짚어 파일 레벨로 구체화 (예: supervisor.py의 evaluator_dispatch에 X 추가). 위 소스에 실제로 있는 것만.",\n'
+        '      "missing_patterns": ["이 프로젝트에 명확히 도움될 보강만. 없으면 빈 배열"],\n'
+        '      "how_to_add": "structure_summary(프로젝트 전체)를 바탕으로 이 프로젝트에 무엇을 추가/개선하면 좋을지 프로젝트 레벨로. 명확하지 않으면 빈 문자열.",\n'
         '      "relevant_files": ["위 유효한 파일 경로 목록에서만 선택, 최대 3개"]\n'
         "    }\n"
         "  ]\n"
@@ -398,10 +398,10 @@ def _assess_project_and_skills(
         "- 코드나 의존성 파일에서 실제로 확인된 스킬만 포함. 추측 금지.\n"
         "- current_usage '없음'인 스킬은 제외.\n"
         "- relevant_files는 반드시 '유효한 파일 경로 목록'에 있는 경로만 사용. 없으면 빈 배열.\n"
-        "- how_to_add는 위 소스에서 실제로 본 파일명·함수명을 짚어 파일 레벨로 구체화할 것. '~하면 좋다' 수준의 일반론 금지.\n"
-        "- 단, 위 소스에 실제로 없는 파일·함수·기능을 지어내지 말 것(환각 금지). 확실히 본 것만 짚고, 애매하면 missing_patterns를 비울 것.\n"
-        "- 이 프로젝트에 불필요한 기술을 억지로 제안하지 말 것 (예: Neo4j 쿼리 함수에 강화학습).\n"
-        "- 이미 잘 구현된 스킬(used_patterns 충분)은 missing_patterns·how_to_add를 비우고 보강을 강요하지 말 것."
+        "- how_to_add는 프로젝트 전체(structure_summary·README) 관점의 제안. 특정 파일·함수를 지어내지 말 것.\n"
+        "- **used_patterns와 다른 기술 범주로 도약 금지** (예: used가 'API 모델 호출'인데 missing에 '딥러닝 최적화'). 지금 하는 것의 자연스러운 다음 단계만.\n"
+        "- **억지로 만들지 말 것.** 이 프로젝트에 실제로 도움될 명확한 보강만. 애매하거나 이미 충분하면 missing_patterns·how_to_add를 비울 것(빈 배열/빈 문자열).\n"
+        "- 특히 current_usage가 '고급 패턴'이면 대개 보강 불필요 — 비울 것."
     )
 
     try:
@@ -420,6 +420,11 @@ def _assess_project_and_skills(
         for sa in skill_assessments:
             if "skill" in sa:
                 sa["skill"] = normalize_skill(sa["skill"])
+            # 결정적 환각 방어(모든 분야) — 이미 고급이면 억지 보강 제거.
+            # LLM이 고급 스킬에도 missing을 지어내는 '보강점 강박'을 코드로 차단.
+            if sa.get("current_usage") == "고급 패턴":
+                sa["missing_patterns"] = []
+                sa["how_to_add"] = ""
         # detected_skills(pkg_json·키워드 감지)가 LLM 필터에서 탈락한 경우 기본 assessment로 보장
         if detected_skills:
             assessed_lower = {sa["skill"].lower() for sa in skill_assessments}

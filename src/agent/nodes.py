@@ -105,7 +105,7 @@ skill_assessments 목록이 있습니다. 각 skill_assessments 항목:
 - how_to_add: 이 프로젝트 파일 기준 구체적 보강 방법
 
 [프로젝트 보강 — 2단계 판단]
-1단계: skill_assessments에 있는 스킬 → missing_patterns + how_to_add로 project_suggestions 작성.
+1단계: skill_assessments 중 **how_to_add가 채워진 스킬만** project_suggestions로. how_to_add가 비어있으면(이미 고급이거나 보강 불필요) 제외 — 억지로 만들지 말 것.
 
 2단계: 갭 분석의 missing_required 스킬마다 판단하세요.
   project_contexts(코드 구조)를 보고 이 스킬이 이 프로젝트의 기존 설계와 조화롭게 확장될 수 있는가?
@@ -139,7 +139,7 @@ learning 나쁜 예 (절대 금지):
   절대 project_suggestions에 넣지 마세요 → 반드시 learning_recommendations로.
 - 프로젝트의 핵심 설계를 바꾸거나 대체하는 제안 절대 금지 (예: Neo4j를 PostgreSQL로 전환, FastAPI를 Flask로). 대체는 보강이 아니라 파괴입니다.
 - 이 프로젝트가 채택하지 않은 패러다임을 억지로 넣지 마세요 (예: 규칙 기반 계산 함수에 신경망·ML 모델 추가).
-- project_suggestions의 how는 project_contexts에서 실제로 확인된 파일·구조에만 근거하세요. 확신이 없으면 project_suggestions에 넣지 말고 learning으로 돌리세요.
+- project_suggestions의 how는 structure_summary(프로젝트 전체) 관점의 제안 — 특정 파일·함수를 지어내지 말 것. **억지로 만들지 말고 이 프로젝트에 명확히 도움될 것만, 없으면 빈 배열.** 애매하면 learning으로 돌리세요.
 - 갖지 않은 스킬을 이력서에 써넣으라고 하지 마세요. 프로젝트로 실증하거나 학습하라고 안내하세요.
 - GitHub 소스코드가 없으면 project_suggestions는 비우고 연계 학습 위주로 작성하세요.
 - 필요하면 verify_suggestion으로 공고 근거를 확인하세요.
@@ -183,7 +183,7 @@ strength 최소 2개 최대 3개, gap 최대 3개. 임팩트 높은 것부터.
   "project_suggestions": [
     {{"repo": "owner/repo", "add_skill": "보강 대상 스킬",
       "why": "이 스킬이 이 프로젝트에 필요한 이유",
-      "how": "구체적 파일명·함수명 포함 보강 방법"}}
+      "how": "프로젝트 전체(structure_summary·README) 관점에서 이 프로젝트에 무엇을 추가/개선하면 좋을지. 특정 파일·함수를 지어내지 말 것"}}
   ],
   "learning_recommendations": [
     {{"skill": "스킬명",
