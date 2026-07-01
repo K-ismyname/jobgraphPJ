@@ -60,7 +60,8 @@
 **`src/agent/nodes.py` — `_COACH_SYSTEM_PROMPT` 강화**
 - `learning_recommendations` 출력 형식: `{skill, reason, how}`로 확장
 - `reason`(④ 설명): 일반론 금지. "이 직군 공고에서 어떻게 요구되는지 + 보유 스킬과의 연결"을 담도록 지침 + 좋은/나쁜 예시 추가 (interview_coaching처럼)
-- `how`(⑤ 학습 코칭): "무엇부터, 어떤 순서로, 보유 스킬을 어떻게 발판으로" 구체적 학습 방향
+- `how`(⑤ 학습 코칭): **프로젝트 단위 깊이**. `project_contexts[].structure_summary`(GitHub 프로젝트 구조 요약)를 참조해 "당신의 [프로젝트]는 [구조]이니, 이 스킬로 이렇게 개선/적용"까지 구체화. 보유 스킬을 학습 발판으로 명시.
+  - **깊이 상한 제약**: ②는 코드에 없는 스킬이라 파일·함수 앵커가 없다. `structure_summary`가 있으면 "프로젝트 단위"로 깊게, 없으면(GitHub 미연동) "학습 경로" 수준으로 자동 조정. **파일·함수를 지어내지 말 것(환각 금지)** — 이게 ③(파일 단위)과의 깊이 차이.
 - `related_skills` 툴 결과(CO_OCCURS)를 ② 근거로 활용
 
 ### 프론트
