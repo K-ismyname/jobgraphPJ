@@ -407,7 +407,8 @@ def _assess_project_and_skills(
     try:
         resp = openai.chat.completions.create(
             model="gpt-4o",
-            max_tokens=2000,
+            max_tokens=3000,
+            response_format={"type": "json_object"},   # 빈/비JSON 응답 방지 (파싱 실패 char0 방어)
             messages=[{"role": "user", "content": prompt}],
         )
         raw = (resp.choices[0].message.content or "").strip().replace("```json", "").replace("```", "").strip()
