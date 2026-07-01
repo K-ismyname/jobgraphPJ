@@ -166,6 +166,14 @@ function renderReport(d) {
       <div class="rew">어떻게: ${esc(s.how)}</div></div>`)
     .join("");
 
+  // 지원해볼 만한 회사 — 검증 스킬 매칭 + 지원 링크 있는 공고
+  const postings = (d.recommended_postings || [])
+    .map((p) => `<div class="skill-row">
+      <span>${esc(p.title)}${p.company ? ` · ${esc(p.company)}` : ""}</span>
+      <span class="prio">${Math.round(p.match_pct || 0)}% 매칭</span>
+      ${p.url ? `<a class="src" href="${esc(p.url)}" target="_blank" rel="noopener">지원 →</a>` : ""}</div>`)
+    .join("");
+
   $("result").innerHTML = `
     <div class="trust-pills">
       <span class="tpill Verified">● 검증됨 ${counts.Verified || 0}</span>
@@ -179,6 +187,7 @@ function renderReport(d) {
     ${learnings || "<p class='prio'>추천 없음</p>"}
     <h3>코드로 보강할 스킬</h3>
     ${projects || "<p class='prio'>제안 없음</p>"}
+    ${postings ? `<h3>지원해볼 만한 회사</h3>${postings}` : ""}
     <p style="margin-top:16px"><a href="/observe?report_id=${encodeURIComponent(state.reportId)}&tab=workflow">→ 이 분석의 실행 과정 보기</a></p>
   `;
 }

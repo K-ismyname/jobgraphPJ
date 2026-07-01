@@ -465,23 +465,26 @@ class Neo4jClient:
             print(f"[neo4j] CO_OCCURS 조회 실패: {e}")
             return []
 
-    def recommend_job_postings(self, skills: list[str], top_n: int = 5, min_required: int = 4) -> list[dict]:
-        """보유 스킬과 매칭률이 높은 채용공고 상위 N개를 반환한다.
+    def recommend_job_postings(self, skills: list[str], top_n: int = 5, min_required: int = 4,
+                               job_family: str | None = None) -> list[dict]:
+        """보유 스킬과 매칭률이 높은, 지원 가능한 채용공고 상위 N개를 반환한다.
 
         min_required: 요구 스킬이 이 수 미만인 공고는 제외 (노이즈 방지).
+        url 있는 공고만 (지원 링크 보장), job_family 지정 시 해당 직군만.
         """
         if not skills:
             return []
         query = """
         WITH $skills AS portfolio
         MATCH (jp:JobPosting)-[:REQUIRES]->(s:Skill)
-        WHERE s.name IN portfolio
+        WHERE s.name IN portfolio AND jp.url IS NOT NULL AND jp.url <> ""
         WITH jp, count(DISTINCT s) AS matched
         MATCH (jp)-[:REQUIRES]->(ts:Skill)
         WITH jp, matched, count(DISTINCT ts) AS total
         WHERE total >= $min_required
         MATCH (jp)-[:POSTED_BY]->(c:Company)
         MATCH (jp)-[:INSTANCE_OF]->(jf:JobFamily)
+        WHERE $job_family IS NULL OR jf.name = $job_family
         RETURN jp.title AS title, c.name AS company, jp.url AS url,
                jf.name AS job_family, matched, total,
                round(toFloat(matched) / total * 100) AS match_pct
@@ -489,7 +492,8 @@ class Neo4jClient:
         LIMIT $n
         """
         try:
-            rows = self.execute_query(query, skills=skills, n=top_n, min_required=min_required)
+            rows = self.execute_query(query, skills=skills, n=top_n, min_required=min_required,
+                                      job_family=job_family)
             return [
                 {
                     "title": r["title"],

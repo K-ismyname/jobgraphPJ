@@ -120,6 +120,14 @@ class VerificationItem(BaseModel):
     sources: list[str]
 
 
+class RecommendedPosting(BaseModel):
+    title: str
+    company: str = ""
+    url: str = ""
+    job_family: str = ""
+    match_pct: float = 0.0          # 보유 스킬 대비 매칭률 %
+
+
 class InterviewCoaching(BaseModel):
     type: Literal["strength", "gap"]
     title: str
@@ -147,6 +155,7 @@ class ReportResponse(BaseModel):
     capability_fit: dict | None = None
     common_skill_fit: dict | None = None
     recommended_families: list[dict] = Field(default_factory=list)
+    recommended_postings: list[RecommendedPosting] = Field(default_factory=list)
 
 
 class ErrorResponse(BaseModel):

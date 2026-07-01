@@ -280,7 +280,8 @@ def run_supervisor(
             s["skill"] for s in (result.get("consensus") or {}).get("skills", [])
             if s.get("verification") in ("Verified", "Corroborated")
         ]
-        final["recommended_postings"] = neo4j.recommend_job_postings(verified_names or names)
+        final["recommended_postings"] = neo4j.recommend_job_postings(
+            verified_names or names, job_family=job_family)
     return final
 
 

@@ -16,6 +16,7 @@ from src.api.schemas import (
     LearningRecommendation,
     PortfolioUploadResponse,
     ProjectSuggestion,
+    RecommendedPosting,
     ReportResponse,
     UploadResponse,
     VerificationItem,
@@ -214,6 +215,12 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         capability_fit=final.get("capability_fit"),
         common_skill_fit=final.get("common_skill_fit"),
         recommended_families=final.get("recommended_families") or [],
+        recommended_postings=[
+            RecommendedPosting(title=p.get("title", ""), company=p.get("company", ""),
+                               url=p.get("url", ""), job_family=p.get("job_family", ""),
+                               match_pct=p.get("match_pct") or 0.0)
+            for p in (final.get("recommended_postings") or []) if isinstance(p, dict)
+        ],
     )
 
 
