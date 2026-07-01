@@ -22,7 +22,7 @@ class _FakeNeo4j:
     def execute_query(self, query: str, **kwargs):
         return []
 
-    def recommend_job_postings(self, skills: list, top_n: int = 5) -> list:
+    def recommend_job_postings(self, skills: list, job_family: str | None = None, top_n: int = 5) -> list:
         return []
 
     def get_common_skills(self, threshold: int = 5, n: int = 10) -> list:

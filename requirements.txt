@@ -1,11 +1,13 @@
 # LLM
 openai>=1.0.0
 
-# Agent framework
-langgraph>=1.0.0
-langchain>=0.3.0
-langchain-openai>=0.2.0
-langchain-core>=0.3.0
+# Agent framework — 0.3.x/0.2.x 세대로 상한 고정 (코드가 이 API로 작성됨).
+# 상한이 없으면 fresh install이 langgraph 1.x + langchain-core 1.x를 끌어와
+# 부분 업그레이드 시 core/langchain 버전 불일치(langchain.debug AttributeError)가 발생.
+langgraph>=0.2.28,<0.3
+langchain>=0.3.30,<0.4
+langchain-openai>=0.2,<0.4
+langchain-core>=0.3.86,<0.4
 # Graph DB
 neo4j>=5.0.0
 
