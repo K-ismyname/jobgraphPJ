@@ -95,8 +95,8 @@ job-skill-analyzer/
 │   │
 │   ├── analysis/               # Layer 4: 핵심 기능
 │   │   ├── capability.py       # 직군 핵심 스킬 대비 적합도·역방향 추천
-│   │   ├── gap_analyzer.py     # 갭 분석 + 매칭률
 │   │   └── salary_analyzer.py  # 연봉 영향도 (보조 지표)
+│   │   # 갭 분석·매칭률은 src/agent/tools.py의 gap_analysis 툴에서 수행
 │   │
 │   ├── evaluation/             # Layer 5: 평가
 │   │   ├── ragas_eval.py       # RAGAS 지표 측정
@@ -153,7 +153,8 @@ GITHUB_TOKEN=
 ### 노드
 
 ```cypher
-(:Job       {normalized_title, aliases[], posting_count, updated_at})
+(:JobFamily {name, posting_count})            # 정규화된 직군 (구 :Job)
+(:Company   {name, posting_count})
 (:Skill     {name, category, frequency, aliases[]})
 (:JobPosting{source_id, title, company, location,
              salary_min, salary_max, contract_type,
@@ -164,13 +165,13 @@ GITHUB_TOKEN=
 ### 관계
 
 ```cypher
-(Job)-[:REQUIRES   {weight}]  ->(Skill)       # 필수 기술
-(Job)-[:PREFERS    {weight}]  ->(Skill)       # 우대 기술
-(Job)-[:SAME_AS    {similarity_score}]->(Job) # 직무 정규화
+(JobPosting)-[:REQUIRES {weight}]->(Skill)    # 필수 기술
+(JobPosting)-[:PREFERS  {weight}]->(Skill)    # 우대 기술
+(JobPosting)-[:INSTANCE_OF]->(JobFamily)      # 공고 → 직군 분류
+(JobPosting)-[:POSTED_BY]->(Company)          # 공고 → 회사
 (Skill)-[:PART_OF  {relation}]->(Skill)       # 생태계 (LangChain→LangGraph)
 (Skill)-[:CO_OCCURS{count}]   ->(Skill)       # 공고 내 동시 등장
 (PortfolioItem)-[:DEMONSTRATES{evidence, confidence}]->(Skill)
-(JobPosting)-[:INSTANCE_OF]  ->(Job)
 ```
 
 ### confidence 레벨 규칙
@@ -184,24 +185,36 @@ GITHUB_TOKEN=
 
 ## LangGraph 에이전트 구조
 
+Supervisor `StateGraph` — 입력에 있는 소스의 평가자만 병렬 fan-out(Send) → 합의 → Gap 서브그래프 → 검증 → Coach 서브그래프.
+
 ```
 START
-  └→ call_model (LLM 판단: 어떤 툴 쓸까?)
-       ├→ [tool] resume_search    벡터 RAG (Chroma)
-       ├→ [tool] graph_query      Neo4j Cypher
-       ├→ [tool] job_db_query     공고 통계·연봉
-       └→ [tool] github_check     GitHub API (선택)
-            └→ call_model (증거 충분한가? Corrective 판단)
-                 ├→ 부족하면 → 다시 tool 호출 (루프)
-                 ├→ 애매하면 → HITL (interrupt → 사용자 입력 → resume)
-                 └→ 충분하면 → END (갭 분석 리포트)
+  └→ (dispatch: 입력에 있는 소스만 Send로 fan-out)
+       ├→ resume_eval    이력서 (텍스트 추출)     ─┐
+       ├→ github_eval    GitHub repo (코드 근거)  ─┤ (병렬)
+       ├→ portfolio_eval 포트폴리오 PDF (멀티모달) ─┤
+       └→ deploy_eval    배포 URL (웹)            ─┘
+                              ▼
+                         consensus (검증 등급 결정적 판정 — LLM 미사용)
+                              ▼
+                         seed_gap → gap_agent (Corrective RAG ReAct 루프, 서브그래프)
+                              │        call_model ↔ tools (gap_analysis·verify_skills·
+                              │        skill_unlock·posting_trend·ask_human)
+                              ▼
+                         synthesizer (적합도+신뢰도 리포트)
+                              ▼
+                         critic (consensus 대조 — 환각 제거·라벨 교정, 결정적)
+                              ▼
+                         coach_agent (면접 코칭·프로젝트 제안, 서브그래프) → END
 ```
+
+ask_human(HITL)은 `HITL_ENABLED=true`일 때만 interrupt로 동작(기본 비활성 자동 모드).
 
 **규칙:**
 
-- State는 `src/agent/state.py`의 `AgentState` TypedDict만 사용
-- 새 툴 추가 시 `src/agent/tools.py`에 `@tool` 데코레이터로 정의
-- 노드 함수는 반드시 `AgentState → AgentState` 시그니처 유지
+- State는 `src/agent/state.py`의 `AppState`(Supervisor) / `GapState` / `CoachState` TypedDict 사용
+- Gap 툴은 `src/agent/tools.py`, Coach 툴은 같은 파일의 `create_coach_tools`에 `@tool`로 정의
+- 노드 함수는 `State → dict`(부분 업데이트) 시그니처 유지
 
 ---
 
@@ -227,7 +240,7 @@ DEFAULT_CHUNK_SIZE = 500
 SKILL_ALIASES = {...}
 
 # Neo4j 쿼리 변수: UPPER_SNAKE_CASE
-UPSERT_JOB = """MERGE (j:Job ..."""
+UPSERT_JOB_FAMILY = """MERGE (jf:JobFamily ..."""
 
 # Pydantic 모델: PascalCase
 class ExtractedSkill(BaseModel):
@@ -324,7 +337,8 @@ tests/
 ├── unit/
 │   ├── test_normalizer.py      # normalize_skill() 동의어 테스트
 │   ├── test_pdf_parser.py      # PDF 텍스트 추출 테스트
-│   └── test_gap_analyzer.py    # 갭 분석 로직 테스트
+│   ├── test_consensus.py       # 합의 검증 등급 판정 테스트
+│   └── test_critic.py          # 환각 제거·라벨 교정 테스트
 └── integration/
     ├── test_neo4j.py           # Neo4j MERGE 쿼리 (실 DB)
     └── test_agent.py           # LangGraph 전체 흐름 (mock LLM)
