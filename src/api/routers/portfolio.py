@@ -29,25 +29,24 @@ router = APIRouter()
 
 _MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MB
 
-# 데모 비용 보호 — 하루 분석 횟수 상한(메모리, 날짜 바뀌면 리셋).
-# DEMO_DAILY_LIMIT 미설정/0이면 무제한(로컬 개발). 공개 데모는 HF 시크릿으로 설정.
+# 데모 비용 보호 — 방문자 하루 분석 횟수 상한(메모리, 날짜 바뀌면 리셋). 기본 3회.
+# DEMO_DAILY_LIMIT=0이면 무제한. 관리자(ACCESS_KEY 일치/로컬)는 이 상한을 타지 않음.
 _demo_usage: dict = {"date": None, "count": 0}
 
 
-def _enforce_access(key: str) -> None:
-    """관리자 분석 게이트 — env ACCESS_KEY 설정 시 맞는 키만 분석(=OpenAI 호출) 허용.
+def _is_admin(key: str) -> bool:
+    """관리자 여부 — env ACCESS_KEY 미설정(로컬)이거나 키가 맞으면 무제한.
 
-    미설정이면 통과(로컬 개발). 공개 배포는 HF 시크릿 ACCESS_KEY로 설정 →
-    관리자만 분석, 방문자는 결과 화면 열람만 가능(과금 보호).
+    공개 배포는 HF 시크릿 ACCESS_KEY로 설정 → 관리자는 무제한,
+    방문자는 일일 상한(기본 3회) 내에서 이용(과금 보호).
     """
     expected = os.getenv("ACCESS_KEY")
-    if expected and key != expected:
-        raise HTTPException(403, "분석은 관리자 전용입니다. (데모는 결과 화면 열람만 가능)")
+    return (not expected) or (key == expected)
 
 
 def _enforce_daily_limit() -> None:
     """오늘 분석 횟수가 상한을 넘으면 429를 던지고, 아니면 카운트를 1 올린다."""
-    limit = int(os.getenv("DEMO_DAILY_LIMIT", "0") or "0")
+    limit = int(os.getenv("DEMO_DAILY_LIMIT", "3") or "3")
     if limit <= 0:
         return
     today = datetime.now(timezone.utc).date().isoformat()
@@ -154,9 +153,9 @@ async def analyze_portfolio(
     if existing and getattr(existing, "status", None) == "processing":
         raise HTTPException(409, "이미 분석 중입니다.")
 
-    # 공개 데모 비용 보호 — 관리자 키 검증(남 차단) 후 일일 상한(본인 실수 방지)
-    _enforce_access(req.access_key)
-    _enforce_daily_limit()
+    # 공개 데모 비용 보호 — 관리자(키 일치/로컬)는 무제한, 방문자는 일일 상한(기본 3회)
+    if not _is_admin(req.access_key):
+        _enforce_daily_limit()
 
     reports[req.report_id] = ReportResponse(
         report_id=req.report_id, status="processing", phase="소스 평가 중",

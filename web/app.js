@@ -75,15 +75,11 @@ async function startAnalysis() {
     });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
-      // 403: 관리자 전용 — 키 입력받아 저장 후 재시도
-      if (res.status === 403) {
-        const k = prompt("분석은 관리자 전용입니다. 관리자 키를 입력하세요:");
-        if (k) { localStorage.setItem("access_key", k); return startAnalysis(); }
-        return setMsg($("analyze-msg"), "분석은 관리자만 가능합니다. (결과 화면 열람만 가능)", true);
-      }
-      // 429: 데모 일일 한도 — "실패"가 아니라 안내로 표시
+      // 429: 데모 일일 한도(3회) 초과 — 관리자 키 있으면 입력 후 무제한
       if (res.status === 429) {
-        return setMsg($("analyze-msg"), e.detail || "오늘 데모 분석 한도가 모두 사용되었습니다.", true);
+        const k = prompt("오늘 데모 분석 한도(3회)에 도달했습니다.\n관리자 키가 있으면 입력하세요 (없으면 취소):");
+        if (k) { localStorage.setItem("access_key", k); return startAnalysis(); }
+        return setMsg($("analyze-msg"), e.detail || "오늘 데모 한도(3회)를 모두 사용했습니다. 내일 다시 시도하세요.", true);
       }
       return setMsg($("analyze-msg"), `분석 시작 실패: ${e.detail || res.status}`, true);
     }
