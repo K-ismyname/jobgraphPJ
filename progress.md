@@ -960,6 +960,32 @@ RAGAS 파이프라인은 v3에서 실행됐으나(`run_analysis`가 반환하는
 
 ### 남은 과제
 
-- github_eval 파싱 실패 빈도 잦으면 안정화(현재 재시도로 커버).
 - jobgraphPJ 같은 커스텀 레포의 추상 스킬 코칭은 밋밋 — 근본 개선은 어려움(LLM 한계).
-- 미커밋: web/app.js의 renderSkillBadges 등은 5개 구조 커밋에 포함됨(확인 완료).
+
+---
+
+## [2026-07-01 오후] 회사 추천 + 배포 갱신 + github_eval 안정화 + verify_skills 근거 복구
+
+### 작업 절차
+
+1. **회사 추천 추가**(`b1a8bda2`): ①충족(검증) 스킬로 '지원 가능한 회사 Top5'를 화면에 추가. `recommend_job_postings`에 url 필터(지원 링크 보장)·job_family 필터. RecommendedPosting 스키마 + portfolio 매핑 + app.js 섹션. 검증: AI/LLM→QuantumLoopAI·fastino.ai, Software→Disney·Merge 등 실제 회사+링크+직군 정확.
+2. **배포 갱신**: `git subtree split --prefix=pj1 -b hf-deploy` → HF Space main에 force push. 60초 만에 라이브 반영(app.js에 신규 코드 확인). 오늘 개선(5개 구조·코칭 환각 제거·회사 추천) 전부 라이브 반영.
+3. **github_eval 안정화**(`c63cacba`): 간헐 파싱 실패('Expecting value: char 0') 방어 — `response_format={"type":"json_object"}` + max_tokens 2000→3000.
+4. **verify_skills 근거 복구**(DB 보정, 코드 변경 없음): required_section이 muse 0%·remoteok 0%로 비어 verify_skills가 근거를 못 가져오던 문제. 원본 data/raw(muse `contents` 5256자, remoteok `description`)를 preprocessor로 파싱해 `set_posting_sections`로 채움(source_id `muse-{id}`/`remoteok-{id}` 매칭). 결과: remoteok 122/122, muse 112/438 → verify_skills가 실제 공고 원문 반환(NVIDIA LangChain, Foresters React 등).
+
+### 발생 문제
+
+- **Neo4j에 공고 원문 텍스트가 거의 없음**: required_section adzuna 37%·muse/remoteok 0%, description/text_clean 전 소스 0. verify_skills 근거 원천 부재.
+- **muse 매칭율 26%**: 원본 JSON id와 Neo4j source_id 매칭이 절반 이하(원본 데이터 불완전). 234건으로 흔한 스킬은 충분 커버.
+
+### 해결 방법 / 참고
+
+- verify_skills 근거 복구는 **로컬=라이브 같은 Aura DB라 재배포 없이 즉시 반영**.
+- required_section 재채움 스크립트는 일회성(muse/remoteok 재수집 경로 제거됨, 유지됨). 재현 필요 시 data/raw JSON → preprocessor extract_sections → set_posting_sections.
+- adzuna는 원문 500자 truncate라 근거 빈약 → 제외.
+
+### 남은 과제
+
+- 직군 데이터 보충: 대부분 직군 충분(30+), 실익 작아 후순위/스킵.
+- muse 매칭율 개선 여지(원본 id 매칭), adzuna 미분류 2769건 처리(방치 중).
+- Public Space OpenAI 과금 보호 미적용(데모 시 주의).
