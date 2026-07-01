@@ -78,6 +78,13 @@ _MAX_FILES = 25
 _MAX_FILE_CHARS = 8_000   # 파일당 최대 문자 수
 _MAX_CODE_CHARS = 40_000  # LLM에 넘길 총 코드 최대 문자 수
 
+# 골격 파일 — 프로젝트 구조를 가장 잘 드러내는 파일을 25개 예산에서 우선 선택
+_MANIFEST_FILES = {
+    "requirements.txt", "package.json", "pyproject.toml", "go.mod", "cargo.toml",
+    "pom.xml", "build.gradle", "gemfile", "composer.json", "setup.py", "pipfile",
+}
+_ENTRY_STEMS = {"main", "app", "index", "supervisor", "server", "__main__", "cli", "run"}
+
 
 def _skills_from_pkg_json(pkg_json_text: str, vocab: list[str]) -> list[dict]:
     """package.json 의존성을 파싱해 _PKG_TO_SKILL로 스킬을 매핑한다."""
@@ -187,7 +194,39 @@ def _should_include(path: str) -> bool:
     return ext in _SOURCE_EXTENSIONS
 
 
-def _read_source_tree(owner: str, repo: str, headers: dict) -> tuple[dict[str, str], set[str]]:
+def _select_files_llm(openai, owner: str, repo: str,
+                      candidates: list[str], fallback: list[str]) -> list[str]:
+    """파일 경로 트리를 gpt-4o-mini에 주고 읽을 핵심 파일을 직접 고르게 한다(B, pass1).
+
+    파일 '선택'은 경로 패턴 인식 수준이라 mini로 충분(내용 분석은 pass2의 gpt-4o가 함).
+    실패·빈 결과·환각 경로면 휴리스틱 fallback을 반환해 항상 안전하게 동작한다.
+    """
+    if not openai or not candidates:
+        return fallback
+    tree_text = "\n".join(sorted(candidates))
+    prompt = (
+        f"저장소 {owner}/{repo}의 소스 파일 경로 목록입니다:\n{tree_text}\n\n"
+        f"이 프로젝트를 이해하려면 어떤 파일을 읽어야 하는지 최대 {_MAX_FILES}개 고르세요. "
+        "엔트리포인트(main·app·supervisor 등), 핵심 로직, 설정/매니페스트를 우선하고, "
+        "테스트·마이그레이션·자동생성 파일은 후순위로. "
+        'JSON 배열로 경로만 반환하세요(코드펜스 없이). 예: ["src/main.py", "requirements.txt"]'
+    )
+    try:
+        resp = openai.chat.completions.create(
+            model="gpt-4o-mini", temperature=0,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.choices[0].message.content.strip().replace("```json", "").replace("```", "").strip()
+        picked = json.loads(raw)
+        cand_set = set(candidates)
+        chosen = [p for p in picked if isinstance(p, str) and p in cand_set][:_MAX_FILES]
+        return chosen or fallback
+    except Exception as e:
+        print(f"[github_eval] LLM 파일 선택 실패, 휴리스틱 fallback: {e}")
+        return fallback
+
+
+def _read_source_tree(owner: str, repo: str, headers: dict, openai=None) -> tuple[dict[str, str], set[str]]:
     """레포 전체 파일 트리에서 핵심 소스 파일을 선택해 병렬로 읽는다.
 
     반환: (읽은 파일 내용 dict, 레포 전체 파일 경로 집합)
@@ -211,20 +250,43 @@ def _read_source_tree(owner: str, repo: str, headers: dict) -> tuple[dict[str, s
         print(f"[github_eval] 파일 트리 조회 실패: {e}")
         return {}, set()
 
-    # 레포 전체 파일 경로 집합 (환각 검증용)
+    # 레포 전체 파일 경로 집합 (환각 검증용) + 파일 크기 (큰 파일=핵심 로직 우선용)
     all_paths: set[str] = {it["path"] for it in tree if it.get("type") == "blob"}
+    sizes: dict[str, int] = {it["path"]: it.get("size", 0) for it in tree if it.get("type") == "blob"}
 
-    # 소스 파일 필터링 — src/, components/ 등 핵심 경로 우선
+    # 소스 파일 필터링
     candidates = [p for p in all_paths if _should_include(p)]
 
+    # 골격 우선순위(낮을수록 우선): 매니페스트 > 엔트리포인트 > 핵심경로(얕은 깊이) > 기타
     def _priority(path: str) -> int:
-        for prefix in ("src/", "app/", "components/", "pages/", "api/", "lib/"):
-            if path.startswith(prefix):
-                return 0
-        return 1
+        name = path.rsplit("/", 1)[-1].lower()
+        if name in _MANIFEST_FILES:
+            return 0
+        stem = name.rsplit(".", 1)[0] if "." in name else name
+        if stem in _ENTRY_STEMS:
+            return 1
+        base = 2 if path.startswith(("src/", "app/", "lib/", "api/", "pkg/")) else 4
+        return base + path.count("/")        # 얕은 파일 우선
 
-    candidates.sort(key=_priority)
-    selected = candidates[:_MAX_FILES]
+    # 매니페스트·엔트리포인트는 무조건 포함. 나머지는 디렉토리별 라운드로빈으로
+    # 한 디렉토리가 25개를 독식하지 않게 골고루 — 프로젝트 골격을 넓게 보여준다.
+    candidates.sort(key=lambda p: (_priority(p), -sizes.get(p, 0)))
+    must = [p for p in candidates if _priority(p) <= 1][:_MAX_FILES]
+    rest = [p for p in candidates if _priority(p) > 1]
+    by_dir: dict[str, list[str]] = {}
+    for p in rest:
+        by_dir.setdefault("/".join(p.split("/")[:-1]), []).append(p)
+    heuristic_selected = list(must)
+    queues = [q for q in by_dir.values()]
+    while len(heuristic_selected) < _MAX_FILES and queues:
+        queues = [q for q in queues if q]
+        for q in queues:
+            if len(heuristic_selected) >= _MAX_FILES:
+                break
+            heuristic_selected.append(q.pop(0))
+
+    # B(pass1): LLM이 트리를 보고 핵심 파일을 직접 선택 — 실패 시 휴리스틱 fallback
+    selected = _select_files_llm(openai, owner, repo, candidates, heuristic_selected)
 
     # 병렬 파일 읽기
     raw_headers = {**headers, "Accept": "application/vnd.github.raw"}
@@ -270,6 +332,7 @@ def _assess_project_and_skills(
     vocab: list[str],
     readme: str,
     detected_skills: list[str] | None = None,
+    all_paths: set[str] | None = None,
 ) -> dict:
     """소스 코드를 읽고 프로젝트 이해 + 직군 스킬별 현황 + 코칭 컨텍스트를 산출한다.
 
@@ -301,10 +364,17 @@ def _assess_project_and_skills(
         f"\n이미 확인된 스킬 (반드시 포함): {', '.join(detected_skills)}"
         if detected_skills else ""
     )
+    tree_block = ""
+    if all_paths:
+        tree_block = (
+            "전체 파일 구조 (먼저 이 프로젝트가 무엇인지·어떤 레이어로 구성됐는지 파악):\n"
+            + "\n".join(f"  {p}" for p in sorted(all_paths)[:200]) + "\n\n"
+        )
     prompt = (
         f"저장소: {owner}/{repo}\n"
         f"README:\n{readme[:2000]}\n\n"
-        f"소스 파일:\n{code_block}\n\n"
+        f"{tree_block}"
+        f"아래는 위 구조 중 핵심 파일들의 실제 내용입니다.\n소스 파일:\n{code_block}\n\n"
         f"직군 핵심 스킬 목록: {', '.join(vocab)}{detected_hint}\n\n"
         f"유효한 파일 경로 목록 (relevant_files는 반드시 이 목록에서만 선택):\n"
         + "\n".join(f"  {p}" for p in valid_paths) + "\n\n"
@@ -318,7 +388,7 @@ def _assess_project_and_skills(
         '      "current_usage": "기본 사용 | 중급 패턴 | 고급 패턴",\n'
         '      "used_patterns": ["코드에서 실제 사용 중인 구체적 패턴"],\n'
         '      "missing_patterns": ["이 스킬의 고급 패턴 중 이 코드에 없는 것"],\n'
-        '      "how_to_add": "[파일명]의 [함수명]에 [missing_patterns[0]] 추가 — [구체적 변경 한 문장]",\n'
+        '      "how_to_add": "위에서 실제로 본 파일명·함수명을 짚어 파일 레벨로 구체화 (예: supervisor.py의 evaluator_dispatch에 X 추가). 위 소스에 실제로 있는 것만.",\n'
         '      "relevant_files": ["위 유효한 파일 경로 목록에서만 선택, 최대 3개"]\n'
         "    }\n"
         "  ]\n"
@@ -328,7 +398,10 @@ def _assess_project_and_skills(
         "- 코드나 의존성 파일에서 실제로 확인된 스킬만 포함. 추측 금지.\n"
         "- current_usage '없음'인 스킬은 제외.\n"
         "- relevant_files는 반드시 '유효한 파일 경로 목록'에 있는 경로만 사용. 없으면 빈 배열.\n"
-        "- how_to_add는 이 레포의 실제 파일명·함수명 포함 필수. 추상적 조언 금지."
+        "- how_to_add는 위 소스에서 실제로 본 파일명·함수명을 짚어 파일 레벨로 구체화할 것. '~하면 좋다' 수준의 일반론 금지.\n"
+        "- 단, 위 소스에 실제로 없는 파일·함수·기능을 지어내지 말 것(환각 금지). 확실히 본 것만 짚고, 애매하면 missing_patterns를 비울 것.\n"
+        "- 이 프로젝트에 불필요한 기술을 억지로 제안하지 말 것 (예: Neo4j 쿼리 함수에 강화학습).\n"
+        "- 이미 잘 구현된 스킬(used_patterns 충분)은 missing_patterns·how_to_add를 비우고 보강을 강요하지 말 것."
     )
 
     try:
@@ -439,7 +512,7 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
         manifest_text = " ".join(manifest_parts)
 
         # 소스 파일 읽기 (새로 추가)
-        file_contents, all_paths = _read_source_tree(owner, repo, headers)
+        file_contents, all_paths = _read_source_tree(owner, repo, headers, openai)
 
         # 스킬 키워드 매칭 (빠른 presence 감지)
         skills = _skills_from_sources(owner, repo, lang_text, readme_text, manifest_text, vocab)
@@ -456,7 +529,7 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
         detected = [s["skill"] for s in skills]
         project_context = _assess_project_and_skills(
             openai, owner, repo, file_contents, vocab, readme_text,
-            detected_skills=detected,
+            detected_skills=detected, all_paths=all_paths,
         )
 
         # relevant_files 환각 제거 (결정적, LLM 없이)
