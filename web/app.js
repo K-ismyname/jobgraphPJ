@@ -63,6 +63,7 @@ async function startAnalysis() {
     job_family: $("job-family").value,
     github_urls: collectUrls("github-urls"),
     deploy_urls: collectUrls("deploy-urls"),
+    access_key: localStorage.getItem("access_key") || "",
     ...(state.portfolioReportId ? { portfolio_report_id: state.portfolioReportId } : {}),
   };
   setMsg($("analyze-msg"), "");
@@ -74,6 +75,12 @@ async function startAnalysis() {
     });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
+      // 403: 관리자 전용 — 키 입력받아 저장 후 재시도
+      if (res.status === 403) {
+        const k = prompt("분석은 관리자 전용입니다. 관리자 키를 입력하세요:");
+        if (k) { localStorage.setItem("access_key", k); return startAnalysis(); }
+        return setMsg($("analyze-msg"), "분석은 관리자만 가능합니다. (결과 화면 열람만 가능)", true);
+      }
       // 429: 데모 일일 한도 — "실패"가 아니라 안내로 표시
       if (res.status === 429) {
         return setMsg($("analyze-msg"), e.detail || "오늘 데모 분석 한도가 모두 사용되었습니다.", true);

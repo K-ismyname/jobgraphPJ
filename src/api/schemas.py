@@ -30,6 +30,7 @@ class AnalyzeRequest(BaseModel):
     github_urls: list[str] = Field(default_factory=list)   # 선택 — 코드 검증 (여러 개)
     deploy_urls: list[str] = Field(default_factory=list)   # 선택 — 작동 실증 (여러 개)
     portfolio_report_id: str | None = None  # 선택 — 포트폴리오 PDF 업로드 ID
+    access_key: str = ""                    # 관리자 분석 키 (env ACCESS_KEY 설정 시 필수)
 
 
 # ── Jobs Response ───────────────────────────────────────────────

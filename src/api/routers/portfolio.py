@@ -34,6 +34,17 @@ _MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MB
 _demo_usage: dict = {"date": None, "count": 0}
 
 
+def _enforce_access(key: str) -> None:
+    """관리자 분석 게이트 — env ACCESS_KEY 설정 시 맞는 키만 분석(=OpenAI 호출) 허용.
+
+    미설정이면 통과(로컬 개발). 공개 배포는 HF 시크릿 ACCESS_KEY로 설정 →
+    관리자만 분석, 방문자는 결과 화면 열람만 가능(과금 보호).
+    """
+    expected = os.getenv("ACCESS_KEY")
+    if expected and key != expected:
+        raise HTTPException(403, "분석은 관리자 전용입니다. (데모는 결과 화면 열람만 가능)")
+
+
 def _enforce_daily_limit() -> None:
     """오늘 분석 횟수가 상한을 넘으면 429를 던지고, 아니면 카운트를 1 올린다."""
     limit = int(os.getenv("DEMO_DAILY_LIMIT", "0") or "0")
@@ -143,7 +154,8 @@ async def analyze_portfolio(
     if existing and getattr(existing, "status", None) == "processing":
         raise HTTPException(409, "이미 분석 중입니다.")
 
-    # 공개 데모 비용 보호 — 분석(=OpenAI 호출) 시작 직전에 일일 상한 검사
+    # 공개 데모 비용 보호 — 관리자 키 검증(남 차단) 후 일일 상한(본인 실수 방지)
+    _enforce_access(req.access_key)
     _enforce_daily_limit()
 
     reports[req.report_id] = ReportResponse(
