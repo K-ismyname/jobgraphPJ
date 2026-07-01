@@ -129,9 +129,12 @@ def step_extract_skills(
         time.sleep(0.3)
 
     _save_json(list(already.values()), output_path)
-    extracted = [j for j in already.values() if "skills" in j]
-    print(f"스킬 추출 완료: {len(extracted)}/{len(already)}개 → {output_path}")
-    return list(already.values())
+    # 반환은 입력 jobs 범위로 제한 — 캐시 파일 전체를 돌려주면 limit·필터가 무력화되고
+    # 필터 기준이 바뀐 과거 공고가 계속 되살아난다. 캐시 파일은 캐시로만 사용.
+    result = [already[j["id"]] for j in jobs if j["id"] in already]
+    extracted = [j for j in result if "skills" in j]
+    print(f"스킬 추출 완료: {len(extracted)}/{len(result)}개 (입력 {len(jobs)}개) → {output_path}")
+    return result
 
 
 def step_ingest(jobs: list[dict]) -> None:

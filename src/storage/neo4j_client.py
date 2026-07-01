@@ -232,8 +232,14 @@ class Neo4jClient:
         print("DB 초기화 완료")
 
     def ingest_posting(self, posting: dict) -> None:
-        """공고 1개를 그래프에 삽입."""
-        source_id = posting["id"]
+        """공고 1개를 그래프에 삽입.
+
+        멱등성: 동일 source_id를 재적재해도 집계 카운터(Company/JobFamily.posting_count,
+        Skill.frequency, REQUIRES/PREFERS.weight, CO_OCCURS.count)를 다시 올리지 않는다.
+        신규 공고일 때만 카운터를 증가시킨다 — 파이프라인 재실행이 데이터를 부풀리지 않도록.
+        (섹션 텍스트는 재적재 시에도 갱신 — 전처리 개선 반영용.)
+        """
+        source_id = str(posting["id"])   # muse=str / adzuna=int 혼재 방지 — source_id는 항상 str
         company_name = posting.get("company", "")
         job_family_name = posting.get("job_family", "")
         skills = posting.get("skills", {})
@@ -247,6 +253,12 @@ class Neo4jClient:
         all_names = [name for name, _ in all_pairs]
 
         with self._driver.session() as sess:
+            # 신규 여부를 MERGE 전에 판정 — 단일 스레드 적재라 경합 없음
+            already = sess.run(
+                "MATCH (p:JobPosting {source_id: $sid}) RETURN count(p) AS c",
+                sid=source_id,
+            ).single()["c"] > 0
+
             sess.run(UPSERT_POSTING,
                 source_id=source_id,
                 title=posting["title"],
@@ -261,25 +273,27 @@ class Neo4jClient:
                 collected_month=datetime.now().strftime("%Y-%m"),
             )
 
-            if company_name:
-                sess.run(UPSERT_COMPANY, name=company_name)
-                sess.run(LINK_POSTING_COMPANY, source_id=source_id, company_name=company_name)
+            # 재적재면 카운터 증가를 전부 건너뛴다 (섹션 텍스트는 아래에서 갱신)
+            if not already:
+                if company_name:
+                    sess.run(UPSERT_COMPANY, name=company_name)
+                    sess.run(LINK_POSTING_COMPANY, source_id=source_id, company_name=company_name)
 
-            if job_family_name:
-                sess.run(UPSERT_JOB_FAMILY, name=job_family_name)
-                sess.run(LINK_POSTING_JOB_FAMILY, source_id=source_id, job_family_name=job_family_name)
+                if job_family_name:
+                    sess.run(UPSERT_JOB_FAMILY, name=job_family_name)
+                    sess.run(LINK_POSTING_JOB_FAMILY, source_id=source_id, job_family_name=job_family_name)
 
-            for skill_name, rel_type in all_pairs:
-                sess.run(UPSERT_SKILL, name=skill_name)
-                cypher = UPSERT_POSTING_SKILL_REL.format(rel_type=rel_type)
-                sess.run(cypher, source_id=source_id, skill_name=skill_name)
+                for skill_name, rel_type in all_pairs:
+                    sess.run(UPSERT_SKILL, name=skill_name)
+                    cypher = UPSERT_POSTING_SKILL_REL.format(rel_type=rel_type)
+                    sess.run(cypher, source_id=source_id, skill_name=skill_name)
 
-            for i, name_a in enumerate(all_names):
-                for name_b in all_names[i + 1:]:
-                    try:
-                        sess.run(UPSERT_CO_OCCURS, skill_a=name_a, skill_b=name_b)
-                    except Exception as e:
-                        print(f"[warn] CO_OCCURS 실패 ({name_a}, {name_b}): {e}")
+                for i, name_a in enumerate(all_names):
+                    for name_b in all_names[i + 1:]:
+                        try:
+                            sess.run(UPSERT_CO_OCCURS, skill_a=name_a, skill_b=name_b)
+                        except Exception as e:
+                            print(f"[warn] CO_OCCURS 실패 ({name_a}, {name_b}): {e}")
 
         # 섹션 텍스트는 MERGE와 별도로 SET — 기존 공고도 업데이트 가능
         req = posting.get("required_section", "")
