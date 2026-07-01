@@ -1,12 +1,10 @@
 # v3 단계1 StateGraph — 평가자 병렬(이력서∥GitHub) → 합의 → Gap 루프 → Synthesizer → Critic → Coach
 from __future__ import annotations
 
-import json
 import os
 import uuid
 from typing import TYPE_CHECKING, Callable
 
-from langchain_core.messages import ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
@@ -18,79 +16,6 @@ from src.evaluation.langfuse_tracer import langfuse_callbacks
 if TYPE_CHECKING:
     from openai import OpenAI
     from src.storage.neo4j_client import Neo4jClient
-
-
-def _make_tools_node(tools_list: list):
-    """Gap Agent용 커스텀 tools 노드 — source_id dedup 포함."""
-    tool_map = {t.name: t for t in tools_list}
-
-    def tools_node(state: AppState) -> dict:
-        last_msg = state["messages"][-1]
-        seen: set[str] = set(state.get("seen_source_ids") or [])
-        new_seen: set[str] = set(seen)
-        new_messages: list[ToolMessage] = []
-
-        for tc in last_msg.tool_calls:
-            fn = tool_map[tc["name"]]
-            try:
-                result = fn.invoke(tc["args"])
-            except Exception as e:
-                result = [{"error": str(e)}]
-
-            if tc["name"] == "verify_skills" and isinstance(result, dict):
-                for skill_data in result.values():
-                    if not isinstance(skill_data, dict):
-                        continue
-                    evidence = skill_data.get("evidence", [])
-                    if not isinstance(evidence, list):
-                        continue
-                    fresh = [e for e in evidence if e.get("source_id") not in seen]
-                    new_seen.update(e["source_id"] for e in fresh if "source_id" in e)
-                    skill_data["evidence"] = fresh
-
-            content = (
-                result if isinstance(result, str)
-                else json.dumps(result, ensure_ascii=False)
-            )
-            new_messages.append(ToolMessage(
-                content=content,
-                tool_call_id=tc["id"],
-                name=tc["name"],
-            ))
-
-        return {"messages": new_messages, "seen_source_ids": list(new_seen)}
-
-    return tools_node
-
-
-def _make_coach_tools_node(coach_tools_list: list):
-    """Coach Agent용 tools 노드 — coach_messages에 결과를 추가한다."""
-    tool_map = {t.name: t for t in coach_tools_list}
-
-    def coach_tools_node(state: AppState) -> dict:
-        last_msg = list(state.get("coach_messages") or [])[-1]
-        new_messages: list[ToolMessage] = []
-
-        for tc in last_msg.tool_calls:
-            fn = tool_map[tc["name"]]
-            try:
-                result = fn.invoke(tc["args"])
-            except Exception as e:
-                result = {"error": str(e)}
-
-            content = (
-                result if isinstance(result, str)
-                else json.dumps(result, ensure_ascii=False)
-            )
-            new_messages.append(ToolMessage(
-                content=content,
-                tool_call_id=tc["id"],
-                name=tc["name"],
-            ))
-
-        return {"coach_messages": new_messages}
-
-    return coach_tools_node
 
 
 def evaluator_dispatch(state: AppState) -> list[Send]:
