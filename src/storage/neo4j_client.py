@@ -465,6 +465,29 @@ class Neo4jClient:
             print(f"[neo4j] CO_OCCURS 조회 실패: {e}")
             return []
 
+    def get_skill_neighbors(self, skills: list[str], top_n: int = 6) -> dict[str, list[str]]:
+        """각 스킬의 CO_OCCURS 이웃을 배치로 조회 → {skill: [neighbor,...]}.
+
+        코칭 환각 방어용 — 보강 방향을 '함께 쓰이는 스킬'로 제약해
+        관계에 없는 도약(예: AI→강화학습)을 막는다.
+        """
+        if not skills:
+            return {}
+        query = """
+        MATCH (s:Skill)-[r:CO_OCCURS]-(o:Skill)
+        WHERE s.name IN $skills
+        WITH s.name AS skill, o.name AS neighbor, sum(r.count) AS w
+        ORDER BY w DESC
+        WITH skill, collect(neighbor)[0..$n] AS neighbors
+        RETURN skill, neighbors
+        """
+        try:
+            rows = self.execute_query(query, skills=skills, n=top_n)
+            return {r["skill"]: r["neighbors"] for r in rows if r.get("skill")}
+        except Exception as e:
+            print(f"[neo4j] 스킬 이웃 조회 실패: {e}")
+            return {}
+
     def recommend_job_postings(self, skills: list[str], top_n: int = 5, min_required: int = 4,
                                job_family: str | None = None) -> list[dict]:
         """보유 스킬과 매칭률이 높은, 지원 가능한 채용공고 상위 N개를 반환한다.

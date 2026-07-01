@@ -333,6 +333,7 @@ def _assess_project_and_skills(
     readme: str,
     detected_skills: list[str] | None = None,
     all_paths: set[str] | None = None,
+    skill_neighbors: dict[str, list[str]] | None = None,
 ) -> dict:
     """소스 코드를 읽고 프로젝트 이해 + 직군 스킬별 현황 + 코칭 컨텍스트를 산출한다.
 
@@ -364,6 +365,11 @@ def _assess_project_and_skills(
         f"\n이미 확인된 스킬 (반드시 포함): {', '.join(detected_skills)}"
         if detected_skills else ""
     )
+    neighbor_hint = ""
+    if skill_neighbors:
+        lines = [f"  {s} ↔ {', '.join(ns)}" for s, ns in skill_neighbors.items() if ns]
+        if lines:
+            neighbor_hint = "\n\n스킬 연관 관계 (함께 쓰이는 스킬 — 보강은 이 방향으로만):\n" + "\n".join(lines)
     tree_block = ""
     if all_paths:
         tree_block = (
@@ -375,7 +381,7 @@ def _assess_project_and_skills(
         f"README:\n{readme[:2000]}\n\n"
         f"{tree_block}"
         f"아래는 위 구조 중 핵심 파일들의 실제 내용입니다.\n소스 파일:\n{code_block}\n\n"
-        f"직군 핵심 스킬 목록: {', '.join(vocab)}{detected_hint}\n\n"
+        f"직군 핵심 스킬 목록: {', '.join(vocab)}{detected_hint}{neighbor_hint}\n\n"
         f"유효한 파일 경로 목록 (relevant_files는 반드시 이 목록에서만 선택):\n"
         + "\n".join(f"  {p}" for p in valid_paths) + "\n\n"
         "위 코드를 분석해 JSON으로만 답하세요 (코드펜스 없이). 모든 문자열 값은 한국어로.\n"
@@ -400,6 +406,7 @@ def _assess_project_and_skills(
         "- relevant_files는 반드시 '유효한 파일 경로 목록'에 있는 경로만 사용. 없으면 빈 배열.\n"
         "- how_to_add는 프로젝트 전체(structure_summary·README) 관점의 제안. 특정 파일·함수를 지어내지 말 것.\n"
         "- **used_patterns와 다른 기술 범주로 도약 금지** (예: used가 'API 모델 호출'인데 missing에 '딥러닝 최적화'). 지금 하는 것의 자연스러운 다음 단계만.\n"
+        "- **'스킬 연관 관계'에 있는 연관 스킬 방향으로만 보강.** 연관 목록에 없는 새 기술·패러다임 도입 금지 (예: AI의 연관에 강화학습이 없으면 강화학습 제안 금지).\n"
         "- **억지로 만들지 말 것.** 이 프로젝트에 실제로 도움될 명확한 보강만. 애매하거나 이미 충분하면 missing_patterns·how_to_add를 비울 것(빈 배열/빈 문자열).\n"
         "- 특히 current_usage가 '고급 패턴'이면 대개 보강 불필요 — 비울 것."
     )
@@ -533,9 +540,11 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
 
         # 프로젝트 심층 분석 (소스 코드 기반) — 키워드 매칭 결과를 힌트로 전달
         detected = [s["skill"] for s in skills]
+        # CO_OCCURS 이웃 — 보강 방향을 연관 스킬로 제약(환각 도약 차단)
+        skill_neighbors = neo4j.get_skill_neighbors(vocab) if neo4j else {}
         project_context = _assess_project_and_skills(
             openai, owner, repo, file_contents, vocab, readme_text,
-            detected_skills=detected, all_paths=all_paths,
+            detected_skills=detected, all_paths=all_paths, skill_neighbors=skill_neighbors,
         )
 
         # relevant_files 환각 제거 (결정적, LLM 없이)
