@@ -110,7 +110,8 @@ class ProjectSuggestion(BaseModel):
 
 class LearningRecommendation(BaseModel):
     skill: str
-    reason: str
+    reason: str          # ④ 설명 — 왜 필요한지 (직군 요구 근거 + 보유 스킬 연결)
+    how: str = ""        # ⑤ 학습 코칭 — structure_summary 기반 프로젝트 단위 학습 방향
 
 
 class VerificationItem(BaseModel):

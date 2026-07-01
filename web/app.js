@@ -136,91 +136,51 @@ const TRUST_LEGEND = `
     <div class="lg"><span class="dotc Claimed"></span><b>주장</b><span class="en">Claimed</span> — 이력서 진술만, 코드 미확인</div>
   </div>`;
 
-function renderSkillBadges(met, unmet) {
-  const metHtml = (met || []).map((m) =>
+function renderSkillBadges(met) {
+  // 충족한 스킬만 표시 — 미충족은 '배우면 좋은 연계 스킬' 섹션에서 다룬다.
+  return (met || []).map((m) =>
     `<span class="cap met">${esc(m.skill)} ✓ <span class="badge ${m.verification}">${trustKo(m.verification)}</span></span>`).join("");
-  const unmetHtml = (unmet || []).map((s) => `<span class="cap unmet">${esc(s)} ✗</span>`).join("");
-  return metHtml + unmetHtml;
 }
 
-function renderCapability(d) {
-  const cf = d.capability_fit;
-  if (!cf) return "";
-  const metN = (cf.met || []).length;
-  const rec = (d.recommended_families || [])
-    .map((r) => `<div class="fam-row"><span>${esc(r.job_family)}</span><span>${r.matched_count}개 일치</span></div>`
-      + ((r.matched_skills || []).length ? `<div class="cap-ev">${(r.matched_skills || []).map(esc).join(", ")}</div>` : ""))
-    .join("");
-
-  const commonFit = d.common_skill_fit;
-  const commonHtml = commonFit ? `
-    <h3>공통 기초 스킬 ${(commonFit.met || []).length}/${commonFit.total || 0} 충족</h3>
-    <div>${renderSkillBadges(commonFit.met, commonFit.unmet)}</div>` : "";
-
-  return `
-    <h3>${esc(cf.job_family || "")} 핵심 스킬 ${metN}/${cf.total || 0} 충족</h3>
-    <div>${renderSkillBadges(cf.met, cf.unmet)}</div>
-    ${commonHtml}
-    ${rec ? `<h3>당신에게 맞는 직군</h3>${rec}` : ""}
-  `;
-}
-
-// 4. 결과 렌더
+// 4. 결과 렌더 — 5개 스킬 구조 (충족 / 채울 것 / 보강)
 function renderReport(d) {
   const counts = d.verification_counts || {};
-  const skills = (d.verified_skills || [])
-    .map((s) => `<div class="skill-row"><span>${esc(s.skill)}</span>
-      <span class="badge ${s.verification}">${trustKo(s.verification)}</span>
-      <span class="src">${(s.sources || []).map(esc).join(", ")}</span></div>`)
-    .join("");
-  const projects = (d.project_suggestions || [])
-    .map((s) => `<div class="suggestion">
-      <div class="head">${esc(s.add_skill)}${s.repo ? ` <span class="prio">(${esc(s.repo)})</span>` : ""}</div>
-      <div class="rew">${esc(s.how)}</div>
-      <div class="prio">왜: ${esc(s.why)}</div></div>`)
-    .join("");
+  const cf = d.capability_fit || {};
+
+  // ① 충족한 스킬 — 직군 핵심 중 보유 (가로 배지 + 신뢰도)
+  const met = renderSkillBadges(cf.met);
+
+  // ② 채우면 좋을 스킬 — 없는 직군 핵심 → 학습 (왜 + 어떻게)
   const learnings = (d.learning_recommendations || [])
     .map((s) => `<div class="suggestion">
       <div class="head">${esc(s.skill)}</div>
-      <div class="prio">${esc(s.reason)}</div></div>`)
+      <div class="prio">왜: ${esc(s.reason)}</div>
+      ${s.how ? `<div class="rew">어떻게: ${esc(s.how)}</div>` : ""}</div>`)
     .join("");
 
-  const cf = d.capability_fit || {};
-  const fitN = (cf.met || []).length, fitT = cf.total || 0;
-  const fitPct = fitT ? Math.round((fitN / fitT) * 100) : 0;
+  // ③ 코드로 보강할 스킬 — GitHub 기반 (왜 + 어떻게)
+  const projects = (d.project_suggestions || [])
+    .map((s) => `<div class="suggestion">
+      <div class="head">${esc(s.add_skill)}${s.repo ? ` <span class="prio">(${esc(s.repo)})</span>` : ""}</div>
+      <div class="prio">왜: ${esc(s.why)}</div>
+      <div class="rew">어떻게: ${esc(s.how)}</div></div>`)
+    .join("");
 
   $("result").innerHTML = `
-    <div class="metrics">
-      <div class="metric"><div class="k">적합도 (핵심 스킬 충족)</div>
-        <div class="big">${fitPct}<small style="font-size:1rem;color:var(--muted)">/100</small></div>
-        <div class="gauge"><span style="width:${fitPct}%"></span></div></div>
-      <div class="metric"><div class="k">신뢰도 (근거가 얼마나 확실한가)</div>
-        <div class="trust-pills">
-          <span class="tpill Verified">● 검증됨 ${counts.Verified || 0}</span>
-          <span class="tpill Corroborated">● 교차확인 ${counts.Corroborated || 0}</span>
-          <span class="tpill Claimed">● 주장 ${counts.Claimed || 0}</span></div></div>
+    <div class="trust-pills">
+      <span class="tpill Verified">● 검증됨 ${counts.Verified || 0}</span>
+      <span class="tpill Corroborated">● 교차확인 ${counts.Corroborated || 0}</span>
+      <span class="tpill Claimed">● 주장 ${counts.Claimed || 0}</span>
     </div>
     ${TRUST_LEGEND}
-    ${renderCapability(d)}
-    ${d.advice ? `<p>${esc(d.advice)}</p>` : ""}
-    <h3>검증된 스킬</h3>${skills || "<p class='prio'>없음</p>"}
-    <h3>코칭</h3>
-    ${d.coaching_summary ? `<p>${esc(d.coaching_summary)}</p>` : ""}
-    <h4>프로젝트 보강</h4>${projects || "<p class='prio'>제안 없음</p>"}
-    <h4>배우면 좋은 연계 스킬</h4>${learnings || "<p class='prio'>추천 없음</p>"}
-    ${renderInterviewCoaching(d.interview_coaching)}
+    <h3>충족한 스킬</h3>
+    <div>${met || "<p class='prio'>없음</p>"}</div>
+    <h3>채우면 좋을 스킬</h3>
+    ${learnings || "<p class='prio'>추천 없음</p>"}
+    <h3>코드로 보강할 스킬</h3>
+    ${projects || "<p class='prio'>제안 없음</p>"}
     <p style="margin-top:16px"><a href="/observe?report_id=${encodeURIComponent(state.reportId)}&tab=workflow">→ 이 분석의 실행 과정 보기</a></p>
   `;
-}
-
-function renderInterviewCoaching(items) {
-  if (!items || !items.length) return "";
-  const rows = items.map((c) => `
-    <div class="suggestion">
-      <div class="head">${esc(c.title)} <span class="prio">${c.type === "gap" ? "갭 대응" : "강점 어필"}</span></div>
-      <div class="rew">${esc(c.coaching)}</div>
-    </div>`).join("");
-  return `<h3>면접 코칭</h3>${rows}`;
 }
 
 // URL 입력칸 수집·추가

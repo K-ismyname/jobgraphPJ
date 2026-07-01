@@ -187,7 +187,7 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         if isinstance(s, dict) and (s.get("add_skill") or s.get("skill"))
     ]
     learning_recommendations = [
-        LearningRecommendation(skill=s.get("skill", ""), reason=s.get("reason", ""))
+        LearningRecommendation(skill=s.get("skill", ""), reason=s.get("reason", ""), how=s.get("how", ""))
         for s in (coaching.get("learning_recommendations") or [])
         if isinstance(s, dict) and s.get("skill")
     ]
