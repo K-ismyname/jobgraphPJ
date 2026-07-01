@@ -220,3 +220,11 @@ $("add-deploy").addEventListener("click", () => addUrlField("deploy-urls", "http
 $("upload-btn").addEventListener("click", uploadResume);
 $("portfolio-upload-btn").addEventListener("click", uploadPortfolio);
 $("analyze-btn").addEventListener("click", startAnalysis);
+$("admin-key").addEventListener("click", (e) => {
+  e.preventDefault();
+  const cur = localStorage.getItem("access_key") || "";
+  const k = prompt("관리자 키를 입력하면 무제한으로 분석할 수 있습니다.\n(비우고 확인하면 해제)", cur);
+  if (k === null) return;
+  if (k) { localStorage.setItem("access_key", k); alert("관리자 키 저장됨 — 무제한 분석"); }
+  else { localStorage.removeItem("access_key"); alert("관리자 키 해제 — 하루 3회 제한"); }
+});
