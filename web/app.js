@@ -7,6 +7,16 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
   .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
+// href용 — http/https만 허용해 javascript: 등 스킴 XSS 차단 (esc는 스킴을 못 막음)
+const safeUrl = (u) => {
+  try {
+    const p = new URL(String(u ?? ""));
+    return p.protocol === "http:" || p.protocol === "https:" ? p.href : "";
+  } catch {
+    return "";
+  }
+};
+
 function setMsg(el, text, isError = false) {
   el.textContent = text;
   el.classList.toggle("error", isError);
@@ -174,7 +184,7 @@ function renderReport(d) {
     .map((p) => `<div class="skill-row">
       <span>${esc(p.title)}${p.company ? ` · ${esc(p.company)}` : ""}</span>
       <span class="prio">${Math.round(p.match_pct || 0)}% 매칭</span>
-      ${p.url ? `<a class="src" href="${esc(p.url)}" target="_blank" rel="noopener">지원 →</a>` : ""}</div>`)
+      ${safeUrl(p.url) ? `<a class="src" href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener">지원 →</a>` : ""}</div>`)
     .join("");
 
   $("result").innerHTML = `
