@@ -16,10 +16,14 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 from src.agent.supervisor import create_supervisor_graph
+from src.api.deps import BoundedDict
 from src.api.routers import jobs as jobs_router
 from src.api.routers import portfolio as portfolio_router
 from src.api.routers import system as system_router
 from src.storage.neo4j_client import Neo4jClient
+
+# 데모 서버 메모리 상한 — report_id 단위 항목 최대 보관 수
+_MAX_INFLIGHT = 500
 
 
 @asynccontextmanager
@@ -29,8 +33,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     app.state.openai = (
         OpenAI(max_retries=6) if os.getenv("OPENAI_API_KEY") else None
     )
-    app.state.uploads: dict[str, str] = {}   # report_id → PDF 텍스트
-    app.state.reports: dict = {}             # report_id → ReportResponse
+    app.state.uploads = BoundedDict(_MAX_INFLIGHT)   # report_id → PDF 텍스트
+    app.state.reports = BoundedDict(_MAX_INFLIGHT)   # report_id → ReportResponse
     # v3 그래프는 1회 빌드해 재사용 (openai 키 없으면 None — /analyze가 503)
     app.state.graph = (
         create_supervisor_graph(app.state.neo4j, app.state.openai)

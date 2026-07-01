@@ -270,3 +270,10 @@ def _run_analysis(
             report_id=report_id, status="error", owner=owner, job_family=job_family,
             error_detail=str(e), generated_at=datetime.now(timezone.utc).isoformat(),
         )
+    finally:
+        # 업로드된 포트폴리오 임시 PDF 정리 (분석 성공·실패 무관)
+        if portfolio_path and os.path.exists(portfolio_path):
+            try:
+                os.unlink(portfolio_path)
+            except OSError:
+                pass

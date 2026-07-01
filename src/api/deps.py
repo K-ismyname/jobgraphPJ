@@ -1,10 +1,30 @@
 # FastAPI 의존성 주입 함수 모음
 from __future__ import annotations
 
+from collections import OrderedDict
+
 from openai import OpenAI
 from fastapi import Request
 
 from src.storage.neo4j_client import Neo4jClient
+
+
+class BoundedDict(OrderedDict):
+    """삽입 순서로 최대 maxlen개만 유지, 초과 시 가장 오래된 항목 축출.
+
+    데모 서버가 장기 구동될 때 uploads/reports가 무한 증가하는 것을 막는다.
+    """
+
+    def __init__(self, maxlen: int) -> None:
+        super().__init__()
+        self._maxlen = maxlen
+
+    def __setitem__(self, key, value) -> None:
+        if key in self:
+            self.move_to_end(key)
+        super().__setitem__(key, value)
+        while len(self) > self._maxlen:
+            self.popitem(last=False)
 
 
 def get_neo4j(request: Request) -> Neo4jClient:

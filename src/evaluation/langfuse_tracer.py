@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -10,7 +11,8 @@ from typing import Any, Callable
 from langfuse import get_client, observe  # noqa: F401 (re-export)
 
 # ── 로컬 추적 레코드 (오프라인 검사용) ──────────────────────────────
-_local_records: list["LocalTraceRecord"] = []
+# 장기 구동 서버에서 무한 증가하지 않도록 최근 N개만 유지
+_local_records: "deque[LocalTraceRecord]" = deque(maxlen=1000)
 
 
 @dataclass
