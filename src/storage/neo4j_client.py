@@ -488,6 +488,25 @@ class Neo4jClient:
             print(f"[neo4j] 스킬 이웃 조회 실패: {e}")
             return {}
 
+    def get_skill_categories(self, skills: list[str]) -> dict[str, str]:
+        """스킬별 category(language/framework/tool/database/concept/soft)를 배치 조회.
+
+        코칭 환각 방어용 — category='soft'(자격증·방법론·순수역량)는 코드 보강
+        대상이 아니므로 ③에서 제외하는 데 쓴다.
+        """
+        if not skills:
+            return {}
+        try:
+            rows = self.execute_query(
+                "MATCH (s:Skill) WHERE s.name IN $skills AND s.category IS NOT NULL "
+                "RETURN s.name AS name, s.category AS category",
+                skills=skills,
+            )
+            return {r["name"]: r["category"] for r in rows if r.get("name")}
+        except Exception as e:
+            print(f"[neo4j] 스킬 category 조회 실패: {e}")
+            return {}
+
     def recommend_job_postings(self, skills: list[str], top_n: int = 5, min_required: int = 4,
                                job_family: str | None = None) -> list[dict]:
         """보유 스킬과 매칭률이 높은, 지원 가능한 채용공고 상위 N개를 반환한다.

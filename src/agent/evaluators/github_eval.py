@@ -550,6 +550,15 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
         # relevant_files 환각 제거 (결정적, LLM 없이)
         project_context = _validate_project_context(project_context, all_paths)
 
+        # category='soft'(자격증·방법론·순수역량) 스킬은 ③ 코드 보강 제외 → ②학습으로 (결정적)
+        _sas = project_context.get("skill_assessments") or []
+        if _sas and neo4j:
+            _cats = neo4j.get_skill_categories([sa.get("skill") for sa in _sas])
+            for sa in _sas:
+                if _cats.get(sa.get("skill")) == "soft":
+                    sa["missing_patterns"] = []
+                    sa["how_to_add"] = ""
+
         # 기존 profile (하위 호환)
         profile = {
             "repo": f"{owner}/{repo}",
