@@ -993,3 +993,40 @@ RAGAS 파이프라인은 v3에서 실행됐으나(`run_analysis`가 반환하는
 
 - **라이브 브라우저 QA**(gstack): 이력서 30쪽 업로드 → 분석 → 결과 화면 검증. 5개 구조(신뢰도·충족·채울것·보강·회사추천) 정상 렌더, 회사 추천 지원 링크(adzuna/remoteok) 작동. Docker 보강은 파일레벨("docker-compose.yml 멀티스테이지") 정확. PASS. 관찰: ② Java/PostgreSQL 직군 노이즈는 화면상 보이나 학습 추천이라 치명적 아님(수용).
 - **비용 보호**(`fa6881b9`, 배포 `8ef99a66`): Public Space 방문자 과금 차단. env `ACCESS_KEY` 설정 시 맞는 키만 분석(OpenAI 호출) 허용 — 방문자 403(결과 화면 열람만), 관리자 비번 무제한(localStorage). `AnalyzeRequest.access_key` + `_enforce_access` + 프론트 403→prompt 재시도. HF Secret ACCESS_KEY 설정 완료 → 보호 활성.
+
+---
+
+## [2026-07-01 저녁] 코칭 환각 4중 방어 + 9직군 검증 + 마무리
+
+### 작업 절차
+
+1. **환각 근본 진단**: ③ 코칭 환각("강화학습을 capability.py에")이 조여도 재발. 재현 결과 원인 3가지 — LLM의 '보강점 강박'(고급 스킬도 missing 억지 생성), 추상 스킬(AI/ML)의 의미 공백(코드에 형태 없어 도약), anchor 검증 한계(파일명은 실재·내용은 환각).
+2. **환각 4중 방어 구축**:
+   - **프로젝트 레벨 전환**: 파일·함수 짚기 금지 → structure_summary(main·README) 기반 프로젝트 레벨 제안. 파일 환각 근원 제거.
+   - **CO_OCCURS 관계 제약**: 스킬의 실제 연관 스킬(함께 쓰이는)로 방향 제약. AI 이웃에 강화학습 없음 → 도약 차단. `get_skill_neighbors` 추가, 프롬프트에 연관 제공.
+   - **category soft 제외**: 핵심 스킬 153개(공통+9직군)를 6종(language/framework/tool/database/concept/soft) LLM 분류 → Skill.category. soft(CISSP·Agile·ISO 등 자격증·방법론·표준)는 ③ 제외. `scripts/classify_skills.py`, `get_skill_categories`.
+   - **고급 필터**: current_usage=고급이면 코드로 missing·how 비움.
+3. **9직군 e2e 검증**: 각 직군 실제 포트폴리오 레포로 테스트. 환각 0, Data 직군은 ③ 없음(억지 안 함), ② 프로젝트 참조 정확("MongoDB 쓰니 PostgreSQL").
+4. **빈 코칭 섹션 숨김**: ②③ 없으면 헤더까지 미표시.
+
+### 발생 문제
+
+- **조여도 환각 재발**: 프롬프트 조이기는 LLM에 부탁이라 비결정적. 확률만 낮추고 0은 안 됨.
+- **하드코딩 리스트 한계**: AI/LLM만 막으면 근시안. 모든 분야(Security 자격증 등) 환각 필요.
+- **Data Scientist 미분류 우회**: ③에 "하이퍼파라미터 튜닝"(미분류 기법명)이 category·CO_OCCURS 제약 우회. "미분류=codable 기본"의 구멍. → 미분류 ③ 제외로 해결 가능(보류).
+
+### 해결 방법 / 결론
+
+- **결정적 방어 우선**: LLM 프롬프트가 아니라 코드/데이터로 차단(category soft, CO_OCCURS 이웃, 고급 필터). 프로젝트의 "신뢰값은 코드가 판정" 철학과 일치.
+- **역할 분담**: category=순수역량(soft) 제외, CO_OCCURS=기술 도약 차단, 고급필터=이미 잘하는 것. 겹침 없이 상호보완.
+- **트레이드오프 인정**: 파일 레벨→프로젝트 레벨로 환각은 막았으나 표준 레포(the_formula)의 구체적 파일 코칭("getArticles 제네릭")은 밋밋해짐. 환각 안전 > 구체성.
+- **검증**: jobgraphPJ·the_formula·bulletproof-react + 9직군 = 12개 레포에서 환각 0 확인.
+
+### 커밋 (feat/multi-agent)
+
+프로젝트레벨 전환 · CO_OCCURS 제약 · category 분류·soft 제외 · 빈 섹션 숨김. (배포 8264b145 이후 app.js 빈섹션 커밋 추가)
+
+### 남은 과제
+
+- Data Scientist 미분류 기법명 ③ 우회 → 미분류 스킬 ③ 제외(한 줄) 필요 시.
+- 표준 레포 파일 레벨 구체성 회복(환각과 트레이드오프).
