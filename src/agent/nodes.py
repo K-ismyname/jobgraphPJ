@@ -320,6 +320,37 @@ def _invented_paths(text: str, valid_paths: set[str]) -> list[str]:
     return out
 
 
+def build_deterministic_project_reasons(project_contexts: list[dict]) -> dict[str, str]:
+    """project_suggestions의 '왜'를 github_eval의 검증된 스킬 평가로 조립한다.
+
+    project_suggestions는 "이 기능을 추가하면 강화됩니다" 같은 가정형 서술로
+    후퇴하기 쉽다 — relevant_files(실제 레포 대조 완료)·current_usage(통제된
+    열거값)는 이미 결정적으로 검증된 사실이므로, "왜"를 "이 파일들에서 이미
+    이 수준으로 쓰고 있다"는 관측 사실로 고정한다. how(무엇을 추가할지)는
+    코드가 판단할 수 없는 설계 제안이라 LLM 출력을 유지한다(scrub_invented_paths가
+    거기서 파일 지어내기만 차단).
+
+    근거(relevant_files)가 없는 스킬은 제외 — code_anchor=false라 애초에
+    project_suggestions 후보에서 빠져야 하는 것들이라, 여기서도 LLM why를 유지한다.
+    """
+    reasons: dict[str, str] = {}
+    for ctx in project_contexts or []:
+        repo = ctx.get("repo", "")
+        for sa in ctx.get("skill_assessments") or []:
+            files = sa.get("relevant_files") or []
+            name = normalize_skill(sa.get("skill") or "")
+            if not files or not name:
+                continue
+            usage = sa.get("current_usage") or "사용"
+            file_list = ", ".join(files[:3])
+            parts = [f"{repo}의 {file_list}에서 {name}을(를) {usage} 수준으로 이미 사용 중입니다."]
+            patterns = [p for p in (sa.get("used_patterns") or []) if p][:2]
+            if patterns:
+                parts.append(f"확인된 패턴: {'; '.join(patterns)}.")
+            reasons[name] = " ".join(parts)
+    return reasons
+
+
 def scrub_invented_paths(coaching: dict, valid_paths: set[str]) -> dict:
     """코칭 결과에서 지어낸 파일 경로를 결정적으로 제거한다.
 
@@ -396,6 +427,30 @@ _ADVICE_BY_CONFIDENCE = {
 }
 
 
+def _excerpt_around_keyword(skill: str, text: str, window: int = 90) -> str:
+    """공고 원문에서 스킬 키워드 주변 window자를 잘라 발췌한다.
+
+    단순히 앞에서 90자를 자르면 키워드가 문장 뒷부분에 있을 때 발췌에서 잘려나가
+    "왜 이게 근거인지" 확인이 안 되는 문제가 있었다 (예: Docker 발췌인데 정작
+    'Docker'가 안 보임). 키워드 위치를 찾아 그 주변으로 창을 잡는다.
+    """
+    from src.common.text_match import keywords_for, word_match
+
+    if not text:
+        return ""
+    for kw in keywords_for(skill):
+        if word_match(kw, text.lower()):
+            idx = text.lower().find(kw)
+            if idx >= 0:
+                start = max(0, idx - window // 2)
+                end = min(len(text), idx + len(kw) + window // 2)
+                snippet = text[start:end].strip()
+                prefix = "…" if start > 0 else ""
+                suffix = "…" if end < len(text) else ""
+                return f"{prefix}{snippet}{suffix}"
+    return text[:window].strip() + ("…" if len(text) > window else "")
+
+
 def build_deterministic_reasons(
     missing_required: list[dict],
     verify_results: dict,
@@ -431,10 +486,10 @@ def build_deterministic_reasons(
         vr = verify_results.get(raw) or verify_results.get(name) or {}
         for ev in (vr.get("evidence") or [])[:1]:
             company = (ev.get("company") or "").strip()
-            text = " ".join((ev.get("text") or "").split())[:90]
+            text = _excerpt_around_keyword(name, " ".join((ev.get("text") or "").split()))
             if text:
                 prefix = f"{company} 공고" if company else "실제 공고"
-                parts.append(f'{prefix}: "{text}…"')
+                parts.append(f'{prefix}: "{text}"')
 
         # ③ 보유 스킬과의 연결 (CO_OCCURS 이웃 ∩ consensus 보유)
         for nb in neighbors.get(raw, neighbors.get(name, [])):
@@ -743,6 +798,17 @@ def create_coach_nodes(coach_tools: list["BaseTool"]):
                 key = normalize_skill(rec.get("skill") or "")
                 if key in det_reasons:
                     rec["reason"] = det_reasons[key]
+
+        # project_suggestions의 why도 같은 원칙으로 — "추가하면 강화됩니다" 가정형 서술을
+        # relevant_files·current_usage(검증된 코드 관측 사실)로 교체.
+        det_project_reasons = build_deterministic_project_reasons(contexts_all)
+        if det_project_reasons and isinstance(coaching_dict, dict):
+            for rec in coaching_dict.get("project_suggestions") or []:
+                if not isinstance(rec, dict):
+                    continue
+                key = normalize_skill(rec.get("add_skill") or rec.get("skill") or "")
+                if key in det_project_reasons:
+                    rec["why"] = det_project_reasons[key]
         # 4개 소스(이력서·포폴·GitHub·배포) 교차검증 결과를 신뢰도 축 산출물로 surface한다.
         from src.agent.consensus import build_verification_summary
         verification = build_verification_summary(state.get("consensus") or {})
