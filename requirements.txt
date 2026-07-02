@@ -1,13 +1,15 @@
 # LLM
 openai>=1.0.0
 
-# Agent framework — 0.3.x/0.2.x 세대로 상한 고정 (코드가 이 API로 작성됨).
-# 상한이 없으면 fresh install이 langgraph 1.x + langchain-core 1.x를 끌어와
-# 부분 업그레이드 시 core/langchain 버전 불일치(langchain.debug AttributeError)가 발생.
-langgraph>=0.2.28,<0.3
-langchain>=0.3.30,<0.4
-langchain-openai>=0.2,<0.4
-langchain-core>=0.3.86,<0.4
+# Agent framework — langgraph 1.x 필수 (0.x는 add_node에서 "노드명이 State
+# TypedDict 필드명과 같으면 안 된다"는 검증이 있어, AppState.resume_eval 등과
+# 이름이 같은 노드(supervisor.py의 add_node("resume_eval", ...))를 등록할 때
+# ValueError로 그래프 빌드 자체가 실패한다 — 0.1.19~0.2.76 전 범위에서 재현 확인,
+# 1.2.7부터 통과. langchain-core/langchain-openai도 1.x로 맞춰 세대 통일.
+# bare `langchain` 패키지는 코드에서 직접 import하지 않아 불필요 — 제거.
+langgraph>=1.0.0,<2
+langchain-openai>=1.0,<2
+langchain-core>=1.0,<2
 # Graph DB
 neo4j>=5.0.0
 
