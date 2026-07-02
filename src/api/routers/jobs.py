@@ -1,6 +1,7 @@
 # 채용공고 관련 엔드포인트 (GET /jobs, /jobs/trending-skills, /jobs/salary)
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,6 +22,7 @@ from src.api.schemas import (
 from src.storage.neo4j_client import Neo4jClient
 
 router = APIRouter()
+logger = logging.getLogger("jobgraph.api")
 
 # v3 스키마: 직군 노드는 JobFamily, REQUIRES/PREFERS는 JobPosting에 붙음
 JOBS_QUERY = """
@@ -62,8 +64,9 @@ def list_jobs(
             days=query.days,
             skills=query.skills or [],
         )
-    except Exception as e:
-        raise HTTPException(503, f"DB 연결 불가: {e}")
+    except Exception:
+        logger.exception("jobs 조회 실패 (job_family=%s)", query.job_family)
+        raise HTTPException(503, "데이터베이스에 연결할 수 없습니다.")
 
     jobs = [
         JobSummary(
@@ -95,8 +98,9 @@ def trending_skills(
             job_family=query.job_family,
             top_n=query.top_n,
         )
-    except Exception as e:
-        raise HTTPException(503, f"DB 연결 불가: {e}")
+    except Exception:
+        logger.exception("trending-skills 조회 실패 (job_family=%s)", query.job_family)
+        raise HTTPException(503, "데이터베이스에 연결할 수 없습니다.")
 
     skills = [
         TrendingSkill(
@@ -122,8 +126,9 @@ def salary_analysis(
     """기술별 연봉 영향도 분석."""
     try:
         result: SalaryAnalysisResult = analyze_salary(neo4j, job_family=query.job_family)
-    except Exception as e:
-        raise HTTPException(503, f"연봉 분석 실패: {e}")
+    except Exception:
+        logger.exception("연봉 분석 실패 (job_family=%s)", query.job_family)
+        raise HTTPException(503, "연봉 분석에 실패했습니다.")
 
     return SalaryResponse(
         job_family=result.job_family,

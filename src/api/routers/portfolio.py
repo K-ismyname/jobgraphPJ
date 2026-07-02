@@ -1,7 +1,9 @@
 # 포트폴리오 엔드포인트 — 업로드 → v3 다중소스 분석 → 리포트 폴링
 from __future__ import annotations
 
+import logging
 import os
+import secrets
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -27,6 +29,7 @@ from src.portfolio.pdf_parser import extract_pdf_info
 from src.storage.neo4j_client import Neo4jClient
 
 router = APIRouter()
+logger = logging.getLogger("jobgraph.api")
 
 _MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MB
 
@@ -42,7 +45,8 @@ def _is_admin(key: str) -> bool:
     방문자는 일일 상한(기본 3회) 내에서 이용(과금 보호).
     """
     expected = os.getenv("ACCESS_KEY")
-    return (not expected) or (key == expected)
+    # 타이밍 세이프 비교 — 문자열 == 는 조기 종료로 키 길이·prefix가 새어나갈 수 있음
+    return (not expected) or secrets.compare_digest(key or "", expected)
 
 
 def _enforce_daily_limit() -> None:
@@ -274,10 +278,12 @@ def _run_analysis(
             )
             return
         reports[report_id] = _map_final_report(report_id, owner, job_family, out)
-    except Exception as e:
+    except Exception:
+        logger.exception("분석 실패 (report_id=%s, job_family=%s)", report_id, job_family)
         reports[report_id] = ReportResponse(
             report_id=report_id, status="error", owner=owner, job_family=job_family,
-            error_detail=str(e), generated_at=datetime.now(timezone.utc).isoformat(),
+            error_detail="분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+            generated_at=datetime.now(timezone.utc).isoformat(),
         )
     finally:
         # 업로드된 포트폴리오 임시 PDF 정리 (분석 성공·실패 무관)

@@ -1,6 +1,7 @@
 # FastAPI 앱 진입점 — 라우터 조립, 클라이언트 lifespan 관리
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,6 +22,8 @@ from src.api.routers import jobs as jobs_router
 from src.api.routers import portfolio as portfolio_router
 from src.api.routers import system as system_router
 from src.storage.neo4j_client import Neo4jClient
+
+logger = logging.getLogger("jobgraph.api")
 
 # 데모 서버 메모리 상한 — report_id 단위 항목 최대 보관 수
 _MAX_INFLIGHT = 500
@@ -90,7 +93,9 @@ async def health(request: Request) -> dict:
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    # 상세(스택·Neo4j URI·경로 등)는 서버 로그에만, 응답엔 일반 메시지만 — 공개 데모 정보 노출 방지
+    logger.exception("처리되지 않은 예외: %s %s", request.method, request.url.path)
     return JSONResponse(
         status_code=500,
-        content={"error": "내부 서버 오류", "detail": str(exc)},
+        content={"error": "내부 서버 오류가 발생했습니다."},
     )
