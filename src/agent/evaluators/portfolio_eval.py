@@ -157,6 +157,7 @@ def create_portfolio_evaluator(openai_client) -> Callable[["AppState"], dict]:
             try:
                 resp = _call_with_retry(lambda: openai_client.chat.completions.create(
                     model=_MODEL, temperature=0, max_tokens=2048,
+                    response_format={"type": "json_object"},
                     messages=[{"role": "user", "content": _TEXT_PROMPT.format(text=text_blob[:30000])}],
                 ))
                 all_skills += _skills_from_vision(_parse(resp.choices[0].message.content))
@@ -176,6 +177,7 @@ def create_portfolio_evaluator(openai_client) -> Callable[["AppState"], dict]:
                 try:
                     resp = _call_with_retry(lambda b=b64: openai_client.chat.completions.create(
                         model=_MODEL, temperature=0, max_tokens=1500,
+                        response_format={"type": "json_object"},
                         messages=[{"role": "user", "content": [
                             {"type": "text", "text": _VISION_PROMPT},
                             {"type": "image_url",

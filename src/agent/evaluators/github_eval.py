@@ -203,15 +203,16 @@ def _select_files_llm(openai, owner: str, repo: str,
         f"이 프로젝트를 이해하려면 어떤 파일을 읽어야 하는지 최대 {_MAX_FILES}개 고르세요. "
         "엔트리포인트(main·app·supervisor 등), 핵심 로직, 설정/매니페스트를 우선하고, "
         "테스트·마이그레이션·자동생성 파일은 후순위로. "
-        'JSON 배열로 경로만 반환하세요(코드펜스 없이). 예: ["src/main.py", "requirements.txt"]'
+        'JSON 객체로만 반환하세요. 예: {"files": ["src/main.py", "requirements.txt"]}'
     )
     try:
         resp = openai.chat.completions.create(
             model="gpt-4o-mini", temperature=0,
+            response_format={"type": "json_object"},
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = resp.choices[0].message.content.strip().replace("```json", "").replace("```", "").strip()
-        picked = json.loads(raw)
+        raw = (resp.choices[0].message.content or "").strip()
+        picked = json.loads(raw).get("files", [])
         cand_set = set(candidates)
         chosen = [p for p in picked if isinstance(p, str) and p in cand_set][:_MAX_FILES]
         return chosen or fallback
