@@ -1030,3 +1030,43 @@ RAGAS 파이프라인은 v3에서 실행됐으나(`run_analysis`가 반환하는
 
 - Data Scientist 미분류 기법명 ③ 우회 → 미분류 스킬 ③ 제외(한 줄) 필요 시.
 - 표준 레포 파일 레벨 구체성 회복(환각과 트레이드오프).
+
+---
+
+## [2026-07-02] 전체 리뷰 대응 — 데이터 정합성·핵심 서사·API 안정성 (28개 커밋)
+
+### 작업 절차
+
+1. **전체 코드 리뷰 요청**: 설계·코드품질·기술선택·전반 4개 축으로 병렬 서브에이전트 2개(수집/저장 계층, API/분석/웹 계층) + 직접 정독(에이전트 계층)으로 리뷰. 6.5/10, "생각의 품질은 상위권, 배관의 품질은 그에 못 미침"으로 결론.
+2. **빠른 확실 수정 5건**: supervisor.py 죽은 tools 노드 삭제, href XSS 차단, 업로드 임시파일·인메모리 누수 정리, chroma_db 잔해 삭제, CLAUDE.md 드리프트 동기화.
+3. **테스트 스위트 복구**: langchain 1.2.15 ↔ langchain-core 0.3.0 버전 불일치로 `AttributeError: module 'langchain' has no attribute 'debug'` — 9개 테스트 실패 원인. 0.3.x/0.2.x 세대로 상한 고정. 낡은 mock 2건(`_FakeNeo4j.recommend_job_postings` 시그니처, demo_limit 전제) 갱신. 10 fail → 188 pass.
+4. **데이터 정합성**: `ingest_posting` 재적재 시 카운터(posting_count/frequency/weight/CO_OCCURS) 이중 집계 — source_id 존재 여부 선판정 후 신규일 때만 증가로 멱등화. `step_extract_skills` 캐시 파일 전체 반환 버그(limit 무력화) 수정. Adzuna 이중 수집 경로(collect.py·collect_and_merge.py) 삭제 — muse/remoteok 정책과 코드 일치.
+5. **핵심 서사 방어 — Verified 등급 재설계**: source가 github/deploy이기만 하면 Verified이던 것을, 증거에 `strength`(code/mention) 필드를 부여해 코드 근거가 있을 때만 Verified로 재설계. github_eval(의존성/언어=code, README만=mention), deploy_eval(HTML 키워드=mention 전량), consensus.build_consensus 판정 로직 변경. README 서술도 갱신.
+6. **API 안정성**: async 라우트의 동기 Neo4j·pdfplumber 직접 호출 → `def` 전환/`run_in_threadpool`. 예외 상세(str(exc)) 노출 차단 → logger + 일반 메시지. ACCESS_KEY 타이밍세이프 비교. 업로드 검증 스트리밍화 + magic bytes(%PDF) 확인.
+7. **저장소 계층**: `load_skill_seeds` 절대경로, `clear_all` confirm 가드, `get_skill_trend` 신규급증(prev=0→recent>0) delta 0.0 버그 수정.
+8. **정리**: text_match 유틸(`_word_match`/`_keywords_for`) `src/common/`으로 승격, normalizer 사전 결함 4건(salesForce 죽은키·리액트 중복·open-source 중복·spring 의미왜곡), preprocessor ZeroDivisionError 가드.
+9. **리뷰 잔여 항목 2라운드**: `_map_final_report`의 InterviewCoaching.type 검증 폴백, RAGAS 측정 경로 정합성 확인(버그 아님 — 실서비스와 동일 그래프 측정), 업로드 검증 강화, github_connector 부분문자열 오탐(micropython 등) → word_match로 교체, web class 속성 esc() 일관 적용, pdf_parser 중복 통합·langfuse functools.wraps·normalizer CamelCase 보존.
+10. **"바로 처리 가능한 것" 4묶음**: 평가자 4개 print→logger, neo4j_client 조회 메서드 에러 삼킴→logger, response_format 잔여 적용(github_eval 파일선택, portfolio_eval), create_nodes 튜플분리+ChatOpenAI 중복제거+_build_trace 하드코딩 제거(gap_trace 실측 기반).
+11. **판단 필요 2건 결정**: (a) MemorySaver — HITL 완성(A) vs 제거+문서정직화(B) vs CLI시연(C) 세 선택지 설명 후, "코칭 제품이지 면접 데모가 아니다" 판단으로 B 선택 → 체크포인터 제거(재개 경로 없어 무한 누적만 하던 상태), ask_human을 "설계된 확장 지점(기본 비활성)"으로 문서화. (b) normalize_jobs.py — 참조 없는 legacy 스크립트, 삭제 확정.
+
+### 발생 문제
+
+- **langchain 버전 드리프트**: `requirements.txt`가 `langgraph>=1.0.0`으로 하한만 걸려 있어 fresh install 시 1.x 전체 스택을 끌어오는데, 로컬 환경엔 langchain-core만 0.3.0이 남아있어 부분 업그레이드 불일치 발생. 코드는 0.3.x/0.2.x API로 작성됨.
+- **`git add -A` 오작동**: 이 프로젝트는 `/Users/leegahee/workspace`가 git 루트이고 pj1은 하위 디렉토리 — `-A`가 부모의 다른 프로젝트·임베디드 repo까지 스테이징하려다 타임아웃. 이후 파일 경로 명시로 전환.
+- **의도 재설계로 인한 테스트 계약 변경**: Verified 재설계·spring 정규화 수정 등이 기존 테스트의 "구현 검증"을 깨뜨림 — 각각 원인이 버그 재현인지 의도된 동작 변경인지 확인 후 테스트 갱신.
+
+### 해결 방법 / 결론
+
+- **버그 재현 우선, 조기 수정 금지**: 리뷰 지적을 그대로 고치기 전에 실제 코드로 재현·확인(예: RAGAS 경로는 재확인 결과 버그 아님 — 코드 변경 없이 검증만 하고 종료).
+- **증거 강도 ≠ 소스**: "Verified"의 신뢰를 지키려면 판정 기준을 소스 종류가 아니라 증거의 실제 강도(코드 vs 언급)로 옮겨야 한다는 게 이번 세션의 핵심 설계 교훈.
+- **제품 맥락이 아키텍처 판단을 바꾼다**: MemorySaver/HITL 결정에서 "면접용 재료로서의 가치"와 "코칭 제품으로서의 UX"가 상충 — 후자를 우선해 중간에 끊는 HITL 대신 confidence 등급 기반 논블로킹 안내를 유지.
+- **회귀 검증 매 커밋 필수화**: 28개 커밋 전부 `pytest tests/unit/`로 확인 후 개별 커밋. 10 fail → 210 pass.
+
+### 커밋 (feat/multi-agent, 28개)
+
+죽은코드 삭제 · XSS 차단 · 리소스 누수 정리 · CLAUDE.md 동기화 · langchain 버전고정 · 적재 멱등성 · Adzuna 경로삭제 · LLM JSON견고화 · Verified 재설계 · async 블로킹해소 · 예외노출차단 · 저장소 에러처리 · text_match 승격 · normalizer 정리 · 코칭type 검증 · 업로드 검증강화 · github_connector 오탐수정 · web esc 일관화 · pdf_parser 통합 · 평가자 로깅전환 · neo4j 로깅승격 · response_format 일관화 · create_nodes 분리 · MemorySaver 제거 · normalize_jobs.py 삭제.
+
+### 남은 과제
+
+- HF Spaces 재배포 필요 — 이번 수정사항 전부 아직 라이브 반영 안 됨.
+- 데이터 정합성 개선(멱등 적재)은 코드만 고쳤을 뿐, 기존에 이미 부풀려진 Neo4j 프로덕션 카운터 자체를 재계산/백필하지는 않음(필요 시 별도 작업).
