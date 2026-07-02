@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -297,6 +298,69 @@ def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
     }
 
 
+# ── 코칭 텍스트의 파일 경로 환각 차단 (결정적) ────────────────────
+# 기술명 오탐 방지: '/'가 든 경로, 또는 .py 단독 파일명만 경로로 간주.
+# ponytail: Node.js 류 기술명 때문에 .js 단독 파일명은 검사 제외 — 실측 환각이 전부 .py였음.
+# \b는 한글을 word 문자로 봐 "main.py를"처럼 조사가 붙으면 경계 불성립 — ASCII 부정 lookahead 사용
+_PATH_PATTERN = re.compile(
+    r"[A-Za-z0-9_\-./]*/[A-Za-z0-9_\-.]+\.[A-Za-z]{1,4}(?![A-Za-z0-9])"   # 디렉토리 포함 경로
+    r"|[A-Za-z0-9_\-]+\.py(?![A-Za-z0-9])"                                  # 단독 .py 파일명
+)
+
+
+def _invented_paths(text: str, valid_paths: set[str]) -> list[str]:
+    """텍스트에 등장하는 파일 경로 중 실제 레포에 없는 것 목록."""
+    basenames = {p.rsplit("/", 1)[-1] for p in valid_paths}
+    out = []
+    for m in _PATH_PATTERN.findall(text or ""):
+        if m in valid_paths or m.rsplit("/", 1)[-1] in basenames:
+            continue
+        out.append(m)
+    return out
+
+
+def scrub_invented_paths(coaching: dict, valid_paths: set[str]) -> dict:
+    """코칭 결과에서 지어낸 파일 경로를 결정적으로 제거한다.
+
+    프롬프트는 "파일을 지어내지 말 것"을 지시하지만 LLM 지시만으로는 새는 지점 —
+    github_eval의 relevant_files 검증(_validate_project_context)과 같은 원칙을
+    코칭 텍스트에도 적용한다. valid_paths는 이미 실제 레포 트리와 대조된 경로 집합.
+
+    - project_suggestions: how/why가 없는 경로를 언급하면 근거 자체가 환각 → 항목 제거
+    - learning_recommendations: 스킬 갭 자체는 결정적 gap 분석 산출이므로 유지하되,
+      지어낸 경로가 든 문장만 how에서 제거 (비면 프론트가 해당 줄 숨김)
+    """
+    if not isinstance(coaching, dict):
+        return coaching
+
+    kept_projects = []
+    removed: list[str] = []
+    for s in coaching.get("project_suggestions") or []:
+        if not isinstance(s, dict):
+            continue
+        text = f"{s.get('why', '')} {s.get('how', '')}"
+        ghost = _invented_paths(text, valid_paths)
+        if ghost:
+            removed.append(f"{s.get('add_skill') or s.get('skill')} → {ghost}")
+            continue
+        kept_projects.append(s)
+    if "project_suggestions" in coaching:
+        coaching["project_suggestions"] = kept_projects
+
+    for s in coaching.get("learning_recommendations") or []:
+        if not isinstance(s, dict) or not s.get("how"):
+            continue
+        sentences = re.split(r"(?<=\.)\s+", s["how"])
+        clean = [snt for snt in sentences if not _invented_paths(snt, valid_paths)]
+        if len(clean) != len(sentences):
+            removed.append(f"{s.get('skill')} → how 문장 정리")
+            s["how"] = " ".join(clean).strip()
+
+    if removed:
+        coaching["scrubbed_paths"] = removed   # 관측용 흔적
+    return coaching
+
+
 # ── 결정적 수치 산출 (LLM 환각 차단) ─────────────────────────────
 def _confidence_from_consensus(consensus: dict) -> str:
     """consensus 검증 분포로 신뢰도 등급을 결정적으로 산출한다.
@@ -435,6 +499,10 @@ def create_synthesizer():
         strength_context = _load_skill_context(verified_skills)
         strength_list = "\n".join(f"- {s}" for s in verified_skills) or "(없음)"
 
+        # repo_paths(레포 전체 경로 목록)는 환각 검증용 메타데이터 — 프롬프트에서 제외 (토큰 폭발 방지)
+        contexts_for_prompt = [
+            {k: v for k, v in ctx.items() if k != "repo_paths"} for ctx in contexts
+        ]
         coach_init = (
             f"[강점 어필 대상 — Verified/Corroborated 스킬]\n{strength_list}"
             + (("\n\n[강점 스킬 면접 컨텍스트]\n" + json.dumps(strength_context, ensure_ascii=False, indent=2))
@@ -443,7 +511,7 @@ def create_synthesizer():
                if skill_context else "")
             + "\n\n아래 갭 분석을 바탕으로 코칭하세요.\n"
             + json.dumps(report, ensure_ascii=False, indent=2)
-            + (("\n\n[GitHub 프로젝트 분석]\n" + json.dumps(contexts, ensure_ascii=False, indent=2))
+            + (("\n\n[GitHub 프로젝트 분석]\n" + json.dumps(contexts_for_prompt, ensure_ascii=False, indent=2))
                if contexts else "\n\n[GitHub 프로젝트] 소스코드 없음 — 연계 학습 위주로 코칭하세요.")
         )
 
@@ -571,6 +639,16 @@ def create_coach_nodes(coach_tools: list["BaseTool"]):
                 coaching_dict = json.loads(raw)
             except json.JSONDecodeError:
                 coaching_dict = {"raw": raw, "error": "JSON 파싱 실패"}
+
+        # 지어낸 파일 경로 결정적 제거 — 유효 경로 = 레포 전체 경로(repo_paths) ∪ 검증된 relevant_files
+        # (relevant_files만 쓰면 실존하지만 언급 안 된 파일까지 환각으로 오판)
+        contexts_all = state.get("project_contexts") or []
+        valid_paths: set[str] = set()
+        for ctx in contexts_all:
+            valid_paths.update(ctx.get("repo_paths") or [])
+            for sa in (ctx.get("skill_assessments") or []):
+                valid_paths.update(sa.get("relevant_files") or [])
+        coaching_dict = scrub_invented_paths(coaching_dict, valid_paths)
 
         gap_raw = state.get("gap_result") or {}
         # 4개 소스(이력서·포폴·GitHub·배포) 교차검증 결과를 신뢰도 축 산출물로 surface한다.

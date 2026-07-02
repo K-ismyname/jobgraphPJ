@@ -545,6 +545,11 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
         # relevant_files 환각 제거 (결정적, LLM 없이)
         project_context = _validate_project_context(project_context, all_paths)
 
+        # 레포 전체 경로를 context에 실어 보냄 — finalize_coach가 코칭 텍스트의
+        # 파일 경로 환각을 대조·제거하는 데 사용. LLM 프롬프트 직렬화 시에는 제외됨.
+        if project_context:
+            project_context["repo_paths"] = sorted(all_paths)
+
         # category='soft'(자격증·방법론·순수역량) 스킬은 ③ 코드 보강 제외 → ②학습으로 (결정적)
         _sas = project_context.get("skill_assessments") or []
         if _sas and neo4j:
