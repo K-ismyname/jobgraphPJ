@@ -31,6 +31,21 @@ def test_map_final_report_tolerates_missing_fields():
     assert r.verified_skills == [] and r.project_suggestions == [] and r.learning_recommendations == []
 
 
+def test_map_final_report_sanitizes_bad_coaching_type():
+    # LLM이 strength/gap 밖 type을 내도 리포트가 죽지 않고 strength로 정규화
+    final = {
+        "gap": {"match_rate": 0.5},
+        "verification": {"counts": {}, "skills": []},
+        "coaching": {"interview_coaching": [
+            {"type": "weakness", "title": "T", "coaching": "C"},   # 잘못된 type
+            {"type": "gap", "title": "T2", "coaching": "C2"},
+        ]},
+    }
+    r = _map_final_report("r1", "x", "Software Engineer", final)
+    assert r.status == "done"
+    assert [c.type for c in r.interview_coaching] == ["strength", "gap"]
+
+
 def test_map_final_report_passes_trace():
     from src.api.routers.portfolio import _map_final_report
 

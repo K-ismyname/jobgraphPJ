@@ -216,8 +216,13 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         for s in (coaching.get("learning_recommendations") or [])
         if isinstance(s, dict) and s.get("skill")
     ]
+    # LLM이 낸 type이 strength/gap 밖 값이면 Pydantic ValidationError로 리포트 전체가
+    # error로 전락 → 유효 Literal로 정규화(모르면 strength)해 한 항목 때문에 리포트가 죽지 않게
+    def _coach_type(v: object) -> str:
+        return v if v in ("strength", "gap") else "strength"
+
     interview_coaching = [
-        InterviewCoaching(type=s.get("type", "strength"), title=s.get("title", ""),
+        InterviewCoaching(type=_coach_type(s.get("type")), title=s.get("title", ""),
                           coaching=s.get("coaching", ""))
         for s in (coaching.get("interview_coaching") or [])
         if isinstance(s, dict) and s.get("title") and s.get("coaching")
