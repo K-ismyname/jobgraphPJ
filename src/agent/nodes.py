@@ -11,6 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
 from src.agent.state import AppState
+from src.extraction.normalizer import normalize_skill
 
 if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
@@ -395,6 +396,60 @@ _ADVICE_BY_CONFIDENCE = {
 }
 
 
+def build_deterministic_reasons(
+    missing_required: list[dict],
+    verify_results: dict,
+    consensus: dict,
+    neighbors: dict[str, list[str]],
+) -> dict[str, str]:
+    """부족 스킬별 '왜 필요한가'를 그래프 데이터만으로 조립한다 → {정규화 스킬명: reason}.
+
+    코칭 LLM의 reason이 "복잡한 문제 해결에 필요합니다" 같은 일반론으로 후퇴하는
+    근본 원인은 인용할 사실이 없다는 것 — match_rate를 코드가 덮어쓰는 것과 같은
+    원칙으로, reason도 공고 발췌·요구 건수·보유 스킬 연결(전부 검증된 사실)로
+    결정적으로 만든다. 템플릿이므로 거짓말이 구조적으로 불가능하다.
+
+    재료가 하나도 없는 스킬은 맵에서 제외 — 그 경우만 LLM reason이 유지된다.
+    """
+    consensus = consensus or {}
+    held_norm = {normalize_skill(k): (v or {}).get("verification") for k, v in consensus.items()}
+    reasons: dict[str, str] = {}
+
+    for item in missing_required or []:
+        raw = item.get("skill") if isinstance(item, dict) else str(item)
+        if not raw:
+            continue
+        name = normalize_skill(raw)
+        parts: list[str] = []
+
+        # ① 요구 건수 (gap_analysis의 weight = 해당 스킬을 필수로 건 공고 수)
+        weight = item.get("weight") if isinstance(item, dict) else None
+        if weight:
+            parts.append(f"이 직군 공고 {weight}건이 필수로 요구합니다.")
+
+        # ② 공고 원문 발췌 (verify_skills가 이미 가져온 증거 — 회사명 + 요건 문장)
+        vr = verify_results.get(raw) or verify_results.get(name) or {}
+        for ev in (vr.get("evidence") or [])[:1]:
+            company = (ev.get("company") or "").strip()
+            text = " ".join((ev.get("text") or "").split())[:90]
+            if text:
+                prefix = f"{company} 공고" if company else "실제 공고"
+                parts.append(f'{prefix}: "{text}…"')
+
+        # ③ 보유 스킬과의 연결 (CO_OCCURS 이웃 ∩ consensus 보유)
+        for nb in neighbors.get(raw, neighbors.get(name, [])):
+            nb_norm = normalize_skill(nb)
+            grade = held_norm.get(nb_norm)
+            if grade:
+                grade_ko = {"Verified": "검증됨", "Corroborated": "교차확인"}.get(grade, "보유")
+                parts.append(f"보유한 {nb_norm}({grade_ko})와 공고에서 자주 함께 요구되는 인접 스킬입니다.")
+                break
+
+        if parts:
+            reasons[name] = " ".join(parts)
+    return reasons
+
+
 def _apply_deterministic_metrics(report: dict, consensus: dict, tool_results: list[dict]) -> dict:
     """LLM이 생성한 신뢰도·적합도 수치를 결정적 값으로 덮어쓴다.
 
@@ -426,8 +481,12 @@ def create_call_model(tools: list["BaseTool"]):
     return call_model
 
 
-def create_synthesizer():
-    """Gap 루프 결과 → gap_result 리포트 생성 노드 팩토리 (툴 불필요, 기본 LLM 사용)."""
+def create_synthesizer(neo4j=None):
+    """Gap 루프 결과 → gap_result 리포트 생성 노드 팩토리 (기본 LLM 사용).
+
+    neo4j가 주어지면 부족 스킬 reason을 그래프 데이터로 결정적 조립해
+    gap_result["deterministic_reasons"]에 저장한다 (finalize_coach가 덮어쓰기에 사용).
+    """
     _llm = _get_gap_llm()
 
     def generate_report(state: AppState) -> dict:
@@ -468,6 +527,28 @@ def create_synthesizer():
             report = _apply_deterministic_metrics(report, consensus, tool_results)
         except json.JSONDecodeError:
             report = {"raw": raw, "error": "JSON 파싱 실패"}
+
+        # 부족 스킬 reason 결정적 조립 — 공고 발췌(verify_skills)·요구 건수(gap_analysis)·
+        # CO_OCCURS 보유 스킬 연결로. finalize_coach가 LLM reason을 이 값으로 덮어쓴다.
+        if not report.get("error"):
+            verify_results: dict = {}
+            missing_with_weight: list[dict] = []
+            for r in tool_results:
+                res = r.get("result")
+                if r.get("tool") == "verify_skills" and isinstance(res, dict):
+                    verify_results.update({k: v for k, v in res.items() if isinstance(v, dict)})
+                if r.get("tool") == "gap_analysis" and isinstance(res, dict):
+                    missing_with_weight = [m for m in res.get("missing_required") or [] if isinstance(m, dict)]
+            missing_items = missing_with_weight or [
+                m for m in (report.get("missing_required") or []) if isinstance(m, dict)
+            ]
+            neighbor_map: dict = {}
+            if neo4j is not None and missing_items:
+                names = [m.get("skill") for m in missing_items if m.get("skill")]
+                neighbor_map = neo4j.get_skill_neighbors(names) or {}
+            report["deterministic_reasons"] = build_deterministic_reasons(
+                missing_items, verify_results, consensus, neighbor_map,
+            )
 
         # Coach 루프 시작 메시지 초기화 — 갭 분석 + GitHub 소스코드 분석 결과
         # GapState(서브그래프)에서는 project_contexts 직접, AppState에서는 github_eval 경유
@@ -651,6 +732,17 @@ def create_coach_nodes(coach_tools: list["BaseTool"]):
         coaching_dict = scrub_invented_paths(coaching_dict, valid_paths)
 
         gap_raw = state.get("gap_result") or {}
+
+        # 학습 추천 reason을 결정적 조립값으로 덮어쓴다 — LLM의 일반론("~에 필수적입니다")을
+        # 공고 발췌·요구 건수·보유 스킬 연결(검증된 사실)로 교체. match_rate 덮어쓰기와 같은 원칙.
+        det_reasons = gap_raw.get("deterministic_reasons") or {}
+        if det_reasons and isinstance(coaching_dict, dict):
+            for rec in coaching_dict.get("learning_recommendations") or []:
+                if not isinstance(rec, dict):
+                    continue
+                key = normalize_skill(rec.get("skill") or "")
+                if key in det_reasons:
+                    rec["reason"] = det_reasons[key]
         # 4개 소스(이력서·포폴·GitHub·배포) 교차검증 결과를 신뢰도 축 산출물로 surface한다.
         from src.agent.consensus import build_verification_summary
         verification = build_verification_summary(state.get("consensus") or {})

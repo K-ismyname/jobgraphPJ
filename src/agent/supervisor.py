@@ -54,8 +54,8 @@ def create_supervisor_graph(neo4j, openai_client):
     gap_graph   = create_gap_graph(gap_tools)
     coach_graph = create_coach_graph(coach_tools)
 
-    # synthesizer — AppState에서 실행해야 coach_messages가 AppState에 직접 반영됨 (툴 불필요)
-    synthesizer = create_synthesizer()
+    # synthesizer — AppState에서 실행해야 coach_messages가 AppState에 직접 반영됨
+    synthesizer = create_synthesizer(neo4j)   # 결정적 reason 조립에 CO_OCCURS 조회 사용
 
     resume_eval    = create_resume_evaluator(openai_client)
     github_eval    = create_github_evaluator(neo4j, openai_client)
