@@ -16,14 +16,6 @@ from openai import OpenAI
 from src.ingestion.preprocessor import preprocess_file
 from src.extraction.skill_extractor import extract_skills_from_posting
 from src.extraction.normalizer import normalize_skill
-
-def filter_by_job_family(jobs: list[dict]) -> list[dict]:
-    """확실한 직군이 아닌 공고를 제거한다."""
-    kept = [j for j in jobs if _job_family(j["title"]) is not None]
-    removed = len(jobs) - len(kept)
-    if removed:
-        print(f"직군 필터: {len(jobs)}개 → {len(kept)}개 ({removed}개 제거)")
-    return kept
 from src.storage.neo4j_client import Neo4jClient
 
 
