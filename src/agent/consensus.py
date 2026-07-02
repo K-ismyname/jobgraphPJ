@@ -58,7 +58,10 @@ def expand_umbrella_skills(consensus: dict, neo4j) -> dict:
 
     규칙:
     - 근거는 Verified/Corroborated 스킬만 (Claimed 주장을 상위로 세탁하지 않음)
-    - 이미 직접 증거가 있는 상위 스킬은 덮어쓰지 않음
+    - 상위 스킬의 기존 등급이 간접 실증 등급보다 같거나 강하면 그대로 둔다
+      (직접 Verified를 간접 Corroborated로 낮추지 않음) — 단 기존이 더 약하면(Claimed 등)
+      업그레이드한다. 이력서에 "AI" 한 단어가 적혀 있어 Claimed로 먼저 잡힌 게
+      LangGraph 등 강한 간접 증거를 막아버리는 문제를 막는다 (직접 증거는 보존해 병기).
     - 등급은 근거 스킬 중 최고 등급을 따름
     """
     if not consensus or neo4j is None:
@@ -74,24 +77,29 @@ def expand_umbrella_skills(consensus: dict, neo4j) -> dict:
     except Exception:
         return consensus
 
+    rank = {"Verified": 0, "Corroborated": 1, "Claimed": 2}
     for umbrella, via in (covered or {}).items():
         name = normalize_skill(umbrella)
-        if name in consensus:
-            continue  # 직접 증거 우선
         via_known = [v for v in via if normalize_skill(v) in strong]
         if not via_known:
             continue
-        grade = ("Verified"
-                 if any(strong[normalize_skill(v)]["verification"] == "Verified" for v in via_known)
-                 else "Corroborated")
+        derived_grade = ("Verified"
+                          if any(strong[normalize_skill(v)]["verification"] == "Verified" for v in via_known)
+                          else "Corroborated")
+        existing = consensus.get(name)
+        existing_grade = (existing or {}).get("verification")
+        if existing and rank.get(existing_grade, 9) <= rank[derived_grade]:
+            continue  # 기존 등급이 이미 같거나 강함 — 유지
+        derived_evidence = {
+            "skill": name,
+            "evidence": f"{', '.join(sorted(via_known))} 실증으로 간접 확인 (PART_OF)",
+            "source": "derived",
+            "level_hint": None,
+        }
+        prior_evidences = (existing or {}).get("evidences") or []
         consensus[name] = {
-            "verification": grade,
-            "evidences": [{
-                "skill": name,
-                "evidence": f"{', '.join(sorted(via_known))} 실증으로 간접 확인 (PART_OF)",
-                "source": "derived",
-                "level_hint": None,
-            }],
+            "verification": derived_grade,
+            "evidences": prior_evidences + [derived_evidence],
             "flags": [f"간접 실증 — {', '.join(sorted(via_known))} 기반"],
         }
     return consensus

@@ -34,12 +34,51 @@ def test_claimed_skill_does_not_expand():
     assert neo4j.asked_with is None   # strong 스킬 없음 → 조회 자체를 안 함
 
 
-def test_direct_evidence_not_overwritten():
-    # LLM에 직접 증거(Claimed)가 있으면 간접 실증이 덮어쓰지 않음
+def test_weak_direct_claim_upgraded_by_strong_indirect():
+    # 이력서에 "LLM"이 직접 적혀 Claimed로 먼저 잡혀도, LangGraph(Verified)로
+    # 간접 실증되면 업그레이드된다 — 약한 직접 증거가 강한 간접 증거를 막던 버그 수정.
     neo4j = _FakeNeo4j({"LLM": ["LangGraph"]})
     cons = _consensus(LangGraph="Verified", LLM="Claimed")
     out = expand_umbrella_skills(cons, neo4j)
-    assert out["LLM"]["verification"] == "Claimed"   # 직접 증거 유지
+    assert out["LLM"]["verification"] == "Verified"
+    # 기존 직접 증거(이력서 주장)는 버리지 않고 병기
+    assert len(out["LLM"]["evidences"]) == 1   # 원래 Claimed 항목엔 evidences가 없었으므로 derived만 1개
+    assert any("간접 실증" in f for f in out["LLM"]["flags"])
+
+
+def test_strong_direct_evidence_not_downgraded():
+    # LLM에 이미 Verified 직접 증거가 있으면, LangChain(Corroborated) 기반 간접 실증이
+    # 더 약해도 다운그레이드하지 않는다.
+    neo4j = _FakeNeo4j({"LLM": ["LangChain"]})
+    cons = _consensus(LangChain="Corroborated", LLM="Verified")
+    out = expand_umbrella_skills(cons, neo4j)
+    assert out["LLM"]["verification"] == "Verified"
+
+
+def test_resume_evidence_preserved_when_upgraded():
+    # 실제 상황 재현: 이력서에 "AI"가 적혀 있어 evidences가 채워진 Claimed 항목이,
+    # 업그레이드 후에도 그 이력서 근거를 잃지 않고 간접 실증과 함께 보관된다.
+    neo4j = _FakeNeo4j({"AI": ["LangGraph"]})
+    cons = {
+        "LangGraph": {"verification": "Verified", "evidences": []},
+        "AI": {"verification": "Claimed",
+               "evidences": [{"skill": "AI", "evidence": "이력서: AI 프로젝트 다수 수행",
+                              "source": "resume", "level_hint": None}],
+               "flags": ["코드·실증 미확인 — 주장/언급만"]},
+    }
+    out = expand_umbrella_skills(cons, neo4j)
+    assert out["AI"]["verification"] == "Verified"
+    sources = {e["source"] for e in out["AI"]["evidences"]}
+    assert sources == {"resume", "derived"}   # 둘 다 보존
+
+
+def test_equal_grade_not_touched():
+    # 기존이 이미 Corroborated면 같은 등급의 간접 실증으로 재작성하지 않는다
+    neo4j = _FakeNeo4j({"LLM": ["LangChain"]})
+    cons = _consensus(LangChain="Corroborated", LLM="Corroborated")
+    original_evidences = cons["LLM"]["evidences"]
+    out = expand_umbrella_skills(cons, neo4j)
+    assert out["LLM"]["evidences"] is original_evidences   # 손 안 댐
 
 
 def test_corroborated_basis_gives_corroborated():
