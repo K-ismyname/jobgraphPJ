@@ -177,7 +177,12 @@ def create_tools(neo4j: "Neo4jClient") -> list:
     def ask_human(
         question: Annotated[str, "사용자에게 물어볼 구체적인 질문"],
     ) -> str:
-        """이력서 내용이 불명확하거나 핵심 정보가 누락된 경우 사용자에게 질문한다."""
+        """이력서 내용이 불명확하거나 핵심 정보가 누락된 경우 사용자에게 질문한다.
+
+        HITL 확장 지점(설계됨, 기본 비활성). 라이브 활성화하려면 HITL_ENABLED=true +
+        supervisor 그래프에 checkpointer 재부착 + API resume 엔드포인트가 필요하다.
+        기본은 자동 모드로, 불확실성은 confidence 등급·advice로 논블로킹 처리한다.
+        """
         if os.getenv("HITL_ENABLED", "false").lower() != "true":
             return "[자동 모드] 사용자 확인 없이 진행합니다."
         try:

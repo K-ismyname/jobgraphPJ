@@ -5,7 +5,6 @@ import os
 import uuid
 from typing import TYPE_CHECKING, Callable
 
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from langgraph.types import Send
@@ -111,7 +110,11 @@ def create_supervisor_graph(neo4j, openai_client):
     workflow.add_edge("critic",       "coach_agent")  # CoachAgent에 위임
     workflow.add_edge("coach_agent",  END)
 
-    return workflow.compile(checkpointer=MemorySaver())
+    # 체크포인터 없이 컴파일 — 현재 HITL(interrupt→resume)을 라이브로 운영하지 않으므로
+    # 재개용 상태 저장이 불필요하다. MemorySaver를 붙이면 실행마다 thread_id별 체크포인트가
+    # 무한 누적(누수)되고 재개 경로가 없어 읽히지도 않는다. HITL을 켜려면(ask_human interrupt)
+    # 이 지점에 checkpointer를 다시 붙이고 API resume 엔드포인트를 추가해야 한다.
+    return workflow.compile()
 
 
 def run_supervisor(

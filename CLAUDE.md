@@ -18,7 +18,7 @@ Claude Code가 이 프로젝트를 처음 열었을 때 반드시 읽어야 하�
 **왜 Agentic RAG인가:**
 
 - 단순 키워드 매칭이 아니라 LLM이 "증거가 충분한가?"를 판단하고 부족하면 다른 소스를 추가 검색 (Corrective RAG)
-- 애매한 케이스는 사용자에게 되묻는 HITL 구현
+- 애매한 케이스를 위한 HITL을 interrupt 기반으로 **설계**(ask_human 툴·확장 지점 마련). 라이브 운영은 자동 모드가 기본이며, 불확실성은 confidence 등급·advice로 논블로킹 처리한다. HITL을 켜려면 checkpointer 재부착 + API resume 경로가 필요하다.
 - 그래프 검색(Neo4j)과 통계 도구를 에이전트가 선택적으로 조합 (초기 도입한 Chroma 벡터검색은 효과를 측정해 제거 — 아래 "사용하지 않는 것" 참고)
 
 **타겟 직무:** AI / LLM 애플리케이션 엔지니어 (Agentic RAG)
@@ -34,7 +34,7 @@ Claude Code가 이 프로젝트를 처음 열었을 때 반드시 읽어야 하�
 | 데이터 소스 | Adzuna API                                           | 무료·개인 즉시 발급, 합법, JSON 구조화                |
 | 그래프 DB   | Neo4j Aura (무료 티어)                               | 포트폴리오 이력서 작성 가능, 직무-기술 관계 표현 최적 |
 | LLM         | OpenAI gpt-4o-mini (기본), gpt-4o (복잡한 추론)      | 비용 효율, 단일 공급자(OpenAI)로 통일                 |
-| 에이전트    | LangGraph                                            | 조건 분기·루프·HITL이 필수라 LangChain만으로 불가     |
+| 에이전트    | LangGraph                                            | 조건 분기·루프(+HITL 확장 지점)가 필수라 LangChain만으로 불가 |
 | PDF 파싱    | pdfplumber                                           | 레이아웃 보존, 표 추출 안정적                         |
 | 평가        | Langfuse + RAGAS                                     | 트레이싱 + RAG 품질 지표 분리                         |
 | 서빙        | FastAPI + Docker                                     | 표준, 면접 질문 대응 가능                             |
@@ -208,7 +208,7 @@ START
                          coach_agent (면접 코칭·프로젝트 제안, 서브그래프) → END
 ```
 
-ask_human(HITL)은 `HITL_ENABLED=true`일 때만 interrupt로 동작(기본 비활성 자동 모드).
+ask_human(HITL)은 설계된 확장 지점 — 기본은 자동 모드이며, 라이브 활성화하려면 `HITL_ENABLED=true` + 그래프 checkpointer 재부착 + API resume 경로가 필요하다.
 
 **규칙:**
 
