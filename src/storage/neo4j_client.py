@@ -210,7 +210,7 @@ class Neo4jClient:
                     try:
                         s.run(stmt)
                     except Exception as e:
-                        print(f"  제약조건 (이미 있으면 무시): {e}")
+                        logger.warning(f"제약조건 설정 경고(이미 있으면 무시 가능): {e}")
         print("제약조건 설정 완료")
 
     def load_skill_seeds(self, seeds_path: str | Path | None = None) -> None:
@@ -310,7 +310,7 @@ class Neo4jClient:
                         try:
                             sess.run(UPSERT_CO_OCCURS, skill_a=name_a, skill_b=name_b)
                         except Exception as e:
-                            print(f"[warn] CO_OCCURS 실패 ({name_a}, {name_b}): {e}")
+                            logger.warning(f"[warn] CO_OCCURS 실패 ({name_a}, {name_b}): {e}")
 
         # 섹션 텍스트는 MERGE와 별도로 SET — 기존 공고도 업데이트 가능
         req = posting.get("required_section", "")
@@ -343,7 +343,7 @@ class Neo4jClient:
                         )
                         print(f"  [{skill.confidence}] {section.title} → {skill.name}")
                     except Exception as e:
-                        print(f"[warn] DEMONSTRATES 실패 ({skill.name}): {e}")
+                        logger.warning(f"[warn] DEMONSTRATES 실패 ({skill.name}): {e}")
 
     def get_job_distribution(self) -> list[dict]:
         """타이틀 키워드별 공고 수 분포 (상위 20개)."""
@@ -396,7 +396,7 @@ class Neo4jClient:
             )
             return [r["name"] for r in rows if r.get("name")]
         except Exception as e:
-            print(f"[neo4j] 직군 목록 조회 실패: {e}")
+            logger.error(f"[neo4j] 직군 목록 조회 실패: {e}")
             return []
 
     def get_job_family_skills(
@@ -445,7 +445,7 @@ class Neo4jClient:
                     break
             return result
         except Exception as e:
-            print(f"[neo4j] 직군 스킬 조회 실패: {e}")
+            logger.error(f"[neo4j] 직군 스킬 조회 실패: {e}")
             return []
 
     def get_common_skills(self, threshold: int = 5, n: int = 10) -> list[str]:
@@ -475,7 +475,7 @@ class Neo4jClient:
                 result.append(normalized)
             return result
         except Exception as e:
-            print(f"[neo4j] 공통 스킬 조회 실패: {e}")
+            logger.error(f"[neo4j] 공통 스킬 조회 실패: {e}")
             return []
 
     def get_co_occurring_skills(self, skills: list[str], top_n: int = 8) -> list[str]:
@@ -493,7 +493,7 @@ class Neo4jClient:
             rows = self.execute_query(query, skills=skills, n=top_n)
             return [r["skill"] for r in rows if r.get("skill")]
         except Exception as e:
-            print(f"[neo4j] CO_OCCURS 조회 실패: {e}")
+            logger.error(f"[neo4j] CO_OCCURS 조회 실패: {e}")
             return []
 
     def get_skill_neighbors(self, skills: list[str], top_n: int = 6) -> dict[str, list[str]]:
@@ -516,7 +516,7 @@ class Neo4jClient:
             rows = self.execute_query(query, skills=skills, n=top_n)
             return {r["skill"]: r["neighbors"] for r in rows if r.get("skill")}
         except Exception as e:
-            print(f"[neo4j] 스킬 이웃 조회 실패: {e}")
+            logger.error(f"[neo4j] 스킬 이웃 조회 실패: {e}")
             return {}
 
     def get_skill_categories(self, skills: list[str]) -> dict[str, str]:
@@ -535,7 +535,7 @@ class Neo4jClient:
             )
             return {r["name"]: r["category"] for r in rows if r.get("name")}
         except Exception as e:
-            print(f"[neo4j] 스킬 category 조회 실패: {e}")
+            logger.error(f"[neo4j] 스킬 category 조회 실패: {e}")
             return {}
 
     def recommend_job_postings(self, skills: list[str], top_n: int = 5, min_required: int = 4,
@@ -580,7 +580,7 @@ class Neo4jClient:
                 for r in rows
             ]
         except Exception as e:
-            print(f"[neo4j] 공고 추천 조회 실패: {e}")
+            logger.error(f"[neo4j] 공고 추천 조회 실패: {e}")
             return []
 
     def update_portfolio_confidence(self, owner: str, changes: dict[str, str]) -> None:
@@ -595,7 +595,7 @@ class Neo4jClient:
                 try:
                     sess.run(query, owner=owner, skill=skill, new_confidence=new_confidence)
                 except Exception as e:
-                    print(f"[warn] confidence 업데이트 실패 ({skill}): {e}")
+                    logger.warning(f"[warn] confidence 업데이트 실패 ({skill}): {e}")
 
     def set_posting_sections(self, source_id: str, required: str, preferred: str) -> None:
         """공고 노드에 요건 원문(필수·우대)을 속성으로 저장한다."""
@@ -606,7 +606,7 @@ class Neo4jClient:
                 source_id=source_id, required=required or "", preferred=preferred or "",
             )
         except Exception as e:
-            print(f"[neo4j] 공고 원문 저장 실패({source_id}): {e}")
+            logger.error(f"[neo4j] 공고 원문 저장 실패({source_id}): {e}")
 
     def get_posting_sections(self, source_ids: list[str]) -> list[dict]:
         """source_id 목록의 공고 요건 원문을 가져온다."""
@@ -618,7 +618,7 @@ class Neo4jClient:
                 ids=source_ids,
             )
         except Exception as e:
-            print(f"[neo4j] 공고 원문 조회 실패: {e}")
+            logger.error(f"[neo4j] 공고 원문 조회 실패: {e}")
             return []
 
     def get_postings_requiring_skill(self, skill_name: str, limit: int = 5) -> list[str]:
