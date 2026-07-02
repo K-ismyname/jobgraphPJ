@@ -41,14 +41,28 @@ _RESUME_TEXT_CAP = 100_000
 _POSTING_TEXT_CAP = 20_000
 
 
-def _chat(client: OpenAI, prompt: str, max_tokens: int = 1024) -> str:
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = resp.choices[0].message.content or ""
-    return raw.strip().replace("```json", "").replace("```", "").strip()
+def _chat_json(client: OpenAI, prompt: str, max_tokens: int = 1024) -> dict:
+    """LLM에 JSON 응답을 요청하고 파싱해 dict로 반환한다.
+
+    response_format=json_object로 비JSON·펜스 응답을 원천 차단하고, temperature=0으로
+    결정성을 확보한다. 파싱/API 실패 시 1회 재시도한 뒤에도 실패하면 예외를 올린다
+    (호출부 파이프라인이 실패 건수를 집계·스킵).
+    """
+    last_err: Exception | None = None
+    for attempt in range(2):
+        try:
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = (resp.choices[0].message.content or "").strip()
+            return json.loads(raw)
+        except Exception as e:  # API 오류·파싱 실패 모두 재시도 대상
+            last_err = e
+    raise ValueError(f"LLM JSON 파싱 실패(재시도 후): {last_err}")
 
 
 # ── 이력서 기술 추출 ─────────────────────────────────────────────
@@ -94,7 +108,7 @@ def extract_skills_from_resume(
   ]
 }}"""
 
-    return ResumeExtraction(**json.loads(_chat(client, prompt, max_tokens=4096)))
+    return ResumeExtraction(**_chat_json(client, prompt, max_tokens=4096))
 
 
 # ── 전처리된 채용공고 스킬 추출 ──────────────────────────────────────
@@ -155,7 +169,7 @@ def extract_skills_from_posting(
 - 명시적 필수 조건은 required, 우대/선호는 preferred
 - 연차·학위·소프트스킬·도메인 지식은 제외"""
 
-    result = json.loads(_chat(client, prompt, max_tokens=1500))
+    result = _chat_json(client, prompt, max_tokens=1500)
     return {
         "required": result.get("required", []),
         "preferred": result.get("preferred", []),
