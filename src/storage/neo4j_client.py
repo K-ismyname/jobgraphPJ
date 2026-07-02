@@ -1,6 +1,7 @@
 # Neo4j 그래프 DB에 공고·이력서 데이터를 저장하는 클라이언트
 import hashlib
 import json
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +10,11 @@ from openai import OpenAI
 from neo4j import GraphDatabase
 
 from src.extraction.skill_extractor import ResumeExtraction
+
+logger = logging.getLogger("jobgraph.storage")
+
+# 프로젝트 루트 — 시드 등 데이터 파일을 CWD와 무관하게 절대경로로 해석
+ROOT = Path(__file__).resolve().parents[2]
 
 # ── Cypher 쿼리 ─────────────────────────────────────────────────
 CREATE_CONSTRAINTS = """
@@ -207,11 +213,12 @@ class Neo4jClient:
                         print(f"  제약조건 (이미 있으면 무시): {e}")
         print("제약조건 설정 완료")
 
-    def load_skill_seeds(self, seeds_path: str = "data/seeds/skill_relations.json") -> None:
+    def load_skill_seeds(self, seeds_path: str | Path | None = None) -> None:
         """PART_OF 관계 시드 데이터를 Neo4j에 로드."""
-        path = Path(seeds_path)
+        # 기본 경로는 CWD와 무관하게 ROOT 기준 절대경로 — 다른 디렉토리에서 실행해도 안전
+        path = Path(seeds_path) if seeds_path else ROOT / "data" / "seeds" / "skill_relations.json"
         if not path.exists():
-            raise FileNotFoundError(f"시드 파일 없음: {seeds_path}")
+            raise FileNotFoundError(f"시드 파일 없음: {path}")
 
         with open(path, encoding="utf-8") as f:
             seeds: list[dict] = json.load(f)
@@ -225,9 +232,19 @@ class Neo4jClient:
                 )
         print(f"PART_OF 시드 {len(seeds)}개 로드 완료")
 
-    def clear_all(self) -> None:
-        """DB의 모든 노드·관계를 삭제한다."""
+    def clear_all(self, confirm: bool = False) -> None:
+        """DB의 모든 노드·관계를 삭제한다 (파괴적).
+
+        실수 방지를 위해 confirm=True를 명시해야 실행된다. 삭제 전 노드 수를 출력한다.
+        """
         with self._driver.session() as sess:
+            count = sess.run("MATCH (n) RETURN count(n) AS c").single()["c"]
+            if not confirm:
+                raise ValueError(
+                    f"clear_all은 노드 {count}개를 전부 삭제합니다. "
+                    "실행하려면 clear_all(confirm=True)로 호출하세요."
+                )
+            print(f"[clear_all] 노드 {count}개 삭제 중...")
             sess.run("MATCH (n) DETACH DELETE n")
         print("DB 초기화 완료")
 
@@ -641,9 +658,17 @@ class Neo4jClient:
                 return {"skill": skill_name, "recent_count": 0, "prev_count": 0, "delta_pct": 0.0}
             recent = rows[0].get("recent_count") or 0
             prev = rows[0].get("prev_count") or 0
-            delta = round(((recent - prev) / prev * 100) if prev > 0 else 0.0, 1)
-            return {"skill": skill_name, "recent_count": recent, "prev_count": prev, "delta_pct": delta}
+            # prev=0, recent>0은 '신규 급증'이지 '변화 없음'이 아니다 — delta 0.0으로 묻히지 않게 처리
+            if prev > 0:
+                delta = round((recent - prev) / prev * 100, 1)
+            elif recent > 0:
+                delta = 100.0   # 이전 0 → 최근 등장: 신규 수요
+            else:
+                delta = 0.0
+            return {"skill": skill_name, "recent_count": recent, "prev_count": prev,
+                    "delta_pct": delta, "is_new": prev == 0 and recent > 0}
         except Exception as e:
+            logger.error("get_skill_trend 실패 (skill=%s): %s", skill_name, e)
             return {"skill": skill_name, "recent_count": 0, "prev_count": 0, "delta_pct": 0.0, "error": str(e)}
 
     def execute_query(self, query: str, **params) -> list[dict]:

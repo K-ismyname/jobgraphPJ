@@ -196,7 +196,7 @@ def run_ingest_all(
     neo4j = Neo4jClient()
     try:
         if clear:
-            neo4j.clear_all()
+            neo4j.clear_all(confirm=True)   # --clear 플래그가 명시적 의사표시
 
         neo4j.setup_constraints()
         neo4j.load_skill_seeds()
