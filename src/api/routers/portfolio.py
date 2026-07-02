@@ -76,17 +76,37 @@ _NODE_PHASE = {
 }
 
 
+async def _read_pdf_upload(file: UploadFile) -> bytes:
+    """PDF 업로드를 청크 단위로 읽으며 크기·타입을 검증한 뒤 바이트를 반환한다.
+
+    - 상한(_MAX_PDF_BYTES)을 넘으면 전부 읽기 전에 즉시 413 (거대 업로드가 RAM을 다 먹는 것 방지)
+    - 확장자 + magic bytes(%PDF) 이중 확인 (확장자만으론 위조 가능)
+    """
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(415, "PDF 파일만 업로드 가능합니다.")
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)   # 1MB씩
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > _MAX_PDF_BYTES:
+            raise HTTPException(413, "파일 크기는 10MB 이하여야 합니다.")
+        chunks.append(chunk)
+    content = b"".join(chunks)
+    if content[:4] != b"%PDF":
+        raise HTTPException(415, "유효한 PDF 파일이 아닙니다.")
+    return content
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_resume(
     file: UploadFile = File(...),
     uploads: dict = Depends(get_uploads),
 ) -> UploadResponse:
     """PDF 이력서 업로드. 텍스트 추출 후 report_id 반환."""
-    if not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(415, "PDF 파일만 업로드 가능합니다.")
-    content = await file.read()
-    if len(content) > _MAX_PDF_BYTES:
-        raise HTTPException(413, "파일 크기는 10MB 이하여야 합니다.")
+    content = await _read_pdf_upload(file)
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
@@ -115,11 +135,7 @@ async def upload_portfolio(
     uploads: dict = Depends(get_uploads),
 ) -> PortfolioUploadResponse:
     """포트폴리오 PDF 업로드. 경로를 임시 저장 후 portfolio_report_id 반환."""
-    if not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(415, "PDF 파일만 업로드 가능합니다.")
-    content = await file.read()
-    if len(content) > _MAX_PDF_BYTES:
-        raise HTTPException(413, "파일 크기는 10MB 이하여야 합니다.")
+    content = await _read_pdf_upload(file)
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
