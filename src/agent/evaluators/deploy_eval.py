@@ -31,6 +31,9 @@ def _skills_from_deploy(text: str, vocab: list[str]) -> list[dict]:
                 "skill": skill,
                 "evidence": f"배포 URL 작동 확인 — {skill} 사용 흔적",
                 "source": "deploy",
+                # HTML·헤더 키워드는 코드가 아니라 단순 언급 — 단독으로 Verified를 주지 않는다.
+                # (배포가 '작동'한다는 사실은 확인되나, 특정 스킬 사용의 코드 근거는 아님)
+                "strength": "mention",
                 "level_hint": "실무",
             })
     return skills

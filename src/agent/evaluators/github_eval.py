@@ -113,6 +113,7 @@ def _skills_from_pkg_json(pkg_json_text: str, vocab: list[str]) -> list[dict]:
             "skill": skill,
             "evidence": f"package.json 의존성 {pkg_name} → {skill} 확인",
             "source": "github",
+            "strength": "code",   # 의존성 선언 = 코드 근거
             "level_hint": "실무",
         })
     return results
@@ -166,10 +167,14 @@ def _skills_from_sources(
             where.append("주 언어")
         if in_readme:
             where.append("README")
+        # 의존성 파일·주 언어(GitHub 언어 통계=실제 코드)는 코드 근거,
+        # README에만 있으면 단순 언급 — 이 구분이 consensus의 Verified 판정을 좌우한다.
+        strength = "code" if (in_manifest or in_lang) else "mention"
         skills.append({
             "skill": skill_name,
             "evidence": f"{owner}/{repo} {'·'.join(where)}에서 {skill_name} 확인",
             "source": "github",
+            "strength": strength,
             "level_hint": "실무",
         })
     return skills

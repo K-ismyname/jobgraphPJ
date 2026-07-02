@@ -13,11 +13,14 @@ _VERIFIABLE_SOURCES = {"github", "deploy"}
 
 
 def build_consensus(evaluator_outputs: list[dict]) -> dict:
-    """평가자별 [{skill, evidence, source, level_hint}]를 스킬별 검증 상태로 합친다.
+    """평가자별 [{skill, evidence, source, strength, level_hint}]를 스킬별 검증 상태로 합친다.
 
-    Verified     : github/deploy 등 실증 소스에 증거
-    Corroborated : 2개 이상 소스가 일치
-    Claimed      : 1개 소스만 (코드 미확인 시 flag)
+    Verified     : 코드 근거(strength="code" — 의존성 파일·주 언어)로 실증됨
+    Corroborated : 2개 이상 독립 소스가 일치 (코드 근거는 없지만 서로 뒷받침)
+    Claimed      : 1개 소스만 (코드 미확인)
+
+    핵심: 등급은 '어느 소스냐'가 아니라 '증거가 얼마나 강하냐'로 판정한다.
+    README·배포 HTML에 스킬명이 적혀 있기만 한 것(strength="mention")은 Verified가 아니다.
     """
     by_skill: dict[str, list[dict]] = {}
     for out in evaluator_outputs:
@@ -28,15 +31,19 @@ def build_consensus(evaluator_outputs: list[dict]) -> dict:
     consensus: dict[str, dict] = {}
     for skill, evidences in by_skill.items():
         sources = {e["source"] for e in evidences}
-        if sources & _VERIFIABLE_SOURCES:
+        has_code = any(
+            e.get("source") in _VERIFIABLE_SOURCES and e.get("strength") == "code"
+            for e in evidences
+        )
+        if has_code:
             status = "Verified"
         elif len(sources) >= 2:
             status = "Corroborated"
         else:
             status = "Claimed"
         result: dict = {"verification": status, "evidences": evidences}
-        if status == "Claimed":  # Claimed는 정의상 실증 소스(github/deploy)가 없음
-            result["flags"] = ["코드 미확인 — 주장만"]
+        if status == "Claimed":
+            result["flags"] = ["코드·실증 미확인 — 주장/언급만"]
         consensus[skill] = result
     return consensus
 
