@@ -10,7 +10,9 @@ from typing import TYPE_CHECKING, Callable
 import httpx
 
 from src.portfolio.github_connector import parse_github_repo
-from src.extraction.normalizer import SKILL_ALIASES, normalize_skill
+from src.extraction.normalizer import normalize_skill
+# 텍스트 매칭 유틸은 공용 모듈에서 — tools/deploy_eval/ragas_eval도 여기서 가져다 쓴다
+from src.common.text_match import word_match as _word_match, keywords_for as _keywords_for
 
 if TYPE_CHECKING:
     from src.agent.state import AppState
@@ -119,12 +121,6 @@ def _skills_from_pkg_json(pkg_json_text: str, vocab: list[str]) -> list[dict]:
     return results
 
 
-def _word_match(keyword: str, text: str) -> bool:
-    """단어 경계 매칭. 'react'가 'reaction'에, 'aws'가 'draws'에 오탐되지 않게 한다."""
-    pattern = rf"(?<![a-z0-9]){re.escape(keyword)}(?![a-z0-9])"
-    return re.search(pattern, text) is not None
-
-
 def _manifest_match(keyword: str, text: str) -> bool:
     """의존성/설정 소스 매칭."""
     if _word_match(keyword, text):
@@ -134,16 +130,6 @@ def _manifest_match(keyword: str, text: str) -> bool:
         if (first_token == keyword or manifest == keyword + "file") and _word_match(manifest, text):
             return True
     return False
-
-
-def _keywords_for(skill: str) -> list[str]:
-    """스킬명 + 같은 정규화명을 갖는 별칭들을 매칭 키워드로."""
-    canon = skill.lower()
-    kws = {canon}
-    for alias, mapped in SKILL_ALIASES.items():
-        if mapped.lower() == canon:
-            kws.add(alias.lower())
-    return list(kws)
 
 
 def _skills_from_sources(

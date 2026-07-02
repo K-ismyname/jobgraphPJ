@@ -11,7 +11,8 @@ class _Fake:
 
 
 def test_get_job_family_skills_maps_names():
-    fake = _Fake([{"skill": "Java", "weight": 20}, {"skill": "Spring", "weight": 15}])
+    # springboot → Spring Boot 정규화 확인 (bare 'spring'은 Spring Framework로 별도)
+    fake = _Fake([{"skill": "Java", "weight": 20}, {"skill": "springboot", "weight": 15}])
     names = Neo4jClient.get_job_family_skills(fake, "Software Engineer")
     assert names == ["Java", "Spring Boot"]
 

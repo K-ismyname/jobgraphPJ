@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from dotenv import load_dotenv
 load_dotenv()
 
-from src.agent.evaluators.github_eval import _keywords_for, _word_match
+from src.common.text_match import keywords_for as _keywords_for, word_match as _word_match
 
 
 def _evidence_mentions_skill(skill: str, text: str) -> bool:

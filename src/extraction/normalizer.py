@@ -46,7 +46,7 @@ SKILL_ALIASES: dict[str, str] = {
     "microservices architecture": "Microservices",
     "micro-services architecture": "Microservices",
     "cybersecurity": "Cybersecurity", "cyber security": "Cybersecurity",
-    "salesforce": "Salesforce", "salesForce": "Salesforce",
+    "salesforce": "Salesforce",
     "ci/cd": "CI/CD", "ci / cd": "CI/CD",
     "object-oriented programming": "OOP", "oop": "OOP",
     # AI / ML / LLM 동의어 통합
@@ -66,8 +66,6 @@ SKILL_ALIASES: dict[str, str] = {
     "css": "CSS", "css3": "CSS",
     "html": "HTML", "html5": "HTML5",
     "cloud security": "Cloud Security",
-    # Korean
-    "리액트": "React",
     # 중복 정규화 (같은 스킬 다른 표기)
     "apache spark": "Spark", "apache kafka": "Kafka",
     "microsoft azure": "Azure", "ms azure": "Azure",
@@ -79,7 +77,7 @@ SKILL_ALIASES: dict[str, str] = {
     "large language models": "LLM", "large language model": "LLM",
     "node": "Node.js",
     "unix/linux": "Linux", "unix": "Linux",
-    "spring": "Spring Boot",
+    "spring": "Spring",   # 'spring'은 Spring Framework — Spring Boot와 구분 (springboot는 별도 매핑)
     "databricks mlflow": "MLflow",
     "gcp vertex": "Vertex AI",
     "azure ml": "Azure ML",
@@ -98,7 +96,7 @@ SKILL_BLOCKLIST: frozenset[str] = frozenset({
     "iso", "aws certified security - specialty", "nist",
     # 비스킬 표현
     "apis", "orchestration", "cloud infrastructure", "finops",
-    "ai-assisted engineering workflows", "ssh", "open-source",
+    "ai-assisted engineering workflows", "ssh",
     # 너무 broad
     "cloud", "windows", "data science",
 })

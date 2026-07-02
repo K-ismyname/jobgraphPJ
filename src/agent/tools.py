@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from langchain_core.tools import tool
 
-from src.agent.evaluators.github_eval import _keywords_for, _word_match
+from src.common.text_match import keywords_for as _keywords_for, word_match as _word_match
 from src.extraction.normalizer import normalize_skill
 
 if TYPE_CHECKING:

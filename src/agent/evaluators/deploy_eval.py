@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Callable
 
 import httpx
 
-from src.agent.evaluators.github_eval import _word_match, _keywords_for
+from src.common.text_match import word_match as _word_match, keywords_for as _keywords_for
 
 if TYPE_CHECKING:
     from src.agent.state import AppState
