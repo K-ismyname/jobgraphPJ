@@ -6,12 +6,12 @@ from src.extraction.skill_extractor import extract_skills_from_posting
 def test_required_section_not_truncated(monkeypatch):
     captured = {}
 
-    def fake_chat(client, prompt, max_tokens=1024):
+    def fake_chat_json(client, prompt, max_tokens=1024):
         captured["prompt"] = prompt
         captured["max_tokens"] = max_tokens
-        return '{"required": [], "preferred": []}'
+        return {"required": [], "preferred": []}
 
-    monkeypatch.setattr(skill_extractor, "_chat", fake_chat)
+    monkeypatch.setattr(skill_extractor, "_chat_json", fake_chat_json)
     # 2000자 이후에 스킬 배치 (기존 cap이면 잘림)
     job = {"title": "Backend", "required_section": ("A" * 2500) + " Elasticsearch " + ("B" * 200)}
     extract_skills_from_posting(job, client=object())
@@ -23,11 +23,11 @@ def test_required_section_not_truncated(monkeypatch):
 def test_full_text_not_truncated(monkeypatch):
     captured = {}
 
-    def fake_chat(client, prompt, max_tokens=1024):
+    def fake_chat_json(client, prompt, max_tokens=1024):
         captured["prompt"] = prompt
-        return '{"required": [], "preferred": []}'
+        return {"required": [], "preferred": []}
 
-    monkeypatch.setattr(skill_extractor, "_chat", fake_chat)
+    monkeypatch.setattr(skill_extractor, "_chat_json", fake_chat_json)
     # required_section 없음 → full_text 경로, 3000자 이후에 스킬 배치
     job = {"title": "Backend", "text_clean": ("A" * 3500) + " Elasticsearch " + ("B" * 200)}
     extract_skills_from_posting(job, client=object())

@@ -6,12 +6,12 @@ from src.extraction.skill_extractor import extract_skills_from_resume
 def test_full_text_sent_to_llm(monkeypatch):
     captured = {}
 
-    def fake_chat(client, prompt, max_tokens=1024):
+    def fake_chat_json(client, prompt, max_tokens=1024):
         captured["prompt"] = prompt
         captured["max_tokens"] = max_tokens
-        return '{"candidate_name": "X", "sections": []}'
+        return {"candidate_name": "X", "sections": []}
 
-    monkeypatch.setattr(skill_extractor, "_chat", fake_chat)
+    monkeypatch.setattr(skill_extractor, "_chat_json", fake_chat_json)
     # 4000자 이후에 핵심 스킬을 배치
     long_text = "머리말 " + ("A" * 5000) + " Java Spring Redis " + ("B" * 1000)
     extract_skills_from_resume(long_text, client=object())
