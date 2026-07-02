@@ -3,6 +3,7 @@ import os
 
 import httpx
 
+from src.common.text_match import word_match
 from src.extraction.skill_extractor import DemonstratedSkill
 
 # 기술명 → GitHub 리포에서 찾을 키워드 매핑
@@ -69,7 +70,8 @@ def boost_confidence_from_github(
 
     for skill in skills:
         keywords = _SKILL_KEYWORDS.get(skill.name, [skill.name.lower()])
-        if any(kw in repo_text for kw in keywords):
+        # 단어경계 매칭 — 'python'이 'micropython'에, 'aws'가 'draws'에 오탐되지 않게
+        if any(word_match(kw, repo_text) for kw in keywords):
             current_idx = _LADDER.index(skill.confidence)
             new_idx = min(current_idx + 1, 2)
             if new_idx != current_idx:
