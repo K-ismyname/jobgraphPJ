@@ -6,8 +6,6 @@ import json
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent.parent
-
 _REQUIRED_HEADERS = frozenset([
     "minimum qualifications", "required qualifications", "requirements",
     "qualifications", "what you'll need", "what you need",
@@ -291,7 +289,8 @@ def preprocess_file(
     with_req = sum(1 for j in processed if j["required_section"])
     with_pref = sum(1 for j in processed if j["preferred_section"])
     print(f"{before}개 → 비기술 -{filtered_non_tech} / 중복 -{filtered_dup} → {total}개")
-    print(f"  required 섹션 파싱: {with_req}/{total} ({with_req/total*100:.0f}%)")
-    print(f"  preferred 섹션 파싱: {with_pref}/{total} ({with_pref/total*100:.0f}%)")
+    if total:   # 전량 필터링돼 0개면 ZeroDivisionError 방지
+        print(f"  required 섹션 파싱: {with_req}/{total} ({with_req/total*100:.0f}%)")
+        print(f"  preferred 섹션 파싱: {with_pref}/{total} ({with_pref/total*100:.0f}%)")
 
     return processed
