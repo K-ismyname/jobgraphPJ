@@ -13,5 +13,14 @@
   {"from": "PyTorch", "to": "Python", "relation": "PART_OF"},
   {"from": "vLLM", "to": "LLM Serving", "relation": "PART_OF"},
   {"from": "RAGAS", "to": "RAG Evaluation", "relation": "PART_OF"},
-  {"from": "Langfuse", "to": "LLM Observability", "relation": "PART_OF"}
+  {"from": "Langfuse", "to": "LLM Observability", "relation": "PART_OF"},
+
+  {"from": "LangChain", "to": "LLM", "relation": "PART_OF"},
+  {"from": "OpenAI API", "to": "LLM", "relation": "PART_OF"},
+  {"from": "Claude API", "to": "LLM", "relation": "PART_OF"},
+  {"from": "LLM Serving", "to": "LLM", "relation": "PART_OF"},
+  {"from": "RAG", "to": "LLM", "relation": "PART_OF"},
+  {"from": "Prompt Engineering", "to": "LLM", "relation": "PART_OF"},
+  {"from": "LLM", "to": "GenAI", "relation": "PART_OF"},
+  {"from": "GenAI", "to": "AI", "relation": "PART_OF"}
 ]

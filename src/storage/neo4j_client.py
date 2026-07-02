@@ -538,6 +538,28 @@ class Neo4jClient:
             logger.error(f"[neo4j] 스킬 category 조회 실패: {e}")
             return {}
 
+    def get_covered_umbrella_skills(self, skills: list[str]) -> dict[str, list[str]]:
+        """보유 스킬이 PART_OF로 실증하는 상위 카테고리 스킬을 배치 조회.
+
+        {상위스킬: [근거가 된 보유 스킬,...]} — 예: LangGraph 보유 시
+        LangGraph→LangChain→LLM→GenAI→AI 체인을 타고 {"LLM": ["LangGraph"], ...}.
+        구체 프레임워크로 쌓은 실력이 상위 개념(LLM 등) 스킬명과 리터럴 매칭이
+        안 돼 '부족'으로 오탐되는 문제를 막는 데 쓴다 (consensus 간접 실증).
+        """
+        if not skills:
+            return {}
+        query = """
+        MATCH (s:Skill)-[:PART_OF*1..4]->(u:Skill)
+        WHERE toLower(s.name) IN $names
+        RETURN u.name AS umbrella, collect(DISTINCT s.name) AS via
+        """
+        try:
+            rows = self.execute_query(query, names=[s.lower() for s in skills])
+            return {r["umbrella"]: r["via"] for r in rows if r.get("umbrella")}
+        except Exception as e:
+            logger.error(f"[neo4j] 상위 스킬 커버리지 조회 실패: {e}")
+            return {}
+
     def recommend_job_postings(self, skills: list[str], top_n: int = 5, min_required: int = 4,
                                job_family: str | None = None) -> list[dict]:
         """보유 스킬과 매칭률이 높은, 지원 가능한 채용공고 상위 N개를 반환한다.

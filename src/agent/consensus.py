@@ -48,6 +48,55 @@ def build_consensus(evaluator_outputs: list[dict]) -> dict:
     return consensus
 
 
+def expand_umbrella_skills(consensus: dict, neo4j) -> dict:
+    """검증된 구체 스킬로 상위 카테고리 스킬(LLM·GenAI 등)을 간접 실증한다.
+
+    "LangGraph로 멀티에이전트를 짰는데 'LLM 경험 부족'"이라는 오탐의 원인은
+    스킬 매칭이 리터럴 이름 비교라는 것 — PART_OF 체인(LangGraph→…→LLM)을 타고
+    상위 스킬을 consensus에 결정적으로 추가해, critic의 false_missing 로직이
+    missing_required에서 자동으로 걸러내게 한다.
+
+    규칙:
+    - 근거는 Verified/Corroborated 스킬만 (Claimed 주장을 상위로 세탁하지 않음)
+    - 이미 직접 증거가 있는 상위 스킬은 덮어쓰지 않음
+    - 등급은 근거 스킬 중 최고 등급을 따름
+    """
+    if not consensus or neo4j is None:
+        return consensus
+    strong = {
+        skill: info for skill, info in consensus.items()
+        if (info or {}).get("verification") in ("Verified", "Corroborated")
+    }
+    if not strong:
+        return consensus
+    try:
+        covered = neo4j.get_covered_umbrella_skills(list(strong))
+    except Exception:
+        return consensus
+
+    for umbrella, via in (covered or {}).items():
+        name = normalize_skill(umbrella)
+        if name in consensus:
+            continue  # 직접 증거 우선
+        via_known = [v for v in via if normalize_skill(v) in strong]
+        if not via_known:
+            continue
+        grade = ("Verified"
+                 if any(strong[normalize_skill(v)]["verification"] == "Verified" for v in via_known)
+                 else "Corroborated")
+        consensus[name] = {
+            "verification": grade,
+            "evidences": [{
+                "skill": name,
+                "evidence": f"{', '.join(sorted(via_known))} 실증으로 간접 확인 (PART_OF)",
+                "source": "derived",
+                "level_hint": None,
+            }],
+            "flags": [f"간접 실증 — {', '.join(sorted(via_known))} 기반"],
+        }
+    return consensus
+
+
 # 검증 등급 강한 순 (요약 정렬용)
 _GRADE_RANK = {"Verified": 0, "Corroborated": 1, "Claimed": 2}
 
@@ -70,9 +119,14 @@ def build_verification_summary(consensus: dict) -> dict:
     return {"counts": counts, "skills": skills}
 
 
-def create_consensus_node() -> Callable[["AppState"], dict]:
-    """합의 노드 팩토리. 평가자 결과를 합쳐 consensus에 쓴다."""
+def create_consensus_node(neo4j=None) -> Callable[["AppState"], dict]:
+    """합의 노드 팩토리. 평가자 결과를 합쳐 consensus에 쓴다.
+
+    neo4j가 주어지면 PART_OF 체인으로 상위 카테고리 스킬(LLM 등)을 간접 실증한다.
+    """
     def consensus_node(state: "AppState") -> dict:
         outputs = [state[k] for k in ("resume_eval", "github_eval", "portfolio_eval", "deploy_eval") if state.get(k)]
-        return {"consensus": build_consensus(outputs)}
+        consensus = build_consensus(outputs)
+        consensus = expand_umbrella_skills(consensus, neo4j)
+        return {"consensus": consensus}
     return consensus_node

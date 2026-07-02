@@ -61,7 +61,7 @@ def create_supervisor_graph(neo4j, openai_client):
     github_eval    = create_github_evaluator(neo4j, openai_client)
     portfolio_eval = create_portfolio_evaluator(openai_client)
     deploy_eval    = create_deploy_evaluator(neo4j)
-    consensus_node = create_consensus_node()
+    consensus_node = create_consensus_node(neo4j)   # PART_OF 간접 실증 활성화
     critic_node    = create_critic_node(openai_client)
 
     def seed_gap(state: AppState) -> dict:
