@@ -1,6 +1,7 @@
 # Langfuse 트레이싱 데코레이터 — 키 없으면 no-op, 있으면 클라우드 전송
 from __future__ import annotations
 
+import functools
 import os
 import time
 from collections import deque
@@ -42,6 +43,7 @@ def trace(
         # observe()로 Langfuse 계층 적용 (no-op safe)
         fn_with_langfuse = observe(name=trace_name)(fn)
 
+        @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             start = time.perf_counter()
             error_msg = None
@@ -65,8 +67,6 @@ def trace(
                     )
                 )
 
-        wrapper.__name__ = fn.__name__
-        wrapper.__doc__  = fn.__doc__
         return wrapper
 
     return decorator

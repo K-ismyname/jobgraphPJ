@@ -123,6 +123,8 @@ def smart_title(name: str) -> str:
     for i, w in enumerate(words):
         if w.lower() in _KEEP_UPPER:
             result.append(w.upper())
+        elif any(c.isupper() for c in w[1:]):
+            result.append(w)   # 이미 CamelCase/브랜드 표기(PyTorch·GraphQL) → 훼손 없이 보존
         elif i == 0 or w.lower() not in _TITLE_STOP:
             result.append(w.capitalize())
         else:

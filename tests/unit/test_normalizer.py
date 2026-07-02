@@ -55,3 +55,9 @@ def test_normalize_skill_brand_casing():
     assert normalize_skill("dbt") == "dbt"
     assert normalize_skill("css") == "CSS"
     assert normalize_skill("html") == "HTML"
+
+
+def test_normalize_preserves_camelcase_brands():
+    # 사전에 없는 CamelCase 브랜드는 smart_title가 훼손하지 않고 보존해야 함
+    assert normalize_skill("PyTorch Lightning") == "PyTorch Lightning"
+    assert normalize_skill("GraphQL") == "GraphQL"
