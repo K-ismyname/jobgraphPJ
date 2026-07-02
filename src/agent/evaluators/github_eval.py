@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import logging
 import os
 import re
 from typing import TYPE_CHECKING, Callable
@@ -17,6 +18,8 @@ from src.common.text_match import word_match as _word_match, keywords_for as _ke
 if TYPE_CHECKING:
     from src.agent.state import AppState
     from src.storage.neo4j_client import Neo4jClient
+
+logger = logging.getLogger("jobgraph.agent")
 
 # package.json 패키지명 → 표준 스킬명 (생태계 매핑)
 _PKG_TO_SKILL: dict[str, str] = {
@@ -213,7 +216,7 @@ def _select_files_llm(openai, owner: str, repo: str,
         chosen = [p for p in picked if isinstance(p, str) and p in cand_set][:_MAX_FILES]
         return chosen or fallback
     except Exception as e:
-        print(f"[github_eval] LLM 파일 선택 실패, 휴리스틱 fallback: {e}")
+        logger.warning(f"[github_eval] LLM 파일 선택 실패, 휴리스틱 fallback: {e}")
         return fallback
 
 
@@ -238,7 +241,7 @@ def _read_source_tree(owner: str, repo: str, headers: dict, openai=None) -> tupl
             headers=headers, timeout=15
         ).json().get("tree", [])
     except Exception as e:
-        print(f"[github_eval] 파일 트리 조회 실패: {e}")
+        logger.warning(f"[github_eval] 파일 트리 조회 실패: {e}")
         return {}, set()
 
     # 레포 전체 파일 경로 집합 (환각 검증용) + 파일 크기 (큰 파일=핵심 로직 우선용)
@@ -309,7 +312,7 @@ def _validate_project_context(ctx: dict, all_paths: set[str]) -> dict:
         real = [f for f in sa.get("relevant_files", []) if f in all_paths]
         ghost = [f for f in sa.get("relevant_files", []) if f not in all_paths]
         if ghost:
-            print(f"[github_eval] 환각 파일 제거 ({sa.get('skill')}): {ghost}")
+            logger.warning(f"[github_eval] 환각 파일 제거 ({sa.get('skill')}): {ghost}")
         cleaned.append({**sa, "relevant_files": real})
 
     return {**ctx, "skill_assessments": cleaned}
@@ -442,7 +445,7 @@ def _assess_project_and_skills(
             "skill_assessments": skill_assessments,
         }
     except Exception as e:
-        print(f"[github_eval] 프로젝트 분석 실패: {e}")
+        logger.warning(f"[github_eval] 프로젝트 분석 실패: {e}")
         return {}
 
 
@@ -453,10 +456,10 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
         try:
             owner, repo = parse_github_repo(url)
         except ValueError as e:
-            print(f"[github_eval] URL 파싱 실패: {e}")
+            logger.warning(f"[github_eval] URL 파싱 실패: {e}")
             return [], None, None
         if not repo:
-            print(f"[github_eval] 레포 미지정 (계정 주소만): {url}")
+            logger.warning(f"[github_eval] 레포 미지정 (계정 주소만): {url}")
             return [], None, None
 
         token = os.getenv("GITHUB_TOKEN")
@@ -470,7 +473,7 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
         try:
             languages = httpx.get(f"{base}/languages", headers=headers, timeout=10).json()
         except Exception as e:
-            print(f"[github_eval] GitHub API 실패: {e}")
+            logger.warning(f"[github_eval] GitHub API 실패: {e}")
             return [], None, None
         lang_text = " ".join(languages.keys()) if isinstance(languages, dict) else ""
 
@@ -482,7 +485,7 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
                 description = meta.get("description") or ""
                 topics = meta.get("topics") or []
         except Exception as e:
-            print(f"[github_eval] repo 메타 조회 실패: {e}")
+            logger.warning(f"[github_eval] repo 메타 조회 실패: {e}")
 
         # README
         readme_text = ""
@@ -491,7 +494,7 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
             if rd.status_code == 200:
                 readme_text = rd.text
         except Exception as e:
-            print(f"[github_eval] README 조회 실패: {e}")
+            logger.warning(f"[github_eval] README 조회 실패: {e}")
 
         # 루트 의존성/설정 파일 (기존 키워드 매칭용)
         file_names: list = []
@@ -512,7 +515,7 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
                                 if name.lower() == "package.json":
                                     pkg_json_text = body.text
         except Exception as e:
-            print(f"[github_eval] 의존성 파일 조회 실패: {e}")
+            logger.warning(f"[github_eval] 의존성 파일 조회 실패: {e}")
         manifest_text = " ".join(manifest_parts)
 
         # 소스 파일 읽기 (새로 추가)
@@ -566,7 +569,7 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
             return {"github_eval": {"skills": [], "profiles": [], "project_contexts": []}}
         vocab = neo4j.get_job_family_skills(state.get("job_family") or "", exclude_common_threshold=None)
         if not vocab:
-            print(f"[github_eval] 직군 스킬 어휘 없음 (job_family={state.get('job_family')!r})")
+            logger.warning(f"[github_eval] 직군 스킬 어휘 없음 (job_family={state.get('job_family')!r})")
             return {"github_eval": {"skills": [], "profiles": [], "project_contexts": []}}
         # 이력서 스킬도 vocab에 포함 — 직군 밖 스킬도 GitHub에서 검증 가능해야 함
         resume_skills = state.get("resume_skills") or []

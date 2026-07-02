@@ -1,11 +1,14 @@
 # 이력서에서 스킬 증거를 추출하는 평가자 (텍스트 modality)
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from src.agent.state import AppState
 
+
+logger = logging.getLogger("jobgraph.agent")
 
 def create_resume_evaluator(openai_client) -> Callable[["AppState"], dict]:
     """이력서 평가자 팩토리. resume_skills 주입 > pdf > resume_text 순."""
@@ -15,7 +18,7 @@ def create_resume_evaluator(openai_client) -> Callable[["AppState"], dict]:
     def evaluate(state: "AppState") -> dict:
         if state.get("resume_skills"):
             if state.get("pdf_path") or state.get("resume_text"):
-                print("[resume_eval] resume_skills 주입됨 — pdf_path/resume_text는 무시")
+                logger.warning("[resume_eval] resume_skills 주입됨 — pdf_path/resume_text는 무시")
             seen: set[str] = set()
             skills = []
             for s in state["resume_skills"]:
@@ -30,7 +33,7 @@ def create_resume_evaluator(openai_client) -> Callable[["AppState"], dict]:
             try:
                 text = extract_pdf_text(state["pdf_path"])
             except Exception as e:
-                print(f"[resume_eval] PDF 실패: {e}")
+                logger.warning(f"[resume_eval] PDF 실패: {e}")
         # PDF가 없거나·실패·공백이면 resume_text로 fallback
         if not (text and text.strip()) and state.get("resume_text"):
             text = state["resume_text"]
@@ -45,7 +48,7 @@ def create_resume_evaluator(openai_client) -> Callable[["AppState"], dict]:
                 for sec in extraction.sections for sk in sec.skills
             ]
         except Exception as e:
-            print(f"[resume_eval] 추출 실패: {e}")
+            logger.warning(f"[resume_eval] 추출 실패: {e}")
             skills = []
         return {"resume_eval": {"skills": skills}}
 

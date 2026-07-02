@@ -27,11 +27,13 @@ def test_injected_skills_deduped():
     assert names == ["Python", "FastAPI"]
 
 
-def test_injected_skills_logs_ignored_inputs(capsys):
-    # resume_skills 주입 시 pdf/text를 무시한다는 안내 로그
+def test_injected_skills_logs_ignored_inputs(caplog):
+    # resume_skills 주입 시 pdf/text를 무시한다는 안내 로그 (print→logger 전환)
+    import logging
     node = create_resume_evaluator(MagicMock())
-    node({"resume_skills": ["Python"], "pdf_path": "resume.pdf", "resume_text": None})
-    assert "무시" in capsys.readouterr().out
+    with caplog.at_level(logging.WARNING, logger="jobgraph.agent"):
+        node({"resume_skills": ["Python"], "pdf_path": "resume.pdf", "resume_text": None})
+    assert "무시" in caplog.text
 
 
 def _patch_extractors(monkeypatch, pdf_result, captured):

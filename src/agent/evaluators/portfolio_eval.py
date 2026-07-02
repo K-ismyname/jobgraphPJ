@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import time
 from typing import TYPE_CHECKING, Callable
 
@@ -10,6 +11,8 @@ from src.extraction.normalizer import normalize_skill
 
 if TYPE_CHECKING:
     from src.agent.state import AppState
+
+logger = logging.getLogger("jobgraph.agent")
 
 _MODEL = "gpt-4o-mini"          # 텍스트·vision 모두 gpt-4o-mini (vision 지원)
 _MAX_VISION_PAGES = 25          # 이미지 페이지 vision 안전 상한 (텍스트 페이지는 무제한)
@@ -111,7 +114,7 @@ def _call_with_retry(fn, max_retries: int = _MAX_RETRIES, base_wait: float = _RE
             if attempt == max_retries - 1:
                 raise
             wait = base_wait * (2 ** attempt)
-            print(f"[portfolio_eval] 재시도 {attempt + 1}/{max_retries - 1} ({wait:.0f}초 대기): {e}")
+            logger.warning(f"[portfolio_eval] 재시도 {attempt + 1}/{max_retries - 1} ({wait:.0f}초 대기): {e}")
             time.sleep(wait)
 
 
@@ -143,7 +146,7 @@ def create_portfolio_evaluator(openai_client) -> Callable[["AppState"], dict]:
         try:
             page_texts = _extract_page_texts(path)
         except Exception as e:
-            print(f"[portfolio_eval] PDF 열기 실패: {e}")
+            logger.warning(f"[portfolio_eval] PDF 열기 실패: {e}")
             return {"portfolio_eval": {"skills": []}}
 
         text_blob, image_pages = _partition_pages(page_texts)
@@ -158,7 +161,7 @@ def create_portfolio_evaluator(openai_client) -> Callable[["AppState"], dict]:
                 ))
                 all_skills += _skills_from_vision(_parse(resp.choices[0].message.content))
             except Exception as e:
-                print(f"[portfolio_eval] 텍스트 분석 실패: {e}")
+                logger.warning(f"[portfolio_eval] 텍스트 분석 실패: {e}")
 
         # 이미지 페이지 → 페이지별 vision (상한)
         capped = image_pages[:_MAX_VISION_PAGES]
@@ -166,7 +169,7 @@ def create_portfolio_evaluator(openai_client) -> Callable[["AppState"], dict]:
             try:
                 images = _render_pages(path, capped)
             except Exception as e:
-                print(f"[portfolio_eval] 이미지 렌더 실패: {e}")
+                logger.warning(f"[portfolio_eval] 이미지 렌더 실패: {e}")
                 images = []
             for img in images:
                 b64 = base64.b64encode(img).decode()
@@ -181,9 +184,9 @@ def create_portfolio_evaluator(openai_client) -> Callable[["AppState"], dict]:
                     ))
                     all_skills += _skills_from_vision(_parse(resp.choices[0].message.content))
                 except Exception as e:
-                    print(f"[portfolio_eval] 이미지 페이지 분석 실패: {e}")
+                    logger.warning(f"[portfolio_eval] 이미지 페이지 분석 실패: {e}")
         if len(image_pages) > _MAX_VISION_PAGES:
-            print(f"[portfolio_eval] vision 상한 {_MAX_VISION_PAGES} 초과 — "
+            logger.warning(f"[portfolio_eval] vision 상한 {_MAX_VISION_PAGES} 초과 — "
                   f"{len(image_pages) - _MAX_VISION_PAGES}장 미분석")
 
         return {"portfolio_eval": {"skills": _merge_skills(all_skills)}}

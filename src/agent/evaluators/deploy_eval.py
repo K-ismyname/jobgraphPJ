@@ -1,6 +1,7 @@
 # 배포 URL을 fetch해 작동 실증 + 프론트 기술을 추출하는 평가자 (웹 modality)
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Callable
 
 import httpx
@@ -11,6 +12,8 @@ if TYPE_CHECKING:
     from src.agent.state import AppState
     from src.storage.neo4j_client import Neo4jClient
 
+
+logger = logging.getLogger("jobgraph.agent")
 
 def _build_text(html: str, headers: dict[str, str]) -> str:
     """HTML 본문 + 응답 헤더를 매칭용 소문자 텍스트로 합친다."""
@@ -47,7 +50,7 @@ def create_deploy_evaluator(neo4j: "Neo4jClient") -> Callable[["AppState"], dict
                              headers={"User-Agent": "Mozilla/5.0 (job-skill-analyzer)"})
             resp.raise_for_status()
         except Exception as e:
-            print(f"[deploy_eval] URL fetch 실패 (미작동/접근불가): {e}")
+            logger.warning(f"[deploy_eval] URL fetch 실패 (미작동/접근불가): {e}")
             return []
         text = _build_text(resp.text, dict(resp.headers))
         return _skills_from_deploy(text, vocab)
@@ -58,7 +61,7 @@ def create_deploy_evaluator(neo4j: "Neo4jClient") -> Callable[["AppState"], dict
             return {"deploy_eval": {"skills": []}}
         vocab = neo4j.get_job_family_skills(state.get("job_family") or "")
         if not vocab:
-            print(f"[deploy_eval] 직군 스킬 어휘 없음 (job_family={state.get('job_family')!r})")
+            logger.warning(f"[deploy_eval] 직군 스킬 어휘 없음 (job_family={state.get('job_family')!r})")
             return {"deploy_eval": {"skills": []}}
         merged: list = []
         seen: set = set()
