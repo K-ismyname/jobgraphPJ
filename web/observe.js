@@ -123,7 +123,7 @@ function stageData(key, t, report) {
       `<div><b>${esc(e.source)}</b> (${e.skill_count}): ${(e.skills || []).map((s) => esc(s.skill)).join(", ")}</div>`).join("") || "없음";
   if (key === "consensus")
     return ((t.consensus && t.consensus.skills) || []).map((s) =>
-      `<div class="skill-row"><span>${esc(s.skill)}</span><span class="badge ${s.verification}">${esc(s.verification)}</span><span class="src">${(s.sources || []).map(esc).join(", ")}</span></div>`).join("") || "없음";
+      `<div class="skill-row"><span>${esc(s.skill)}</span><span class="badge ${esc(s.verification)}">${esc(s.verification)}</span><span class="src">${(s.sources || []).map(esc).join(", ")}</span></div>`).join("") || "없음";
   if (key === "gap_loop")
     return `도구: ${(t.gap_loop && t.gap_loop.tool_calls || []).map(esc).join(", ") || "없음"} · 반복 ${(t.gap_loop && t.gap_loop.iterations) || 0}회`;
   if (key === "fit") {

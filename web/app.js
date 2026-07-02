@@ -152,7 +152,7 @@ const TRUST_LEGEND = `
 function renderSkillBadges(met) {
   // 충족한 스킬만 표시 — 미충족은 '배우면 좋은 연계 스킬' 섹션에서 다룬다.
   return (met || []).map((m) =>
-    `<span class="cap met">${esc(m.skill)} ✓ <span class="badge ${m.verification}">${trustKo(m.verification)}</span></span>`).join("");
+    `<span class="cap met">${esc(m.skill)} ✓ <span class="badge ${esc(m.verification)}">${trustKo(m.verification)}</span></span>`).join("");
 }
 
 // 4. 결과 렌더 — 5개 스킬 구조 (충족 / 채울 것 / 보강)
