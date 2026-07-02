@@ -46,7 +46,7 @@ def create_supervisor_graph(neo4j, openai_client):
     from src.agent.gap_agent import create_gap_graph
     from src.agent.coach_agent import create_coach_graph
 
-    from src.agent.nodes import create_nodes
+    from src.agent.nodes import create_synthesizer
 
     gap_tools   = create_tools(neo4j)
     coach_tools = create_coach_tools(neo4j)
@@ -55,8 +55,8 @@ def create_supervisor_graph(neo4j, openai_client):
     gap_graph   = create_gap_graph(gap_tools)
     coach_graph = create_coach_graph(coach_tools)
 
-    # synthesizer — AppState에서 실행해야 coach_messages가 AppState에 직접 반영됨
-    _, synthesizer = create_nodes(gap_tools)
+    # synthesizer — AppState에서 실행해야 coach_messages가 AppState에 직접 반영됨 (툴 불필요)
+    synthesizer = create_synthesizer()
 
     resume_eval    = create_resume_evaluator(openai_client)
     github_eval    = create_github_evaluator(neo4j, openai_client)

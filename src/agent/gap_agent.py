@@ -17,9 +17,9 @@ def create_gap_graph(gap_tools: list["BaseTool"]):
     Supervisor가 consensus 결과를 GapState로 변환해 넘기면,
     GapAgent가 Neo4j 툴로 갭을 분석하고 gap_result를 반환한다.
     """
-    from src.agent.nodes import create_nodes, make_tools_node
+    from src.agent.nodes import create_call_model, make_tools_node
 
-    call_model, _ = create_nodes(gap_tools)
+    call_model = create_call_model(gap_tools)
     tools_node = make_tools_node(gap_tools)
 
     def route_gap_loop(state: GapState) -> str:

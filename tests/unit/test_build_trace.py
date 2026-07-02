@@ -36,7 +36,20 @@ def test_build_trace_assembles_from_state():
     # 실행 노드
     assert "resume_eval" in t["executed_nodes"] and "github_eval" in t["executed_nodes"]
     assert "consensus" in t["executed_nodes"] and "critic" in t["executed_nodes"]
+    # 툴 호출이 있었으므로 call_model·tools 둘 다 실행 흔적에 포함
+    assert "call_model" in t["executed_nodes"] and "tools" in t["executed_nodes"]
     assert t["coach"]["project_suggestion_count"] == 3
+
+
+def test_build_trace_tools_excluded_when_no_tool_calls():
+    # gap_result는 있으나 툴 호출이 0이면 'tools'는 실행 흔적에 넣지 않는다(추정 금지)
+    state = {
+        "gap_result": {"skills": [], "missing_required": []},
+        "gap_trace": {"tool_calls": [], "iterations": 1},
+    }
+    t = _build_trace(state)
+    assert "call_model" in t["executed_nodes"]   # 루프 진입 시 항상 실행
+    assert "tools" not in t["executed_nodes"]     # 실제 호출 없음 → 제외
 
 
 def test_build_trace_empty_state_safe():

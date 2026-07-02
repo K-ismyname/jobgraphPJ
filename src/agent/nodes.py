@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
@@ -13,6 +14,14 @@ from src.agent.state import AppState
 if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
     from src.storage.neo4j_client import Neo4jClient
+
+
+@lru_cache(maxsize=1)
+def _get_gap_llm() -> ChatOpenAI:
+    """Gap 에이전트용 LLM (call_model·synthesizer 공유) — 팩토리 중복 호출에도 1개만 생성."""
+    if not os.getenv("OPENAI_API_KEY"):
+        raise EnvironmentError("OPENAI_API_KEY 환경변수가 필요합니다.")
+    return ChatOpenAI(model="gpt-4o-mini", temperature=0, max_retries=6)
 
 # ── Gap Agent 프롬프트 ────────────────────────────────────────────
 _GAP_SYSTEM_PROMPT = """당신은 AI 커리어 분석 전문가입니다.
@@ -254,7 +263,11 @@ def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
 
     executed.append("synthesizer")  # Supervisor 레벨 노드 — 항상 실행됨
     if state.get("gap_result"):
-        executed += ["seed_gap", "gap_agent", "call_model", "tools"]
+        # call_model은 gap 루프 진입 시 항상 실행되지만, tools는 실제 툴 호출이
+        # 있었을 때만(gap_trace.tool_calls로 실측). 추정 대신 실행 흔적으로 판정.
+        executed += ["seed_gap", "gap_agent", "call_model"]
+        if tool_calls:
+            executed.append("tools")
 
     critic = state.get("critic_report") or {}
     removed = critic.get("removed_claims") or []
@@ -336,19 +349,22 @@ def _apply_deterministic_metrics(report: dict, consensus: dict, tool_results: li
     return report
 
 
-def create_nodes(tools: list["BaseTool"]):
-    """Gap Agent 노드 팩토리 — call_model, generate_report 반환."""
-    if not os.getenv("OPENAI_API_KEY"):
-        raise EnvironmentError("OPENAI_API_KEY 환경변수가 필요합니다.")
-
-    _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_retries=6)
-    _llm_with_tools = _llm.bind_tools(tools)
+def create_call_model(tools: list["BaseTool"]):
+    """Gap ReAct 루프의 call_model 노드 팩토리 (툴 바인딩 필요)."""
+    _llm_with_tools = _get_gap_llm().bind_tools(tools)
 
     def call_model(state: AppState) -> dict:
         iteration = state.get("iteration", 0) + 1
         system = SystemMessage(content=_GAP_SYSTEM_PROMPT)
         response = _llm_with_tools.invoke([system] + list(state["messages"]))
         return {"messages": [response], "iteration": iteration}
+
+    return call_model
+
+
+def create_synthesizer():
+    """Gap 루프 결과 → gap_result 리포트 생성 노드 팩토리 (툴 불필요, 기본 LLM 사용)."""
+    _llm = _get_gap_llm()
 
     def generate_report(state: AppState) -> dict:
         """Gap 루프 툴 결과를 수집해 gap_result JSON을 생성하고 Coach 초기 메시지를 세팅한다."""
@@ -449,7 +465,7 @@ def create_nodes(tools: list["BaseTool"]):
             "coach_iteration": 0,
         }
 
-    return call_model, generate_report
+    return generate_report
 
 
 def make_tools_node(tools_list: list):
