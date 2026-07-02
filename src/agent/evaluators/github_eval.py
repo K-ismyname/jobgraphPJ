@@ -21,6 +21,21 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("jobgraph.agent")
 
+
+def _get_json(url: str, headers: dict, timeout: float = 10):
+    """GitHub API를 호출하고 응답을 JSON으로 반환한다. 4xx/5xx는 예외로 승격.
+
+    GitHub은 rate limit(403)·not found(404)에도 유효한 JSON 본문
+    ({"message": "API rate limit exceeded...", ...})을 반환한다. status_code를
+    확인하지 않고 .json()만 호출하면 예외가 안 나서 이 에러 본문을 실제 데이터인 양
+    파싱해버린다(예: languages 대신 {"message":...}.keys()로 lang_text를 만듦) —
+    호출부의 except가 못 잡고 조용히 빈 결과로 이어지는 원인이었다.
+    """
+    resp = httpx.get(url, headers=headers, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
 # package.json 패키지명 → 표준 스킬명 (생태계 매핑)
 _PKG_TO_SKILL: dict[str, str] = {
     # Database ORMs / drivers → underlying DB
@@ -231,16 +246,14 @@ def _read_source_tree(owner: str, repo: str, headers: dict, openai=None) -> tupl
 
     # 기본 브랜치 확인
     try:
-        default_branch = httpx.get(base, headers=headers, timeout=10).json().get("default_branch", "main")
-    except Exception:
+        default_branch = _get_json(base, headers).get("default_branch", "main")
+    except Exception as e:
+        logger.warning(f"[github_eval] 기본 브랜치 조회 실패, main으로 진행: {e}")
         default_branch = "main"
 
     # 재귀 파일 트리
     try:
-        tree = httpx.get(
-            f"{base}/git/trees/{default_branch}?recursive=1",
-            headers=headers, timeout=15
-        ).json().get("tree", [])
+        tree = _get_json(f"{base}/git/trees/{default_branch}?recursive=1", headers, timeout=15).get("tree", [])
     except Exception as e:
         logger.warning(f"[github_eval] 파일 트리 조회 실패: {e}")
         return {}, set()
@@ -472,16 +485,16 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
 
         # 주 언어
         try:
-            languages = httpx.get(f"{base}/languages", headers=headers, timeout=10).json()
+            languages = _get_json(f"{base}/languages", headers)
         except Exception as e:
-            logger.warning(f"[github_eval] GitHub API 실패: {e}")
+            logger.warning(f"[github_eval] GitHub API 실패 (languages, {owner}/{repo}): {e}")
             return [], None, None
         lang_text = " ".join(languages.keys()) if isinstance(languages, dict) else ""
 
         # repo 메타
         description, topics = "", []
         try:
-            meta = httpx.get(base, headers=headers, timeout=10).json()
+            meta = _get_json(base, headers)
             if isinstance(meta, dict):
                 description = meta.get("description") or ""
                 topics = meta.get("topics") or []
@@ -502,7 +515,7 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
         manifest_parts: list[str] = []
         pkg_json_text = ""
         try:
-            root = httpx.get(f"{base}/contents", headers=headers, timeout=10).json()
+            root = _get_json(f"{base}/contents", headers)
             if isinstance(root, list):
                 file_names = [it["name"] for it in root]
                 for it in root:
