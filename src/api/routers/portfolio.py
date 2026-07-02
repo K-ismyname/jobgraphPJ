@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
 from src.api.deps import get_graph, get_neo4j, get_reports, get_uploads
 from src.api.schemas import (
@@ -86,7 +87,8 @@ async def upload_resume(
         tmp.write(content)
         tmp_path = tmp.name
     try:
-        text, page_count = extract_pdf_info(tmp_path)
+        # pdfplumber는 CPU 바운드 블로킹 — 스레드풀로 오프로드해 이벤트 루프 보호
+        text, page_count = await run_in_threadpool(extract_pdf_info, tmp_path)
     except ValueError as e:
         raise HTTPException(422, str(e))
     finally:
@@ -114,13 +116,18 @@ async def upload_portfolio(
     content = await file.read()
     if len(content) > _MAX_PDF_BYTES:
         raise HTTPException(413, "파일 크기는 10MB 이하여야 합니다.")
-    import pdfplumber
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
+
+    def _page_count(path: str) -> int:
+        import pdfplumber
+        with pdfplumber.open(path) as pdf:
+            return len(pdf.pages)
+
     try:
-        with pdfplumber.open(tmp_path) as pdf:
-            page_count = len(pdf.pages)
+        # 블로킹 PDF 파싱을 스레드풀로 오프로드
+        page_count = await run_in_threadpool(_page_count, tmp_path)
     except Exception:
         os.unlink(tmp_path)
         raise HTTPException(422, "PDF를 열 수 없습니다.")
@@ -131,8 +138,10 @@ async def upload_portfolio(
     )
 
 
+# 동기 neo4j.list_job_families()를 호출하므로 def — 스레드풀 실행으로 이벤트 루프 보호.
+# BackgroundTasks는 def 핸들러에서도 정상 동작한다.
 @router.post("/analyze", response_model=AnalyzeAccepted)
-async def analyze_portfolio(
+def analyze_portfolio(
     req: AnalyzeRequest,
     background_tasks: BackgroundTasks,
     uploads: dict = Depends(get_uploads),

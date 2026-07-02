@@ -47,8 +47,10 @@ LIMIT $top_n
 """
 
 
+# 동기 Neo4j 드라이버를 쓰므로 def로 정의 — FastAPI가 스레드풀에서 실행해
+# 이벤트 루프를 막지 않는다 (async def면 DB 왕복 동안 서버 전체가 멈춤).
 @router.get("", response_model=JobsResponse)
-async def list_jobs(
+def list_jobs(
     query: JobsQuery = Depends(),
     neo4j: Neo4jClient = Depends(get_neo4j),
 ) -> JobsResponse:
@@ -82,7 +84,7 @@ async def list_jobs(
 
 
 @router.get("/trending-skills", response_model=TrendingSkillsResponse)
-async def trending_skills(
+def trending_skills(
     query: TrendingSkillsQuery = Depends(),
     neo4j: Neo4jClient = Depends(get_neo4j),
 ) -> TrendingSkillsResponse:
@@ -113,7 +115,7 @@ async def trending_skills(
 
 
 @router.get("/salary", response_model=SalaryResponse)
-async def salary_analysis(
+def salary_analysis(
     query: SalaryQuery = Depends(),
     neo4j: Neo4jClient = Depends(get_neo4j),
 ) -> SalaryResponse:
