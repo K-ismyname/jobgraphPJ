@@ -1070,3 +1070,40 @@ RAGAS 파이프라인은 v3에서 실행됐으나(`run_analysis`가 반환하는
 
 - HF Spaces 재배포 필요 — 이번 수정사항 전부 아직 라이브 반영 안 됨.
 - 데이터 정합성 개선(멱등 적재)은 코드만 고쳤을 뿐, 기존에 이미 부풀려진 Neo4j 프로덕션 카운터 자체를 재계산/백필하지는 않음(필요 시 별도 작업).
+
+---
+
+## [2026-07-03] 코칭 신뢰성 실사용 검증 — 오탐·환각 근절 + GitHub API 근본 버그 (7개 커밋)
+
+### 작업 절차
+
+1. **실사용자 리포트로 시작**: 라이브 데모에서 실제 코칭 결과를 사용자가 직접 리뷰 요청. "이 결과 어때?" 질문에 코드 대조 없이 답하지 않고, 매번 GitHub API·Neo4j로 직접 검증 후 답변.
+2. **langgraph 0.x→1.x 재고정**: HF 재배포 직후 `ValueError: 'resume_eval' is already being used as a state key`로 RUNTIME_ERROR. AppState 필드명과 노드명이 같은 설계가 langgraph 0.x 전 버전(0.1.19~0.2.76 직접 설치해 재현 확인)의 add_node 검증에 걸림 — 1.2.7부터 통과. 이전 세션에 langchain 버전 드리프트를 "0.3.x 세대가 맞다"로 오진단했던 게 원인 — 실제로는 원래 `langgraph>=1.0.0`(무상한)이 맞았고, core만 구버전으로 남은 부분 업그레이드 불일치가 진짜 문제였음. 실제 그래프 컴파일을 실행하는 회귀 테스트 추가(기존 테스트는 전부 mock이라 이 버그를 못 잡았음).
+3. **PART_OF 간접 실증**: "LangGraph로 멀티에이전트 RAG를 짰는데 'LLM 경험 부족' 코칭"이라는 사용자 실사례 재현. 스킬 매칭이 리터럴 이름 비교인 게 원인 — PART_OF 시드에 LangChain/OpenAI API/RAG→LLM→GenAI→AI 카테고리 체인 추가, consensus에 `expand_umbrella_skills`로 검증된 구체 스킬이 상위 스킬을 간접 실증하게 함.
+4. **코칭 텍스트 파일 경로 환각 차단**: project_suggestions.how가 실존하지 않는 `src/agent/supervisor.py` 등을 지목. github_eval의 relevant_files 검증과 같은 원칙을 코칭 텍스트에도 적용(`scrub_invented_paths`) — 레포 전체 경로와 대조해 없는 파일 언급 시 project_suggestions는 항목 제거, learning은 해당 문장만 제거.
+5. **reason 결정적 조립 (근본 해결)**: "일반론(생각 없이 쓴 문장)·환각(파일 지어내기)·맥락 단절(BigQuery 쓰는데 PostgreSQL 학습하라)"이 각각의 버그가 아니라 "코칭 텍스트만 이 시스템의 증거→생성→검증 루프 밖에 있다"는 한 가지 근본 원인의 증상이라고 진단. `build_deterministic_reasons`(learning) + `build_deterministic_project_reasons`(project_suggestions)로 reason을 공고 발췌·요구 건수·CO_OCCURS 보유 스킬 연결·relevant_files·current_usage 같은 **그래프 사실만으로 조립** — LLM은 문장만 다듬고 사실은 코드가 공급.
+6. **약한 직접 증거가 강한 간접 실증을 막던 버그**: "AI(보유)"가 실제 배포에서 재현됨. `expand_umbrella_skills`가 `name in consensus`면 등급 상관없이 건너뛰어, 이력서에 "AI" 한 단어만 있어도(Claimed) LangGraph(Verified) 기반 간접 실증이 막힘. 등급 순위 비교로 교체.
+7. **발췌 절단이 키워드를 잘라먹던 문제**: "Docker 발췌인데 Docker가 안 보임" 재현. 앞에서 90자 자르던 걸 키워드 위치 중심으로 창을 잡는 `_excerpt_around_keyword`로 교체.
+8. **GitHub API 403 오탐 근본 버그 (가장 큰 발견)**: GITHUB_TOKEN 연동해도 계속 "Python(보유)"만 나옴. HF Space 실시간 로그를 직접 조회(`/api/spaces/.../logs/run`)해 사용자의 실제 분석 요청(payload 확인 포함)을 추적 — github_eval 로그가 단 한 줄도 없다는 게 단서. 원인: GitHub이 rate limit(403)에도 `{"message": "API rate limit exceeded"}` 같은 **유효한 JSON**을 반환하는데, `httpx.get(...).json()`만 호출하고 status_code를 확인 안 해 예외가 안 남 — 이 에러 dict를 실제 언어 통계인 양 파싱해버림(`lang_text = "message documentation_url"`). "실패"가 아니라 "성공적으로 틀린 데이터 사용"이라 로그도 안 남았던 것. `_get_json()` 헬퍼(raise_for_status 포함)로 5개 호출 지점 통일. 사용자가 HF Secrets에 GITHUB_TOKEN 추가(60/시간 → 5000/시간)로 재발 확률도 낮춤.
+9. **"how" 필드 사실 왜곡 발견 후 전략적 중단**: 재검증에서 Python이 마침내 "검증됨"으로 나오고 project_suggestions가 실제 파일·패턴을 정확히 인용하는 것 확인. 그런데 PostgreSQL의 "how"가 "현재 프로젝트에서 데이터 저장소로 PostgreSQL을 활용하여"라고 사실과 다르게 서술(실제는 BigQuery). 사용자가 "하나씩 고치는 게 안 끝나지 않을까?"라고 질문 — 데이터 부재가 아니라 "같은 응답 안에서 ③번이 이미 알아낸 사실을 ②번 쓸 때 참조 안 하는" 일관성 문제로 진단. 자유 서술문 내부 일관성은 결정적 검증이 안 되는(문장이 무한히 변형 가능) 유형이라고 판단해 여기서 중단 결정.
+
+### 발생 문제
+
+- **모노레포 커밋 오염**: `/Users/leegahee/workspace`가 git 루트라 `git log -- progress.md`가 병렬로 진행 중인 다른 프로젝트(da_agent)의 커밋까지 섞어 보여줌 — `-- pj1/progress.md`로 전체 경로 지정해야 정확.
+- **로그만으로는 확정 불가능한 지점들**: HF Space 로그 스트림이 SSE 버퍼라 오래된 구간이 유실될 수 있어, "GitHub URL이 전송 안 됐다" vs "전송됐지만 처리 실패"를 로그만으로 못 가름 — 사용자에게 브라우저 Network 탭 확인을 요청해 payload를 직접 받아 확정.
+- **얕은 스캔과 깊은 스캔의 비대칭**: `_skills_from_sources`(빠른 키워드 매칭)는 레포 루트만 스캔하는데 `_read_source_tree`(LLM 심층 분석)는 레포 전체를 재귀로 훑음 — da_agent의 `agent_backend/requirements.txt`(중첩 경로)가 전자에는 안 잡혀 LangGraph가 Verified 대신 Corroborated로 판정됨(부분 개선, 미해결로 기록만).
+
+### 해결 방법 / 결론
+
+- **"실제로 확인 후 답하라"는 이번 세션 전체의 태도**: 사용자가 보여준 코칭 결과·재배포 상태를 코드 읽기만으로 판단하지 않고, 매번 Neo4j 직접 쿼리·GitHub API 직접 호출·HF Space 실시간 로그 조회로 가설을 검증한 뒤 답변. "AI(보유)"·"GitHub URL 반영 안 됨"·"Python 검증 안 됨" 전부 이 방식으로 실제 원인을 찾음(추측으로 답했다면 최소 2개는 틀렸을 것).
+- **결정적 방어의 적용 범위를 알아야 함**: 구조화된 값(등급·경로·건수)은 결정적으로 완전히 막을 수 있지만, 자유 서술문의 내부 일관성은 근본적으로 다른 문제 — 이 경계를 인식하고 후자에서 전략적으로 멈추는 것도 올바른 엔지니어링 판단.
+- **거짓 음성(false negative)도 거짓 양성만큼 중요**: "LLM 부족"(가진 걸 없다고 함)은 "이 파일에 이 기능이 있다"(없는 걸 있다고 함)는 고전적 환각과 반대 방향이지만 신뢰 서사에 동일하게 치명적 — 두 방향 모두 이번에 방어됨.
+
+### 커밋 (feat/multi-agent, 7개 — pj1 경로만)
+
+langgraph 1.x 재고정 · PART_OF 간접 실증 · 파일경로 환각 차단 · reason 결정적 조립(learning) · 약한직접증거 버그수정 · project_suggestions 근거화+발췌절단수정 · GitHub API 403 근본버그수정.
+
+### 남은 과제
+
+- learning_recommendations의 "how" 필드 사실 왜곡(예: 실제 스택과 다른 기술을 "현재 사용 중"이라 서술) — 전략적으로 미해결 유지. 재발 시 "이미 확인된 기술 스택" 한 줄 요약을 코칭 프롬프트 최상단에 주입하는 일반화된 가드 고려.
+- `_skills_from_sources`의 매니페스트 스캔이 레포 루트만 확인 — 중첩된 requirements.txt/package.json을 놓쳐 일부 스킬이 Verified 대신 Corroborated로 저평가될 수 있음.
