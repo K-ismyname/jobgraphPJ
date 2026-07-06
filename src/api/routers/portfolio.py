@@ -33,7 +33,7 @@ logger = logging.getLogger("jobgraph.api")
 
 _MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MB
 
-# 데모 비용 보호 — 방문자 하루 분석 횟수 상한(메모리, 날짜 바뀌면 리셋). 기본 3회.
+# 데모 비용 보호 — 방문자 하루 분석 횟수 상한(메모리, 날짜 바뀌면 리셋). 기본 1회.
 # DEMO_DAILY_LIMIT=0이면 무제한. 관리자(ACCESS_KEY 일치/로컬)는 이 상한을 타지 않음.
 _demo_usage: dict = {"date": None, "count": 0}
 
@@ -42,7 +42,7 @@ def _is_admin(key: str) -> bool:
     """관리자 여부 — env ACCESS_KEY 미설정(로컬)이거나 키가 맞으면 무제한.
 
     공개 배포는 HF 시크릿 ACCESS_KEY로 설정 → 관리자는 무제한,
-    방문자는 일일 상한(기본 3회) 내에서 이용(과금 보호).
+    방문자는 일일 상한(기본 1회) 내에서 이용(과금 보호).
     """
     expected = os.getenv("ACCESS_KEY")
     # 타이밍 세이프 비교 — 문자열 == 는 조기 종료로 키 길이·prefix가 새어나갈 수 있음
@@ -51,7 +51,7 @@ def _is_admin(key: str) -> bool:
 
 def _enforce_daily_limit() -> None:
     """오늘 분석 횟수가 상한을 넘으면 429를 던지고, 아니면 카운트를 1 올린다."""
-    limit = int(os.getenv("DEMO_DAILY_LIMIT", "3") or "3")
+    limit = int(os.getenv("DEMO_DAILY_LIMIT", "1") or "1")
     if limit <= 0:
         return
     today = datetime.now(timezone.utc).date().isoformat()

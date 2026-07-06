@@ -10,15 +10,13 @@ def _reset(date=None, count=0):
 
 
 def test_defaults_to_three_when_unset(monkeypatch):
-    # DEMO_DAILY_LIMIT 미설정이면 safe-by-default로 기본 3회 제한 (무제한은 =0 센티넬).
+    # DEMO_DAILY_LIMIT 미설정이면 safe-by-default로 기본 1회 제한 (무제한은 =0 센티넬).
     # 로컬 무제한은 _is_admin(ACCESS_KEY 미설정 시 True)이 담당하므로 이 함수는 prod 경로용.
     monkeypatch.delenv("DEMO_DAILY_LIMIT", raising=False)
     _reset()
     p._enforce_daily_limit()  # 1
-    p._enforce_daily_limit()  # 2
-    p._enforce_daily_limit()  # 3
     with pytest.raises(HTTPException) as ei:
-        p._enforce_daily_limit()  # 4 → 초과
+        p._enforce_daily_limit()  # 2 → 초과
     assert ei.value.status_code == 429
 
 
