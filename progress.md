@@ -4,6 +4,71 @@
 
 ---
 
+## [2026-07-07]
+
+### 작업 절차
+1. `scripts/collect_muse.py` → `src/ingestion/preprocessor.py` → `src/ingestion/pipeline.py` →
+   `src/extraction/skill_extractor.py`/`normalizer.py` → `src/storage/neo4j_client.py` 순으로
+   Layer 1·2(수집·저장) 전체 코드 리뷰 및 상세 주석 추가
+2. `src/agent/` 전체(Layer 3, 12개 파일) 코드 리뷰 및 상세 주석 추가 —
+   state.py, evaluators/(resume·github·portfolio·deploy), consensus.py, critic.py,
+   gap_agent.py, nodes.py, tools.py, coach_agent.py, supervisor.py
+3. 리뷰 중 발견한 문제 6건을 TODO.md에 기록 후 순서대로 수정
+4. Layer 4(`src/analysis/`, `src/portfolio/pdf_parser.py`)·Layer 5(`src/evaluation/`) 코드 리뷰 및
+   상세 주석 추가 — capability.py, salary_analyzer.py, pdf_parser.py, langfuse_tracer.py, ragas_eval.py
+5. Layer 6(`src/api/`) 코드 리뷰 및 상세 주석 추가 — main.py, deps.py, routers/jobs.py,
+   routers/portfolio.py, schemas.py, routers/system.py (전체 6개 파일 완료, Layer 1~6 리뷰 종료)
+6. 리뷰 완료 후 재점검하며 portfolio.py에서 동시성 버그 2건 추가 발견 후 수정
+
+### 발생 문제
+- `scripts/collect_muse.py`의 `is_relevant()`가 제목에 "engineer"만 있으면 통과시켜
+  배관공·기계 엔지니어·IT 헬프데스크 같은 무관한 직군이 섞여 들어옴
+- `src/agent/supervisor.py`의 `run_supervisor()` — `verified_names` 계산이
+  `consensus.get("skills", [])`를 호출하는데 consensus는 `{스킬명: {...}}` 형태라 "skills" 키가
+  없어 항상 빈 리스트 → `recommend_job_postings`의 "검증된 스킬 우선" 로직이 항상 무력화됨
+- `src/agent/nodes.py`의 gap_agent ReAct 루프 마지막 턴 — LLM이 생성한 텍스트가 어디서도 안 읽히는데
+  생성 비용(토큰)은 매번 실제로 발생
+- `src/portfolio/github_connector.py` — `parse_github_username()`(죽은 코드), `_SKILL_KEYWORDS`가
+  `normalizer.py`의 `SKILL_ALIASES`와 통합 안 된 별도 시스템, `logger` 대신 `print()` 사용
+- `src/agent/tools.py`의 `_PORTFOLIO_SKILLS_QUERY` — 정의만 되고 어디서도 실행 안 되는 죽은 상수
+- `src/evaluation/ragas_eval.py`의 `_report_to_natural_text()` — 정의만 되고 어디서도 호출 안 되는
+  죽은 코드 (리포트 전체를 통째로 평가하던 옛 방식의 흔적으로 추정)
+- `src/api/schemas.py`의 `ErrorResponse` — 죽은 코드, `VerificationItem.verification`이 `str`이라
+  값 제한 없이 아무 문자열이나 받을 수 있었음 (`InterviewCoaching.type`은 Literal인데 스타일 불일치)
+- `src/api/routers/portfolio.py`의 `_demo_usage` 일일 한도 카운터 — "확인 후 증가"가 원자적이지
+  않아, `def`(동기) 핸들러가 여러 스레드에서 동시 실행될 때 하루 한도(기본 1회)를 넘길 수 있는
+  경쟁 조건(race condition)
+- 같은 파일에서 포트폴리오 임시 PDF 재사용 문제 — 같은 `portfolio_report_id`로 두 번째 분석을
+  요청하면, 첫 분석 종료 시 이미 삭제된 파일 경로를 조용히 참조해 에러 없이 빈 결과만 나옴
+
+### 해결 방법
+- `preprocessor.py`의 `_NON_TECH_TITLE_KEYWORDS`에 `field engineer`/`support engineer`/`it support` 추가
+- `supervisor.py`: `.get("skills", [])` 대신 `consensus_dict.items()`를 직접 순회하도록 수정
+- `nodes.py`의 `_GAP_SYSTEM_PROMPT` 5번 규칙에 "마지막 턴은 '분석 완료'처럼 한 단어로 답하라" 명시
+  (ponytail: 코드 강제가 아닌 프롬프트 지시 — max_tokens 강제 시 도구 호출 인자가 잘릴 위험이 있어 보류)
+- `github_connector.py`: `parse_github_username()` 삭제, `_SKILL_KEYWORDS`와 `keywords_for()`를
+  합집합으로 통합(단순 교체 시 9개 스킬에서 키워드 유실 확인해 합집합 방식 선택), `print()` → `logger`
+- `tools.py`: `_PORTFOLIO_SKILLS_QUERY` 삭제
+- `boost_confidence_from_github()`(테스트는 있으나 프로덕션 미연결)는 State 스키마 확장이 필요한
+  별도 기능 추가 사안이라 "그대로 두기"로 결정 (사용자 확인)
+- `ragas_eval.py`: `_report_to_natural_text()` 삭제
+- `schemas.py`: `ErrorResponse` 삭제, `VerificationItem.verification`을
+  `Literal["Verified", "Corroborated", "Claimed"]`로 좁힘 (consensus.py가 이 세 값만 만드는 걸 확인 후)
+- `portfolio.py`: `threading.Lock`으로 `_demo_usage` 확인+증가를 원자적으로 묶음
+- `portfolio.py`: `analyze_portfolio`에서 포트폴리오 경로가 없거나 파일이 실존하지 않으면 404로
+  명확히 거절하도록 추가, `_run_analysis` 완료 후 `uploads`에서 해당 항목도 함께 제거
+
+### 결과
+- 수정 전부 `py_compile` 문법 검증 통과
+- `test_preprocessor.py`(27) / `test_github_boost.py`(2) / `test_job_family_guard.py`(3) /
+  `test_supervisor_graph_builds.py`(1) / `test_ragas_eval.py`(4) / `test_api_schemas.py`(2) /
+  `test_api_mapping.py`+`test_consensus.py`+`test_umbrella_skills.py`(25) /
+  `test_demo_limit.py`+`test_progress_phase.py`+`test_upload_validation.py`(포함 14) 전부 통과
+- TODO.md "고칠 부분" 11건 전부 처리(수정 9건 + 정책 결정 2건: 보류·통합)
+- 남은 항목: `levels`/`publication_date` 필드 미활용(버그 아닌 기능 아이디어)
+
+---
+
 ## [2026-06-29]
 
 ### 작업 절차
