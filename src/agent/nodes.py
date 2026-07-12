@@ -812,8 +812,14 @@ def make_tools_node(tools_list: list):
             # 한 번의 LLM 응답에 여러 도구 호출이 동시에 들어있을 수 있어서(예: verify_skills를
             # 한 번에 여러 인자로) for문으로 하나씩 처리
             fn = tool_map[tc["name"]]
+            args = tc["args"]
+            if tc["name"] == "gap_analysis":
+                # tools.py의 gap_analysis(consensus=...)는 LLM이 채우는 인자가 아니라, 이번 요청의
+                # 실제 consensus(state["consensus"])를 여기서 직접 주입함 — LLM이 자연어 문맥에서
+                # 검증 등급을 다시 파싱해 넘기게 하는 것보다 훨씬 정확하고, Neo4j 왕복도 필요 없음
+                args = {**args, "consensus": state.get("consensus") or {}}
             try:
-                result = fn.invoke(tc["args"])
+                result = fn.invoke(args)
                 # @tool로 감싸진 함수는 .invoke(인자dict)로 호출 — 일반 함수 호출(fn(**args))과
                 # 다르게 LangChain 도구 인터페이스를 통해 실행됨
             except Exception as e:

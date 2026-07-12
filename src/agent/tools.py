@@ -73,14 +73,18 @@ def create_tools(neo4j: "Neo4jClient") -> list:
     def gap_analysis(
         job_family: Annotated[str, "분석할 직군명. 반드시 아래 중 하나: Software Engineer / Data Engineer / Data Analyst / Data Scientist / AI/LLM Engineer / ML Engineer / DevOps/SRE / Security Engineer / Frontend Engineer"],
         portfolio_skills: Annotated[list[str], "보유 기술 목록 (이력서에서 추출된 스킬명)"],
-        owner: Annotated[str, "지원자 이름 — Neo4j에서 최신 confidence를 조회하는 데 사용"],
+        owner: Annotated[str, "지원자 이름"],
+        consensus: dict | None = None,
+        # Annotated로 설명을 안 붙인 이유: 이 값은 LLM이 채우는 게 아니라 nodes.py의 tools_node가
+        # state["consensus"]를 직접 주입함 (아래 make_tools_node 참고). 기본값 None을 둬서
+        # LLM이 이 인자를 빠뜨려도 호출 스키마상 에러가 안 나게 함.
     ) -> dict:
         """직군 요구 스킬과 보유 스킬을 비교해 갭과 매칭률을 계산한다.
 
-        confidence 분류:
-          high / medium → have_required  (증명된 보유 스킬)
-          low           → unverified_required  (보유하나 근거 약함)
-          없음          → missing_required
+        confidence 분류 (consensus.py의 verification 등급 기준):
+          Verified / Corroborated → have_required  (증명된 보유 스킬)
+          Claimed                → unverified_required  (보유하나 근거 약함)
+          없음                    → missing_required
         """
         # 이 도구가 gap_agent 프롬프트의 "1. gap_analysis 먼저 호출"에 해당하는 실제 구현.
         # docstring 전체가 LLM에게 그대로 노출되는 "도구 설명"이라서, 함수 설명을 곧 프롬프트처럼 신중하게 씀
@@ -95,24 +99,27 @@ def create_tools(neo4j: "Neo4jClient") -> list:
             preferred = [r for r in rows if r["importance"] == "PREFERS"]
             portfolio_lower = {s.lower() for s in portfolio_skills}
 
-            # Neo4j에서 최신 confidence 조회 (GitHub 업데이트 반영)
-            demonstrated = {
-                s.name.lower(): s.confidence
-                for s in neo4j.get_portfolio_demonstrated_skills(owner)
+            # consensus(=state["consensus"], tools_node가 주입)에서 검증 등급을 조회.
+            # 예전엔 neo4j.get_portfolio_demonstrated_skills(owner)로 조회했는데, 그 데이터를
+            # 쓰는 save_portfolio()가 실제 흐름에서 한 번도 호출되지 않아 항상 빈 결과였음 —
+            # 그 결과 unverified_required가 항상 빈 리스트가 되는 버그가 있었음(2026-07-08 발견·수정).
+            # consensus는 4개 평가자(resume/github/portfolio/deploy)를 실제로 종합한, 이번 요청 안에서
+            # 이미 계산된 살아있는 데이터라 Neo4j 왕복 없이 바로 신뢰할 수 있음.
+            consensus_grade = {
+                normalize_skill(k).lower(): (v or {}).get("verification")
+                for k, v in (consensus or {}).items()
             }
-            # neo4j_client.py에서 본 그 메서드 — DemonstratedSkill 객체 리스트를 {스킬명: confidence} dict로 변환
-            # "GitHub 업데이트 반영"이라는 주석 — github_connector.py의 boost_confidence_from_github()가
-            # (죽은 코드지만) 원래 이 confidence를 갱신하려던 의도였을 가능성을 시사
 
             have_req: list = []
             unverified_req: list = []
             for r in required:
                 skill_lower = r["skill"].lower()
                 if skill_lower in portfolio_lower:
-                    conf = demonstrated.get(skill_lower, "medium")
-                    # portfolio_skills(이력서에서 뽑힌 스킬)에는 있지만 confidence 정보가 없으면
-                    # 기본값 "medium"으로 가정 — "이력서에 있다는 것 자체는 최소한의 신호"로 보는 판단
-                    if conf == "low":
+                    grade = consensus_grade.get(skill_lower)
+                    # consensus에 정보가 없는 스킬(예: LLM이 문맥에서 스킬명을 살짝 다르게 재구성한 경우)은
+                    # "medium 취급"과 동일하게 have_required로 — 근거 자체가 없다고 무조건 배제하면
+                    # 정상적으로 보유한 스킬까지 부당하게 unverified로 몰릴 위험이 있어 보수적으로 처리
+                    if grade == "Claimed":
                         unverified_req.append(r)
                     else:
                         have_req.append(r)

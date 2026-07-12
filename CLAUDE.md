@@ -159,7 +159,6 @@ GITHUB_TOKEN=
 (:JobPosting{source_id, title, company, location,
              salary_min, salary_max, contract_type,
              url, posted_at, is_active})
-(:PortfolioItem {item_id, title, type, owner, created_at})
 ```
 
 ### 관계
@@ -171,10 +170,12 @@ GITHUB_TOKEN=
 (JobPosting)-[:POSTED_BY]->(Company)          # 공고 → 회사
 (Skill)-[:PART_OF  {relation}]->(Skill)       # 생태계 (LangChain→LangGraph)
 (Skill)-[:CO_OCCURS{count}]   ->(Skill)       # 공고 내 동시 등장
-(PortfolioItem)-[:DEMONSTRATES{evidence, confidence}]->(Skill)
 ```
 
 ### confidence 레벨 규칙
+
+이력서·포트폴리오에서 추출한 `DemonstratedSkill.confidence` 값 — Neo4j에는 저장하지 않고
+에이전트 실행 중 메모리(consensus)에서만 다룬다.
 
 - `high`: 이력서에 기술명이 명시적으로 언급됨
 - `medium`: 문맥상 사용했음이 추론됨

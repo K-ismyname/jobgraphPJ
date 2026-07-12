@@ -12,7 +12,6 @@
 # 쓰이지 않는다 — 아직 우리가 안 본 src/agent/, src/api/ 레이어가 나중에 이 메서드들을 호출해서
 # "이 스킬을 가지면 몇 개 공고에 지원 가능한가" 같은 질문에 답하는 용도로 쓴다.
 
-import hashlib    # 이력서 섹션마다 고유 id를 만들 때 해시값 생성에 사용
 import json       # 시드 파일(skill_relations.json) 읽을 때 사용
 import logging    # print() 대신 로그 레벨(warning/error)을 구분해 남기는 표준 라이브러리
 import os         # 환경변수(NEO4J_URI 등) 읽기
@@ -22,9 +21,6 @@ from pathlib import Path
 from openai import OpenAI  # 이 파일에서 실제로 사용되진 않지만 타입 힌트 등을 위해 남아있는 것으로 보임
 from neo4j import GraphDatabase
 # neo4j 공식 파이썬 드라이버 — GraphDatabase.driver(주소, 인증정보)로 DB와 연결을 맺는 객체를 만듦
-
-from src.extraction.skill_extractor import ResumeExtraction
-# 이력서 저장(save_portfolio)에서 타입 힌트로 쓰기 위해 가져옴 — Step 3(공고 적재)과는 무관, 포트폴리오 기능용
 
 logger = logging.getLogger("jobgraph.storage")
 # 이 파일 전용 로거 생성. print()와 달리 나중에 "이 로그는 storage 관련이다"라고 필터링하거나
@@ -51,9 +47,6 @@ CREATE CONSTRAINT company_name IF NOT EXISTS
 
 CREATE CONSTRAINT job_family_name IF NOT EXISTS
     FOR (jf:JobFamily) REQUIRE jf.name IS UNIQUE;
-
-CREATE CONSTRAINT portfolio_item_id IF NOT EXISTS
-    FOR (pi:PortfolioItem) REQUIRE pi.item_id IS UNIQUE;
 """
 # CREATE CONSTRAINT ... IF NOT EXISTS → "이미 있으면 그냥 넘어가고, 없으면 만들어라"
 # FOR (s:Skill) REQUIRE s.name IS UNIQUE → ":Skill 타입 노드는 name 속성이 절대 중복되면 안 된다"는 규칙
@@ -208,37 +201,6 @@ ON MATCH  SET r.count = r.count + 1
 """
 # -[r:CO_OCCURS]- (화살표 없음) → 방향이 없는 관계. "같이 등장했다"는 사실엔 방향이 없기 때문
 # 같은 공고 안에 스킬 A와 B가 동시에 등장할 때마다 이 관계의 count를 올림 (스킬 간 연관성 데이터)
-
-UPSERT_PORTFOLIO_ITEM = """
-MERGE (pi:PortfolioItem {item_id: $item_id})
-ON CREATE SET
-    pi.title       = $title,
-    pi.type        = $section_type,
-    pi.owner       = $owner,
-    pi.created_at  = datetime()
-ON MATCH SET
-    pi.updated_at  = datetime()
-RETURN pi
-"""
-# 이력서의 한 섹션(예: "Agentic RAG 시스템" 프로젝트)을 하나의 노드로 저장
-
-UPSERT_DEMONSTRATES = """
-MERGE (s:Skill {name: $skill_name})
-ON CREATE SET s.frequency = 0
-
-MERGE (pi:PortfolioItem {item_id: $item_id})
-
-MERGE (pi)-[r:DEMONSTRATES]->(s)
-ON CREATE SET
-    r.evidence   = $evidence,
-    r.confidence = $confidence
-ON MATCH SET
-    r.evidence   = $evidence,
-    r.confidence = $confidence
-"""
-# 여기서 만드는 Skill의 frequency는 0으로 시작 — 채용공고 요구 빈도(UPSERT_SKILL)와는 별개 카운터라서
-# 이력서 쪽에서 처음 등장한 스킬이면 "공고에서의 빈도는 아직 모른다"는 의미로 0에서 시작
-# ON MATCH SET에서도 evidence/confidence를 갱신 — 이력서를 재분석하면 최신 내용으로 덮어써야 하므로
 
 UPSERT_PART_OF = """
 MERGE (a:Skill {name: $from_skill})
@@ -426,38 +388,6 @@ class Neo4jClient:
             # 즉 재적재(already=True)일 때도 원문 텍스트만큼은 최신 내용으로 덮어씀
             # (전처리 로직이 개선되면, 재실행 시 더 나은 텍스트로 갱신되게 하려는 의도)
 
-    def save_portfolio(self, extraction: ResumeExtraction) -> None:
-        """이력서 추출 결과를 PortfolioItem + DEMONSTRATES 관계로 Neo4j에 저장."""
-        # pipeline.py의 흐름과는 무관 — 포트폴리오(이력서) 분석 기능(Layer 4)에서 쓰일 메서드
-        with self._driver.session() as sess:
-            for section in extraction.sections:
-                # extraction은 skill_extractor.py의 ResumeExtraction 모델 인스턴스 — .sections로 섹션 리스트에 접근
-                item_id = hashlib.md5(
-                    f"{extraction.candidate_name}_{section.title}".encode()
-                ).hexdigest()[:12]
-                # hashlib.md5(바이트).hexdigest() → 입력값을 32자리 16진수 해시값으로 변환하는 표준 방식
-                # "이름_섹션제목" 조합을 해시해서 짧고 고유한 id를 만듦 (.encode()는 문자열을 바이트로 변환, md5의 필수 입력 형태)
-                # [:12] → 해시값 앞 12자리만 잘라서 씀 (전체 32자리까지는 필요 없다고 판단한 것)
-
-                sess.run(UPSERT_PORTFOLIO_ITEM,
-                    item_id=item_id,
-                    title=section.title,
-                    section_type=section.section_type,
-                    owner=extraction.candidate_name,
-                )
-
-                for skill in section.skills:
-                    try:
-                        sess.run(UPSERT_DEMONSTRATES,
-                            item_id=item_id,
-                            skill_name=skill.name,
-                            evidence=skill.evidence,
-                            confidence=skill.confidence,
-                        )
-                        print(f"  [{skill.confidence}] {section.title} → {skill.name}")
-                    except Exception as e:
-                        logger.warning(f"[warn] DEMONSTRATES 실패 ({skill.name}): {e}")
-
     # ── 아래부터는 "시장 인사이트" 조회 메서드들 ──────────────────
     # pipeline.py의 적재 흐름에서는 전혀 호출되지 않는다.
     # 데이터가 이미 다 쌓인 뒤, 나중에 src/agent/(에이전트 툴)나 src/api/(API 응답)가
@@ -490,27 +420,6 @@ class Neo4jClient:
     def get_location_distribution(self, job_title: str, limit: int = 10) -> list[dict]:
         """직무별 지역 분포."""
         return self.execute_query(QUERY_LOCATION_DISTRIBUTION, job_title=job_title, limit=limit)
-
-    def get_portfolio_demonstrated_skills(self, owner: str) -> list:
-        """Neo4j PortfolioItem에서 소유자의 DemonstratedSkill 목록 반환."""
-        from src.extraction.skill_extractor import DemonstratedSkill
-        # 함수 안에서 import하는 이유: 파일 맨 위에서 하면 "순환 import"(skill_extractor가 이 파일을,
-        # 이 파일이 다시 skill_extractor를 가져오는 상황)가 생길 수 있어서, 실제로 필요한 시점에만 가져오는 방식
-        query = """
-        MATCH (:PortfolioItem {owner: $owner})-[d:DEMONSTRATES]->(s:Skill)
-        RETURN s.name AS name, d.confidence AS confidence, d.evidence AS evidence
-        """
-        rows = self.execute_query(query, owner=owner)
-        return [
-            DemonstratedSkill(
-                name=r["name"],
-                confidence=r.get("confidence") or "low",
-                evidence=r.get("evidence") or "",
-            )
-            for r in rows
-        ]
-        # DB에서 읽어온 딱딱한 dict를, pydantic 모델(DemonstratedSkill)로 다시 감싸서 반환
-        # confidence가 없으면 기본값 "low"로 보수적으로 처리
 
     def list_job_families(self) -> list[str]:
         """등록된 직군명 목록 (유효성 검증·선택지 노출용)."""
@@ -745,21 +654,6 @@ class Neo4jClient:
         except Exception as e:
             logger.error(f"[neo4j] 공고 추천 조회 실패: {e}")
             return []
-
-    def update_portfolio_confidence(self, owner: str, changes: dict[str, str]) -> None:
-        """confidence 레벨을 업데이트한다. changes: {"LangChain": "medium → high"}."""
-        query = """
-        MATCH (:PortfolioItem {owner: $owner})-[d:DEMONSTRATES]->(s:Skill {name: $skill})
-        SET d.confidence = $new_confidence
-        """
-        with self._driver.session() as sess:
-            for skill, change in changes.items():
-                new_confidence = change.split("→")[-1].strip()
-                # "medium → high" 문자열을 "→" 기준으로 잘라서 리스트로 만들고, [-1](마지막 항목)인 "high"만 꺼냄
-                try:
-                    sess.run(query, owner=owner, skill=skill, new_confidence=new_confidence)
-                except Exception as e:
-                    logger.warning(f"[warn] confidence 업데이트 실패 ({skill}): {e}")
 
     def set_posting_sections(self, source_id: str, required: str, preferred: str) -> None:
         """공고 노드에 요건 원문(필수·우대)을 속성으로 저장한다."""
