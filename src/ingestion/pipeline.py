@@ -47,7 +47,7 @@ from src.ingestion.preprocessor import preprocess_file  # Step 1: HTML 정제·�
 from src.extraction.skill_extractor import (
     extract_skills_from_posting,
 )  # Step 2: LLM 스킬 추출
-from src.extraction.normalizer import normalize_skill  # Step 2: 스킬명 동의어 통합
+from src.extraction.normalizer import is_noise_skill, normalize_skill  # Step 2: 스킬명 동의어 통합 + 노이즈 제거
 from src.storage.neo4j_client import Neo4jClient  # Step 3: 그래프 DB 적재
 
 # 공고 제목 → 직군(JobFamily) 매핑용 키워드 테이블
@@ -141,8 +141,12 @@ def _normalize_skills(skills: dict) -> dict:
             # isinstance(name, str) = "name이 문자열 타입인가?"를 확인
             # 문자열이면 name 그대로 normalize_skill()에 넣고,
             # 아니면(=dict라고 가정) name.get("name", "")로 안의 "name" 키 값을 꺼내서 넣음
-            if normalized and normalized not in seen:
-                # normalized가 빈 문자열이 아니고(and), 아직 seen에 없는 새로운 값이면
+            if normalized and normalized not in seen and not is_noise_skill(normalized):
+                # normalized가 빈 문자열이 아니고, 아직 seen에 없고, 노이즈(소프트스킬·개념어·자격증)도 아니면
+                #
+                # is_noise_skill 필터가 여기 없어서 "APIS"·"Distributed Systems" 같은 값이 그대로
+                # :Skill 노드가 됐다. 골든셋 측정에서 DevOps 케이스가 이런 개념어를 "부족한 스킬"로
+                # 지목해 precision을 깎는 것으로 드러났다 — 함수는 있었지만 호출되지 않던 죽은 코드였다.
                 seen.add(normalized)  # seen 집합에 추가해서 "이제 나왔다"고 기록
                 deduped.append(normalized)  # 최종 리스트에도 추가
         skills[group] = (

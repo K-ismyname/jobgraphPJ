@@ -112,18 +112,32 @@ SKILL_BLOCKLIST: frozenset[str] = frozenset({
     "ai-assisted engineering workflows", "ssh",
     # 너무 broad
     "cloud", "windows", "data science",
+    # 개념·직무명이 스킬로 추출된 것 — 골든셋 측정에서 "부족한 스킬"로 잘못 지목되어 발견됨.
+    # "Distributed Systems를 배우세요", "DevOps가 부족합니다" 같은 조언은 검증도 실행도
+    # 불가능해 사용자에게 무의미하다 (DevOps는 직무명이지 습득할 스킬이 아니다).
+    "distributed systems", "devops", "data modeling",
 })
 # 이 목록에 있는 단어들은 "기술 스택"이라기엔 너무 뭉뚱그려지거나(소프트스킬), 스킬이 아니라
 # 자격증·방법론 이름이라서, Neo4j에 :Skill 노드로 만들면 분석 품질이 떨어짐 — 그래서 아예 걸러냄
 
 
+# 한 글자지만 실재하는 프로그래밍 언어 — 길이 기준 노이즈 필터에서 예외로 둔다.
+# 이 예외가 없으면 R(통계 언어, Data Analyst·Data Scientist의 핵심 스킬)이 "너무 짧다"는
+# 이유로 통째로 걸러진다. 실제로 라이브 DB에 R이 21건의 REQUIRES 관계를 갖고 있었다.
+_SHORT_VALID_SKILLS = frozenset({"r", "c"})
+
+
 def is_noise_skill(name: str) -> bool:
     """블록리스트에 속하거나 너무 짧은 스킬명이면 True."""
-    return name.lower().strip() in SKILL_BLOCKLIST or len(name.strip()) <= 1
+    key = name.lower().strip()
+    if key in _SHORT_VALID_SKILLS:
+        return False
+    return key in SKILL_BLOCKLIST or len(key) <= 1
     # "A or B" → A(블록리스트에 있음) 또는 B(정리했더니 글자수가 1자 이하) 둘 중 하나라도 참이면 전체가 참
-    # len(name.strip()) <= 1 → "a", ""처럼 스킬명이라 보기엔 너무 짧은 노이즈 값 방어
-    # 주의: 이 함수는 normalize_skill()이나 pipeline.py의 _normalize_skills()에서 직접 호출되진 않고,
-    # 다른 파일(스킬 필터링이 필요한 곳)에서 재사용하도록 노출된 헬퍼로 보임
+    # len(key) <= 1 → "a", ""처럼 스킬명이라 보기엔 너무 짧은 노이즈 값 방어
+    #   (단 위의 _SHORT_VALID_SKILLS는 예외 — R/C는 실재하는 언어다)
+    # 이 함수는 pipeline._normalize_skills()가 적재 직전에 호출한다 — 노이즈가 :Skill 노드로
+    # 굳어지는 것을 막는 마지막 관문이다.
 
 
 # 대문자 유지가 필요한 약어/브랜드
