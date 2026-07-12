@@ -80,14 +80,52 @@ def _client_with_driver():
     return client
 
 
-def test_clear_all_requires_confirm():
+@pytest.fixture
+def local_db(monkeypatch):
+    """로컬 Neo4j를 가리키는 환경 — 파괴적 작업이 허용되는 조건."""
+    monkeypatch.setenv("NEO4J_URI", "bolt://localhost:7687")
+    monkeypatch.delenv("ALLOW_REMOTE_DESTRUCTIVE", raising=False)
+
+
+def test_clear_all_requires_confirm(local_db):
     client = _client_with_driver()
     with pytest.raises(ValueError):
         client.clear_all()   # confirm 없이 → 거부
     assert not any("DETACH DELETE" in q for q in client._driver.log)
 
 
-def test_clear_all_runs_with_confirm():
+def test_clear_all_runs_with_confirm(local_db):
     client = _client_with_driver()
     client.clear_all(confirm=True)
     assert any("DETACH DELETE" in q for q in client._driver.log)
+
+
+def test_clear_all_blocked_on_remote_db(monkeypatch):
+    """원격(Aura) DB에는 confirm=True여도 파괴적 작업을 거부한다.
+
+    로컬 개발과 라이브가 같은 인스턴스를 보는 구성에서는 실수 한 번이 프로덕션 소실이다.
+    실제로 백필 실험이 라이브 직군 분석을 오염시킨 전례가 있다.
+    """
+    monkeypatch.setenv("NEO4J_URI", "neo4j+s://abc123.databases.neo4j.io")
+    monkeypatch.delenv("ALLOW_REMOTE_DESTRUCTIVE", raising=False)
+    client = _client_with_driver()
+    with pytest.raises(RuntimeError, match="원격"):
+        client.clear_all(confirm=True)
+    assert not any("DETACH DELETE" in q for q in client._driver.log)
+
+
+def test_clear_all_remote_allowed_with_explicit_optin(monkeypatch):
+    # 정말 의도한 경우에만 명시적 환경변수로 해제
+    monkeypatch.setenv("NEO4J_URI", "neo4j+s://abc123.databases.neo4j.io")
+    monkeypatch.setenv("ALLOW_REMOTE_DESTRUCTIVE", "true")
+    client = _client_with_driver()
+    client.clear_all(confirm=True)
+    assert any("DETACH DELETE" in q for q in client._driver.log)
+
+
+def test_is_remote_detects_aura_scheme(monkeypatch):
+    client = Neo4jClient.__new__(Neo4jClient)
+    monkeypatch.setenv("NEO4J_URI", "neo4j+s://x.databases.neo4j.io")
+    assert client.is_remote() is True
+    monkeypatch.setenv("NEO4J_URI", "bolt://localhost:7687")
+    assert client.is_remote() is False

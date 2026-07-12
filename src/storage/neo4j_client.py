@@ -285,11 +285,32 @@ class Neo4jClient:
                 # 여기서 넘긴 값들이 실제로 채워져서 실행됨
         print(f"PART_OF 시드 {len(seeds)}개 로드 완료")
 
+    def is_remote(self) -> bool:
+        """이 클라이언트가 원격(관리형) DB에 연결돼 있는가 — Aura는 neo4j+s:// 스킴을 쓴다.
+
+        로컬 Docker/데스크톱은 bolt:// 또는 neo4j:// (평문)이다. 이 구분으로 파괴적 작업이
+        프로덕션을 향하는 것을 막는다.
+        """
+        uri = (os.getenv("NEO4J_URI") or "").lower()
+        return uri.startswith(("neo4j+s://", "bolt+s://", "neo4j+ssc://", "bolt+ssc://"))
+
     def clear_all(self, confirm: bool = False) -> None:
         """DB의 모든 노드·관계를 삭제한다 (파괴적).
 
         실수 방지를 위해 confirm=True를 명시해야 실행된다. 삭제 전 노드 수를 출력한다.
+        원격(Aura) DB에서는 confirm=True여도 거부한다 — ALLOW_REMOTE_DESTRUCTIVE=true가
+        명시적으로 설정돼야만 실행된다.
         """
+        # 로컬 개발과 라이브 배포가 같은 Aura 인스턴스를 바라보는 구성에서는, 개발 중 실수 한 번이
+        # 곧 프로덕션 데이터 소실이다. 실제로 2026-06-30 Adzuna 백필 실험이 라이브 직군 분석을
+        # 오염시킨 전례가 있다. 스킴으로 원격을 감지해 이중 잠금을 건다.
+        if self.is_remote() and os.getenv("ALLOW_REMOTE_DESTRUCTIVE", "").lower() != "true":
+            raise RuntimeError(
+                "원격(Aura) DB에는 clear_all을 실행할 수 없습니다. "
+                "로컬 Neo4j(docker-compose up neo4j)를 쓰거나, 정말 의도한 것이라면 "
+                "ALLOW_REMOTE_DESTRUCTIVE=true를 설정하세요."
+            )
+
         with self._driver.session() as sess:
             count = sess.run("MATCH (n) RETURN count(n) AS c").single()["c"]
             # MATCH (n) → 어떤 라벨이든 상관없이 모든 노드를 매칭. .single()은 결과가 딱 한 줄일 때 그 줄만 꺼내는 메서드
