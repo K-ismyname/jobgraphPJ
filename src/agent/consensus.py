@@ -20,16 +20,27 @@ _VERIFIABLE_SOURCES = {"github", "deploy"}
 # resume/portfolio는 "본인이 말한 것"이라 아무리 확신에 차 있어도 코드 근거가 될 수 없고,
 # github/deploy만 "실제로 동작하는 것을 관측한" 소스로 인정 — 이 구분이 아래 Verified 판정의 핵심 기준
 
+# 본인이 작성한 자기 서술 소스 — 서로를 뒷받침하는 '독립 증거'가 될 수 없다.
+# 이력서에 쓴 스킬을 포트폴리오 PDF에도 쓰는 건 당연하므로, 이 둘이 일치하는 것은
+# 교차 검증(corroboration)이 아니라 같은 주장의 자기 복제다.
+_SELF_REPORTED_SOURCES = {"resume", "portfolio"}
+
 
 def build_consensus(evaluator_outputs: list[dict]) -> dict:
     """평가자별 [{skill, evidence, source, strength, level_hint}]를 스킬별 검증 상태로 합친다.
 
     Verified     : 코드 근거(strength="code" — 의존성 파일·주 언어)로 실증됨
-    Corroborated : 2개 이상 독립 소스가 일치 (코드 근거는 없지만 서로 뒷받침)
-    Claimed      : 1개 소스만 (코드 미확인)
+    Corroborated : 자기 서술 + 관측 가능한 소스(github/deploy)가 함께 뒷받침하거나,
+                   관측 소스 2개가 일치 (코드 근거까지는 아니지만 외부 흔적이 있음)
+    Claimed      : 위에 해당하지 않음 — 자기 서술뿐 (코드·외부 흔적 미확인)
 
     핵심: 등급은 '어느 소스냐'가 아니라 '증거가 얼마나 강하냐'로 판정한다.
     README·배포 HTML에 스킬명이 적혀 있기만 한 것(strength="mention")은 Verified가 아니다.
+
+    중요: resume + portfolio는 둘 다 본인이 쓴 자기 서술이므로 아무리 개수가 많아도
+    Corroborated가 되지 않는다. 이력서에 쓴 스킬을 포트폴리오에도 쓰는 건 당연하고,
+    그건 교차 검증이 아니라 같은 주장의 반복이다. 이 구분이 없으면 "2개 소스가
+    뒷받침함"이라는 등급이 실제로는 아무것도 검증하지 않은 라벨이 된다.
     """
     # 1단계: 4개 평가자 결과를 "스킬명" 기준으로 재편성
     by_skill: dict[str, list[dict]] = {}
@@ -55,18 +66,25 @@ def build_consensus(evaluator_outputs: list[dict]) -> dict:
         # "실증 가능한 소스(github/deploy)에서, 강도가 code(단순 언급이 아니라 실제 코드/설정 근거)인
         # 증거가 하나라도 있는가" — 둘 다 만족해야 함. github_eval.py에서 만든 strength 필드가
         # 여기서 실제로 소비되는 지점
+        observed = sources & _VERIFIABLE_SOURCES        # github/deploy — 외부에서 관측된 흔적
+        self_reported = sources & _SELF_REPORTED_SOURCES  # resume/portfolio — 본인 서술
+
         if has_code:
             status = "Verified"
-        elif len(sources) >= 2:
+        elif observed and (self_reported or len(observed) >= 2):
             status = "Corroborated"
-            # 코드 근거는 없어도, 서로 다른 소스 2개 이상이 같은 스킬을 언급하면 "교차 확인됨"으로 인정
-            # (예: 이력서에도 있고 포트폴리오에도 있으면, 코드 증거는 없어도 어느 정도 신빙성 인정)
+            # 자기 서술을 외부 관측(github/deploy)이 뒷받침하거나, 관측 소스끼리 일치하는 경우.
+            # 코드 근거(strength="code")까지는 아니어도 본인 말 외의 흔적이 있으므로 한 단계 인정.
         else:
             status = "Claimed"
-            # 소스가 딱 하나뿐이면(대개 이력서 단독 주장) 가장 낮은 등급
+            # 자기 서술만 있는 경우 — resume+portfolio 둘 다 있어도 여기에 해당한다.
+            # 같은 사람이 쓴 두 문서가 일치하는 건 교차 검증이 아니기 때문.
         result: dict = {"verification": status, "evidences": evidences}
         if status == "Claimed":
-            result["flags"] = ["코드·실증 미확인 — 주장/언급만"]
+            if len(self_reported) >= 2:
+                result["flags"] = ["본인 서술만 일치 — 외부 근거 없음"]
+            else:
+                result["flags"] = ["코드·실증 미확인 — 주장/언급만"]
             # flags는 Claimed 등급에만 붙는 경고 표시 — 나중에 리포트에서 "이건 특히 주의해서 보라"는 신호로 쓰일 수 있음
         consensus[skill] = result
     return consensus

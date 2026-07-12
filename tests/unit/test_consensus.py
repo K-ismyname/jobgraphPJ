@@ -30,12 +30,30 @@ def test_github_mention_plus_resume_corroborated():
     assert out["Redis"]["verification"] == "Corroborated"
 
 
-def test_corroborated_when_two_sources():
+def test_self_reported_sources_do_not_corroborate():
+    """resume + portfolio는 둘 다 본인이 쓴 자기 서술이라 서로를 검증하지 못한다.
+
+    이력서에 쓴 스킬을 포트폴리오에도 쓰는 건 당연하므로, 이 둘이 일치하는 것은
+    교차 검증이 아니라 같은 주장의 자기 복제다. 예전에는 이것만으로 Corroborated가
+    되어, 아무 외부 근거 없이도 "2개 소스가 뒷받침함" 라벨이 붙었다.
+    """
     out = build_consensus([
         {"skills": [{"skill": "Docker", "evidence": "a", "source": "resume", "level_hint": None}]},
         {"skills": [{"skill": "Docker", "evidence": "b", "source": "portfolio", "level_hint": None}]},
     ])
-    assert out["Docker"]["verification"] == "Corroborated"
+    assert out["Docker"]["verification"] == "Claimed"
+    assert out["Docker"]["flags"] == ["본인 서술만 일치 — 외부 근거 없음"]
+
+
+def test_two_observable_sources_corroborate():
+    # github(언급) + deploy(언급) — 코드 근거는 없지만 둘 다 외부에서 관측된 흔적
+    out = build_consensus([
+        {"skills": [{"skill": "React", "evidence": "README", "source": "github",
+                     "strength": "mention", "level_hint": None}]},
+        {"skills": [{"skill": "React", "evidence": "배포 HTML", "source": "deploy",
+                     "strength": "mention", "level_hint": None}]},
+    ])
+    assert out["React"]["verification"] == "Corroborated"
 
 
 def test_claimed_single_source_has_flag():
@@ -47,12 +65,15 @@ def test_claimed_single_source_has_flag():
 
 
 def test_normalize_merges_aliases():
+    # 표기가 다른 스킬명("react.js" / "React")이 하나의 노드로 병합되는지 (등급과 무관한 정규화 검증)
     out = build_consensus([
         {"skills": [{"skill": "react.js", "evidence": "a", "source": "resume", "level_hint": None}]},
-        {"skills": [{"skill": "React", "evidence": "b", "source": "portfolio", "level_hint": None}]},
+        {"skills": [{"skill": "React", "evidence": "b", "source": "github",
+                     "strength": "mention", "level_hint": None}]},
     ])
     assert "React" in out
-    assert out["React"]["verification"] == "Corroborated"
+    assert len(out) == 1                       # 두 표기가 하나로 합쳐짐
+    assert out["React"]["verification"] == "Corroborated"   # resume + github(외부 관측)
 
 
 def test_evidences_accumulate_from_all_sources():
@@ -84,8 +105,10 @@ def test_consensus_node_includes_portfolio():
         "portfolio_eval": {"skills": [{"skill": "Docker", "evidence": "b", "source": "portfolio", "level_hint": None}]},
     }
     out = node(state)["consensus"]
-    # resume + portfolio 두 소스 → Corroborated
-    assert out["Docker"]["verification"] == "Corroborated"
+    # portfolio_eval 결과가 합의에 실제로 반영되는지 (증거가 두 소스에서 모임)
+    assert {e["source"] for e in out["Docker"]["evidences"]} == {"resume", "portfolio"}
+    # 다만 둘 다 자기 서술이므로 등급은 Claimed에 머문다
+    assert out["Docker"]["verification"] == "Claimed"
 
 
 def test_consensus_node_deploy_mention_alone_claimed():
