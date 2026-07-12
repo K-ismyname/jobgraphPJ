@@ -63,6 +63,10 @@ _demo_usage_lock = threading.Lock()
 _MAX_TRACKED_IPS = 10_000
 # IP 딕셔너리가 무한정 커지는 것(메모리 고갈 유발) 방지 — 넘치면 날짜 지난 항목부터 정리한다.
 
+_ANALYSIS_TIMEOUT_SEC = 600   # 10분
+# 이보다 오래 "processing"에 머물러 있으면 백그라운드 작업이 유실된 것으로 보고 error로 강등한다
+# (BackgroundTasks는 프로세스가 재시작되면 함께 사라지는데, 그 흔적이 상태에 남지 않기 때문).
+
 
 def _client_ip(request: Request) -> str:
     """클라이언트 IP — HF Spaces 등 리버스 프록시 뒤에서는 x-forwarded-for를 본다.
@@ -318,6 +322,8 @@ def analyze_portfolio(
     reports[req.report_id] = ReportResponse(
         report_id=req.report_id, status="processing", phase="소스 평가 중",
         owner=req.owner_name or "분석 중", job_family=req.job_family,
+        started_at=datetime.now(timezone.utc).isoformat(),
+        # 조회 시점에 "언제부터 처리 중인지" 알아야 유실된 작업을 감지할 수 있다 (get_report 참고)
     )
     # 아직 진짜 분석은 시작도 안 했는데, 일단 "처리 중"이라는 상태를 먼저 저장해둠 —
     # 그래야 사용자가 바로 /report/{report_id}로 조회했을 때 "몰라요"가 아니라 "처리 중"이라고 답할 수 있음
@@ -347,6 +353,20 @@ async def get_report(
     report = reports.get(report_id)
     if report is None:
         raise HTTPException(404, "report_id를 찾을 수 없습니다.")
+
+    # 유실된 작업 감지 — BackgroundTasks는 프로세스 재시작 시 함께 사라지므로,
+    # 그 경우 status가 "processing"에 영원히 머물러 프론트가 무한 폴링하게 된다.
+    # 조회 시점에 경과 시간을 재서 상한을 넘은 건 실패로 강등한다.
+    if report.status == "processing" and report.started_at:
+        try:
+            started = datetime.fromisoformat(report.started_at)
+            if (datetime.now(timezone.utc) - started).total_seconds() > _ANALYSIS_TIMEOUT_SEC:
+                logger.warning("분석 유실 감지 (report_id=%s) — error로 강등", report_id)
+                report.status = "error"
+                report.error_detail = "분석이 시간 내에 완료되지 않았습니다. 다시 시도해 주세요."
+        except ValueError:
+            pass   # started_at 형식이 깨져도 조회 자체가 실패하면 안 됨
+
     return report
     # status가 "processing"이면 프론트가 알아서 조금 뒤 다시 물어보고,
     # "done"이나 "error"면 그 결과를 화면에 보여줌 (이 판단은 프론트엔드 쪽 로직)

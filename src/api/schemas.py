@@ -182,6 +182,10 @@ class ReportResponse(BaseModel):
     # 폴링(portfolio.py의 get_report)이 보고 판단하는 그 3가지 상태값
     phase: str | None = None   # 진행 중 현재 단계 (status=processing일 때만 의미)
     # portfolio.py의 _NODE_PHASE 표에서 나온 "소스 평가 중" 같은 문구가 여기 들어감
+    started_at: str | None = None
+    # 분석 시작 시각(ISO). 백그라운드 작업이 프로세스 재시작 등으로 유실되면 status가
+    # "processing"에 영원히 머물러 프론트가 무한 폴링하므로, 조회 시점에 이 값으로
+    # 경과 시간을 재서 너무 오래된 건 error로 강등한다 (portfolio.py의 get_report 참고).
     owner: str
     job_family: str
     match_rate: float = 0.0
