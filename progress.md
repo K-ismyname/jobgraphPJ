@@ -69,6 +69,108 @@
 
 ---
 
+## [2026-07-08]
+
+### 작업 절차
+1. 데이터 흐름 심화 학습 — `preprocessor.py`의 3단계 요건 텍스트 추출(`extract_sections` →
+   `extract_bullet_section` → `extract_requirement_sentences`) 각각 실측 구제율 확인,
+   `skill_extractor.py`로 넘어가는 실제 데이터 예시 확인, `normalizer.py` → Neo4j 적재까지
+   전체 흐름을 실제 데이터로 끝까지 추적
+2. 배포 상태 실측 점검 — 사용자가 Neo4j Aura를 켠 뒤 직접 접속해 직군별 공고 수(총 604건),
+   스킬 노드 수(1,909개), 직군별 핵심 스킬 Top 10 조회로 데이터 품질 확인
+3. `data/raw/` 원본 파일들과 `.gitignore` 이력을 조사해 데이터 수집 스크립트의 재현성 확인 —
+   `collect_and_merge.py`(직군별 병합 스크립트), `remoteok_client.py`(RemoteOK 수집)가 삭제되어
+   지금 코드로는 배포에 쓰인 9개 직군 데이터를 처음부터 재현할 수 없음을 확인
+4. `neo4j_client.py`의 전체 노드·관계 스키마 정리, `PortfolioItem`/`DEMONSTRATES`가 설계는
+   됐지만 실제로 쓰이는지 확인하다가 `save_portfolio()`가 죽은 코드임을 발견 → `gap_analysis()`
+   도구의 `unverified_required` 버그로 이어져 수정
+5. `save_portfolio()`가 유일한 쓰기 경로였다는 걸 확인한 김에, 연결된 죽은 코드
+   (`get_portfolio_demonstrated_skills()`, `update_portfolio_confidence()`, 관련 Cypher 상수,
+   `portfolio_item_id` 제약)까지 코드·라이브 DB·CLAUDE.md 문서 세 곳 모두에서 정리
+6. `supervisor.py`(`evaluator_dispatch`/`create_supervisor_graph`/`run_supervisor`/`run_analysis`)
+   학습 중 `ragas_eval.py`의 평가 설계 자체를 재검토 — `_build_evidence_samples()`가 "Is Docker
+   required?"처럼 Neo4j로 이미 답 가능한 질문을 채점하고 있어 RAGAS를 쓰는 의미가 약함을 확인
+7. `_build_evidence_samples()`를 gap_agent의 실제 LLM reason(`gap_result["missing_required"][].reason`)
+   채점으로 재설계, 한국어 원본/영어 번역/`deterministic_reasons` 3가지를 실제로 RAGAS 채점해 비교
+8. 그래프에 전혀 없는 순수 텍스트 정보(스킬별 숙련도·연차 표현)를 원문에서 찾아 RAG로 답하게
+   하는 `_build_skill_proficiency_samples()`를 신설, `run_ragas_eval()`에 옵션 B로 통합
+9. `github_eval.py` 리뷰 중 "프로젝트 이해가 실제로 정확한가?" 검증을 위해 사용자의 실제 레포
+   (K-ismyname/jobgraphPJ)로 직접 실행 — `project_type`/`structure_summary`/대부분의
+   `skill_assessments`는 정확했으나, `PostgreSQL` 스킬이 잘못 평가되는 환각 사례 발견
+
+### 발생 문제
+- `preferred_section`은 `required_section`과 달리 fallback이 없어(1차 실패 시 그냥 빈 문자열),
+  실측 결과 필수 텍스트 확보 323건(100%) 대비 우대 텍스트 확보는 121건(37%)에 그침
+- `remoteok_client.py`(RemoteOK 수집 코드)가 "수집 데이터도 없는 죽은 코드"라는 근거로 삭제됐는데,
+  실제로는 `jobs_remoteok.json`(2.1MB)이 로컬에 존재 — 삭제 당시 판단 근거가 실제와 달랐음
+- `data/raw/by_family/*.json`(9개 직군별 분리 파일)를 만든 스크립트(`collect_and_merge.py`)가
+  git 이력에 한 번 추가된 뒤 지금은 코드베이스에서 사라짐 — 재현 불가능한 데이터 수집 이력
+- `gap_analysis()` 도구가 `neo4j.get_portfolio_demonstrated_skills(owner)`로 confidence를
+  조회했는데, 이 데이터를 쓰는 `save_portfolio()`가 실제 흐름에서 한 번도 호출되지 않아
+  (배포 Neo4j 확인 결과 `PortfolioItem` 노드 0개) 항상 빈 dict → `unverified_required`가
+  구조적으로 절대 채워지지 않는 버그
+- `ragas_eval.py`의 `_build_evidence_samples()`가 만드는 `user_input`("Is Docker required for
+  the AI/LLM Engineer role?")이 애초에 스킬을 검증 대상으로 고른 이유 자체가 Neo4j `REQUIRES`
+  관계라서, 답이 이미 정해진 질문 — 근거 텍스트가 한 단어("Docker")만 있어도 사실 관계상
+  틀리지 않아, 30자 미만 근거를 거르는 필터가 "질문 설계 결함"을 근거 길이로 땜질하던 것으로 확인
+- 실측 결과 `deterministic_reasons`(사실 조각을 " ".join으로 이어붙인 템플릿)를 RAGAS로 채점하면
+  Answer Relevancy가 0에 가깝게 나옴 — "통계+인용" 형식이 RAGAS가 가정하는 자연어 QA 형태와 안 맞음
+- `pyarrow` 17.0.0이 설치돼 있어 `ragas`/`datasets` import 시 `AttributeError: module 'pyarrow'
+  has no attribute 'json_'` 발생 — `datasets`가 요구하는 `pa.json_()`이 pyarrow 19.0+에서 추가된
+  것이라 버전 불일치로 RAGAS 실행 자체가 안 되던 환경 문제
+- RAGAS 실측 중 Walmart 공고의 학위 요건 문구("Bachelor's degree in ... Mathematics, Computer
+  Science, Information Technology")가 `Mathematics`/`Computer Science`/`Information Technology`
+  라는 "스킬"로 잘못 추출되어 그래프에 들어가 있음을 발견 (기존 "Adzuna 데이터 결함"의 구체 사례)
+- `github_eval.py`의 `_validate_project_context()`가 `relevant_files` 경로의 "존재 여부"만
+  검증하고 "내용이 실제로 그 스킬을 뒷받침하는지"는 검증하지 않아, PostgreSQL 미사용 프로젝트에
+  PostgreSQL을 "중급 패턴으로 사용 중"이라 잘못 평가하는 환각이 그대로 통과됨 — 원인은 README가
+  환각 방지 예시로 든 문장("Neo4j를 PostgreSQL로 전환" 같은 나쁜 제안의 예)의 키워드를
+  `_skills_from_sources()`가 그대로 주웠고, LLM이 이를 근거로 가짜 평가를 만들어낸 것
+
+### 해결 방법
+- `preferred_section` fallback 부재는 보류로 결정 — `match_rate`는 `required`만 쓰고, 우대
+  신호 패턴 fallback을 만들면 필수 문장과 겹쳐 오탐 위험이 더 크다고 판단 (실측 수치와 함께 기록)
+- RemoteOK/병합 스크립트 삭제 건은 코드 수정 없이 TODO.md에 재현성 문제로만 기록
+- `gap_analysis()`: `consensus: dict | None = None` 매개변수 추가(LLM 노출 안 함, 기본값 None),
+  `nodes.py`의 `make_tools_node()`가 `gap_analysis` 호출 시 `state["consensus"]`를 직접 주입하도록
+  수정. Neo4j 왕복(`get_portfolio_demonstrated_skills`) 제거, consensus의 실제 verification
+  등급(Verified/Corroborated/Claimed)으로 `unverified_required` 판정. 직접 검증: React(Verified)→
+  have_required, Docker(Claimed)→unverified_required로 정확히 분리 확인.
+- `neo4j_client.py`: `save_portfolio()`/`get_portfolio_demonstrated_skills()`/
+  `update_portfolio_confidence()`와 `UPSERT_PORTFOLIO_ITEM`/`UPSERT_DEMONSTRATES` 상수 삭제,
+  `CREATE_CONSTRAINTS`에서 `portfolio_item_id` 제거 + 라이브 Neo4j Aura에서 `DROP CONSTRAINT`
+  실행(사전에 `PortfolioItem` 노드 0개 확인), CLAUDE.md 스키마 문서에서도 해당 노드/관계 제거
+- `pyarrow`를 17.0.0 → 24.0.0으로 업그레이드해 `ragas`/`datasets` import 오류 해결
+  (프로젝트 코드는 pyarrow를 직접 쓰지 않아 안전한 업그레이드로 판단)
+- `_build_evidence_samples()`: `user_input`을 "Is X required?"에서 "이 직군에서 X이 부족한
+  이유는 무엇인가?"로, `response`를 코드로 지어낸 템플릿에서 `gap_result["missing_required"][].reason`
+  (gap_agent가 실제로 생성한 자유 텍스트)으로 교체. 스킬명 매칭은 `normalize_skill()`로 정규화
+- `_find_skill_proficiency_excerpts()`/`_answer_from_excerpt()`/`_build_skill_proficiency_samples()`
+  신설 — Neo4j 원문(`required_section`)에서 스킬명 근처(80자 이내)에 숙련도/연차 표현(정규식
+  `_PROFICIENCY_PATTERN`)이 있는 발췌만 선별해, 그 원문만 근거로 LLM이 숙련도를 답하게 함.
+  `run_ragas_eval()`에 `neo4j`/`openai_client` 선택 인자를 추가해 옵션 A(reason)/B(숙련도)를
+  함께 실행하고 `RagasScore.kind`로 구분해 종류별 평균을 비교 출력하도록 CLI까지 통합
+
+### 결과
+- 배포 데이터 품질 확인: 직군별 604건 공고, 1,909개 스킬 노드, 직군별 핵심 스킬이 직군마다
+  뚜렷하게 구분되고 정확함 (Security Engineer→SIEM/Pentest, Data Engineer→Snowflake/Kafka 등)
+- `test_gap_core_required.py`/`test_synthesizer_deterministic.py`/`test_deterministic_reasons.py`/
+  `test_build_trace.py`(27개) 전부 통과, `test_agent.py` 통합테스트 8개 중 7개 통과
+  (1개는 OpenAI API 크레딧 소진으로 실패 — 코드 문제 아님)
+- TODO.md에 "고칠 부분" 1건 추가 수정, "보류 결정" 1건 추가 기록
+- `neo4j_client.py` 정리 후 단위테스트 241개 전부 통과
+- RAGAS 실측 비교: reason(A, LLM 자유생성) Faithfulness 0.33~0.56 / Answer Relevancy 0.31~0.42,
+  `deterministic_reasons` Faithfulness 0.33 / Answer Relevancy 0.00, proficiency(B, 그래프에
+  없는 텍스트 정보) Faithfulness 0.70~0.77 / Answer Relevancy 0.59~0.64 — "그래프로 대체 불가능한
+  질문 + 자연어 답변" 조합이라야 RAGAS가 의미 있는 지표를 낸다는 결론. `python -m
+  src.evaluation.ragas_eval` 실제 실행으로 통합 확인 완료
+- TODO.md에 "고칠 부분" 2건 추가 수정(neo4j_client 정리, RAGAS 재설계), "기능 아이디어" 1건
+  (스킬 추출 오탐 — 학위 요건이 스킬로 잘못 추출됨) 추가 기록
+- `github_eval.py`를 실제 레포로 실행 검증: 전체 프로젝트 이해(project_type/structure_summary)와
+  대부분의 skill_assessments는 정확했음. PostgreSQL 환각 사례는 미수정 상태로 TODO.md에 기록만 함
+
+---
+
 ## [2026-06-29]
 
 ### 작업 절차
