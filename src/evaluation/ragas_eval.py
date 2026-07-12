@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 # langfuse_tracer.py에서 본 그 dataclass — 가벼운 데이터 상자를 만드는 방법
 
@@ -46,6 +47,7 @@ class RagasScore:
     faithfulness: float       # 0~1 사이 점수. 1에 가까울수록 "근거에 충실함"(환각 적음)
     answer_relevancy: float   # 0~1 사이 점수. 1에 가까울수록 "질문에 잘 답함"
     n_contexts: int       # 에이전트가 사용한 공고 텍스트 수
+    kind: str = "reason(A)"  # "reason(A)"=gap_agent 자유생성, "proficiency(B)"=그래프에 없는 텍스트 정보
 
     def avg(self) -> float:
         return round((self.faithfulness + self.answer_relevancy) / 2, 3)
@@ -88,20 +90,21 @@ def _build_evidence_samples(
     owner: str,
     graph,
 ) -> list[dict]:
-    """verify_skills 툴 호출 결과를 RAGAS SingleTurnSample 목록으로 변환.
+    """gap_agent가 생성한 부족 스킬 reason을 RAGAS SingleTurnSample 목록으로 변환.
 
     평가 단위: 부족한 스킬 1개 = 샘플 1개
-      user_input        : "Is {skill} required for {job_family}?"
+      user_input        : "이 직군에서 {skill}이 부족한 이유는 무엇인가?"
       retrieved_contexts: verify_skills가 가져온 공고 원문 텍스트
-      response          : 에이전트가 생성한 reason (스킬이 필요한 이유)
+      response          : gap_result["missing_required"][].reason — LLM이 실제로 생성한 설명
 
-    이 방식은 RAG가 실제로 하는 일(근거 검색)을 직접 측정하므로
-    갭 분석 전체를 평가하는 것보다 Faithfulness 지표에 맞다.
+    "Is {skill} required?" 방식은 Neo4j REQUIRES 관계로 이미 알 수 있는 사실이라
+    (스킬을 애초에 verify_skills 대상으로 고른 것 자체가 이미 필수라는 뜻) RAG 평가로서
+    의미가 약했다. reason은 "왜 필요한가"를 원문 근거로 설명하는, 그래프에는 없고
+    문서를 읽어야만 답할 수 있는 자유 생성 텍스트라 Faithfulness가 실제로 뭔가를 검증한다.
     """
-    # 쉽게 말하면: 실제로 gap_agent 그래프를 한 번 돌려보고, 그 안에서 verify_skills 도구가
-    # 가져온 "진짜 공고 근거"들을 모아서, RAGAS가 채점할 수 있는 형태로 포장하는 함수.
     from src.agent.supervisor import run_analysis
     from langchain_core.messages import ToolMessage
+    from src.extraction.normalizer import normalize_skill
 
     final_report, messages = run_analysis(
         graph,
@@ -109,13 +112,11 @@ def _build_evidence_samples(
         owner=owner,
         portfolio_skills=portfolio_skills,
         return_state=True,
-        # return_state=True → gap_result뿐 아니라 대화 기록(messages)까지 같이 받음.
-        # 지난번 supervisor.py에서 "RAGAS eval이 이걸 쓸 것"이라고 예상했던 게 여기서 확인됨
     )
     if not final_report:
         return []
 
-    # verify_skills 결과에서 스킬별 evidence 수집
+    # verify_skills 결과에서 스킬별 evidence 수집 (근거 검색 자체는 기존과 동일)
     skill_evidence: dict[str, list[str]] = {}
     for msg in messages:
         if not isinstance(msg, ToolMessage) or getattr(msg, "name", None) != "verify_skills":
@@ -131,7 +132,7 @@ def _build_evidence_samples(
             texts = []
             for ev in skill_data.get("evidence", []):
                 if isinstance(ev, dict) and "text" in ev and len(ev["text"]) > 30:
-                    # 30자보다 짧은 근거는 너무 빈약해서 평가 재료로 부적합하다고 보고 제외
+                    # 30자보다 짧은 근거는 "왜 필요한가"를 설명할 문맥이 없어 평가 재료로 부적합
                     # 그 스킬을 실제 언급하는 근거만 — 무관한 공고 텍스트는 faithfulness를 왜곡
                     if not _evidence_mentions_skill(skill, ev["text"]):
                         continue
@@ -139,23 +140,119 @@ def _build_evidence_samples(
                     prefix = f"[{company}] " if company else ""
                     texts.append(f"{prefix}{ev['text'][:400]}")
             if texts:
-                skill_evidence[skill] = texts
+                skill_evidence[normalize_skill(skill)] = texts
+                # normalize_skill로 키를 정규화 — missing_required[].skill과 표기가
+                # 다를 수 있어서(예: "langgraph" vs "LangGraph") 정규화된 이름으로 매칭
 
-    # 샘플 조립 — evidence가 있는 스킬만.
-    # response는 에이전트의 핵심 판정(이 스킬이 부족한 '필수' 스킬이다)을 영어 사실 진술로
-    # 표현한다. faithfulness는 이 판정이 공고 근거(영어)에서 지지되는지 = 환각 여부를 측정한다.
-    # 한국어 reason(일반 지식 서술)은 영어 근거와 언어·형식이 어긋나 측정을 왜곡하므로 쓰지 않는다.
+    # gap_result의 missing_required[].reason — LLM이 실제로 쓴 문장을 그대로 채점 대상으로 삼음
+    # (더 이상 "X is required" 같은 대리 문장을 코드로 지어내지 않음)
     samples: list[dict] = []
-    for skill, contexts in skill_evidence.items():
+    for item in final_report.get("missing_required") or []:
+        if not isinstance(item, dict):
+            continue
+        skill = item.get("skill")
+        reason = item.get("reason")
+        if not skill or not reason:
+            continue
+        contexts = skill_evidence.get(normalize_skill(skill))
+        if not contexts:
+            # 근거를 못 찾은 스킬은 reason이 있어도 대조할 retrieved_contexts가 없어 평가 불가
+            continue
         samples.append({
-            "user_input": f"Is {skill} required for the {job_family} role?",
+            "user_input": f"이 직군에서 {skill}이 부족한 이유는 무엇인가?",
             "retrieved_contexts": contexts[:5],
-            "response": f"{skill} is a required skill for the {job_family} role.",
-            # 여기서 흥미로운 점: response가 실제 gap_agent의 한국어 reason 문장이 아니라,
-            # "이 스킬은 필수다"라는 단순한 영어 문장으로 다시 만들어짐. 왜 그런지는 위 주석에 설명돼 있음 —
-            # RAGAS가 영어 근거와 한국어 문장을 비교하면 언어가 달라서 채점이 왜곡되기 때문
+            "response": reason,
         })
 
+    return samples
+
+
+# ── 스킬-숙련도/연차 표현 평가 (옵션 B — 그래프에 없는 순수 텍스트 정보) ──
+#
+# 옵션 A(_build_evidence_samples)는 gap_agent의 reason을 채점 대상으로 쓰는데,
+# "이 스킬이 왜 필요한가"는 결국 REQUIRES 관계로 어느 정도 유추 가능한 정보다.
+# 아래는 Neo4j 그래프에 전혀 없는 정보(스킬별 요구 숙련도·연차)를 원문에서 직접
+# 찾아 RAG(검색→생성)로 답하게 하고 채점한다 — 그래프로 대체 불가능해야 Faithfulness가
+# 실제로 뭔가를 검증하는 지표가 된다는 게 이번 재설계의 핵심.
+
+_PROFICIENCY_PATTERN = re.compile(
+    r"\d+\+?\s*years?[^.]{0,80}"
+    r"|proficient[^.]{0,80}|expert[^.]{0,80}|hands-on[^.]{0,80}"
+    r"|strong (?:knowledge|experience|understanding)[^.]{0,80}"
+    r"|familiar(?:ity)?[^.]{0,80}",
+    re.IGNORECASE,
+)
+
+
+def _find_skill_proficiency_excerpts(neo4j, job_family: str, max_samples: int = 5) -> list[dict]:
+    """직군 공고 원문에서, 스킬 이름 근처(80자 이내)에 숙련도/연차 표현이 붙은 발췌를 찾는다.
+
+    "Docker가 필요하다"는 REQUIRES로 이미 알 수 있지만, "몇 년/얼마나 능숙해야 하는가"는
+    원문 문장을 실제로 읽어야만 알 수 있다 — 이 함수가 그런 문장만 골라낸다.
+    """
+    query = """
+    MATCH (jp:JobPosting)-[:INSTANCE_OF]->(:JobFamily {name: $job_family})
+    MATCH (jp)-[:REQUIRES]->(sk:Skill)
+    WHERE jp.required_section IS NOT NULL AND jp.required_section <> ''
+    RETURN DISTINCT jp.company AS company, jp.required_section AS text, collect(DISTINCT sk.name) AS skills
+    """
+    rows = neo4j.execute_query(query, job_family=job_family)
+
+    found: list[dict] = []
+    for row in rows:
+        text = row["text"]
+        for skill in row["skills"]:
+            match = None
+            for kw in _keywords_for(skill):
+                match = re.search(rf"(?<![a-z0-9]){re.escape(kw)}(?![a-z0-9])", text, re.IGNORECASE)
+                if match:
+                    break
+            if not match:
+                continue
+            window = text[max(0, match.start() - 80): min(len(text), match.end() + 80)]
+            if _PROFICIENCY_PATTERN.search(window):
+                found.append({
+                    "company": row["company"],
+                    "skill": skill,
+                    "excerpt": " ".join(window.split()),
+                    # " ".join(text.split()) → 개행·연속공백을 단일 공백으로 정리 (기존 파일의 관용구와 동일)
+                })
+        if len(found) >= max_samples:
+            break
+    return found[:max_samples]
+
+
+def _answer_from_excerpt(skill: str, excerpt: str, openai_client) -> str:
+    """발췌 원문만 근거로, 그 스킬의 요구 숙련도/연차를 한 문장으로 답하게 한다.
+
+    프롬프트가 "원문에 없으면 추측 금지"를 명시 — 이 답변 자체가 RAGAS 채점 대상이므로,
+    지어내면 Faithfulness가 낮게 나오는 게 맞는 결과다(그래야 지표가 진짜로 검증하는 셈).
+    """
+    prompt = (
+        f"다음은 채용공고 요건 원문의 일부입니다. 이 내용만 근거로 '{skill}'에 대해 "
+        f"요구하는 숙련도나 경력 수준을 한국어 한 문장으로 답하세요. "
+        f"원문에 없는 내용은 추측하지 마세요.\n\n원문: \"{excerpt}\""
+    )
+    resp = openai_client.chat.completions.create(
+        model="gpt-4o-mini", temperature=0,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.choices[0].message.content.strip()
+
+
+def _build_skill_proficiency_samples(
+    neo4j, openai_client, job_families: list[str], per_family: int = 5,
+) -> list[dict]:
+    """직군별로 스킬-숙련도 발췌를 찾아, 원문만 근거로 답변을 생성하고 RAGAS 샘플로 포장."""
+    samples: list[dict] = []
+    for jf in job_families:
+        for e in _find_skill_proficiency_excerpts(neo4j, jf, max_samples=per_family):
+            answer = _answer_from_excerpt(e["skill"], e["excerpt"], openai_client)
+            samples.append({
+                "user_input": f"이 공고는 {e['skill']}에 대해 어느 정도의 숙련도/경력을 요구하는가?",
+                "retrieved_contexts": [e["excerpt"]],
+                "response": answer,
+            })
     return samples
 
 
@@ -164,11 +261,18 @@ def _build_evidence_samples(
 def run_ragas_eval(
     test_cases: list[dict],
     graph,
+    neo4j=None,
+    openai_client=None,
 ) -> EvalReport:
     """에이전트 갭 분석 품질을 RAGAS로 측정.
 
     test_cases 형식:
         [{"job_family": "AI/LLM Engineer", "skills": ["Python", "LangChain"], "owner": "테스트"}]
+
+    neo4j/openai_client를 주면, gap_agent reason(옵션 A)과 별도로 그래프에 없는
+    "스킬-숙련도/연차 표현" 샘플(옵션 B, _build_skill_proficiency_samples)도 함께 평가한다.
+    옵션 B가 Faithfulness/Answer Relevancy 모두 훨씬 높게 나온다(실측: 0.70대 vs 0.35~0.44) —
+    그래프로 대체 불가능한 질문 + 자연어 답변 조합이라야 RAGAS가 의미 있게 작동하기 때문.
     """
     # 이 함수가 실제로 "여러 테스트 케이스를 돌려서 RAGAS 점수를 매기는" 진짜 실행부
     if not os.getenv("OPENAI_API_KEY"):
@@ -201,16 +305,25 @@ def run_ragas_eval(
             # "가짜 데이터"가 아니라 진짜 에이전트를 돌려서 나온 결과로 채점하는 것
             if not skill_samples:
                 print(f"  [skip] {job_family} — evidence 없음")
-                continue
-
-            print(f"    → 스킬 샘플 {len(skill_samples)}개")
             for s in skill_samples:
                 raw_samples.append(s)
                 meta.append({
                     "job_family": job_family,
                     "skills": skills,
                     "n_ctx": len(s["retrieved_contexts"]),
+                    "kind": "reason(A)",
                 })
+            print(f"    → reason 샘플 {len(skill_samples)}개")
+
+        if neo4j is not None and openai_client is not None:
+            job_families = sorted({tc["job_family"] for tc in test_cases})
+            print(f"\n  스킬-숙련도 발췌 수집 (옵션 B): {job_families}")
+            prof_samples = _build_skill_proficiency_samples(neo4j, openai_client, job_families)
+            print(f"    → 숙련도 샘플 {len(prof_samples)}개")
+            for s in prof_samples:
+                raw_samples.append(s)
+                meta.append({"job_family": "?", "skills": [], "n_ctx": len(s["retrieved_contexts"]),
+                            "kind": "proficiency(B)"})
 
         if not raw_samples:
             return EvalReport(error="유효한 샘플 없음")
@@ -245,6 +358,7 @@ def run_ragas_eval(
                 faithfulness=round(float(row.get("faithfulness") or 0), 3),
                 answer_relevancy=round(float(row.get("answer_relevancy") or 0), 3),
                 n_contexts=meta[i]["n_ctx"],
+                kind=meta[i]["kind"],
             ))
             # meta[i] → 아까 raw_samples에 넣을 때 같은 순서로 저장해둔 meta를 인덱스로 다시 짝지음
 
@@ -287,17 +401,27 @@ if __name__ == "__main__":
     # 실제 그래프를 돌려서 품질 점수를 콘솔에 출력함 — CLAUDE.md에 적힌
     # "Faithfulness=0.250, AnswerRelevancy=0.876" 같은 수치가 바로 이 실행 결과였을 것
 
-    print("=== 갭 분석 에이전트 RAGAS 평가 (AI/LLM Engineer 중심) ===\n")
-    report = run_ragas_eval(test_cases, graph)
+    print("=== 갭 분석 에이전트 RAGAS 평가 (옵션 A: reason / 옵션 B: 스킬-숙련도) ===\n")
+    report = run_ragas_eval(test_cases, graph, neo4j=neo4j, openai_client=openai_client)
 
     if report.error:
         print(f"오류: {report.error}")
     else:
-        print("\n=== 결과 ===")
+        print("\n=== 전체 결과 ===")
         print(report.summary())
         print("\n[케이스별]")
         for s in report.samples:
-            print(f"  {s.job_family} (보유: {', '.join(s.portfolio_skills[:3])}...)")
+            label = f"{s.job_family} (보유: {', '.join(s.portfolio_skills[:3])}...)" if s.kind == "reason(A)" else "(스킬-숙련도)"
+            print(f"  [{s.kind}] {label}")
             print(f"    Faithfulness={s.faithfulness:.3f} | AnswerRelevancy={s.answer_relevancy:.3f} | 컨텍스트={s.n_contexts}개")
+
+        # 옵션 A(reason) vs 옵션 B(숙련도) 비교 — 그래프로 대체 가능한 질문(A)과 불가능한 질문(B)의
+        # Faithfulness/Answer Relevancy 차이를 보여주는 게 이 재설계의 핵심 근거
+        for kind in ("reason(A)", "proficiency(B)"):
+            group = [s for s in report.samples if s.kind == kind]
+            if group:
+                avg_f = round(sum(s.faithfulness for s in group) / len(group), 3)
+                avg_r = round(sum(s.answer_relevancy for s in group) / len(group), 3)
+                print(f"\n[{kind}] 샘플 {len(group)}개 — Faithfulness={avg_f} | AnswerRelevancy={avg_r}")
 
     neo4j.close()
