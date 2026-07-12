@@ -13,7 +13,8 @@ def _client_with_trend(rows):
 
 def test_trend_new_skill_flagged():
     # 이전 0 → 최근 등장: 신규 급증으로 표시 (delta 0.0으로 묻히면 안 됨)
-    out = _client_with_trend([{"recent_count": 5, "prev_count": 0}]).get_skill_trend("X")
+    # 표본 12건 ≥ _MIN_TREND_SAMPLE 이라 증감률까지 산출된다.
+    out = _client_with_trend([{"recent_count": 12, "prev_count": 0}]).get_skill_trend("X")
     assert out["delta_pct"] == 100.0
     assert out["is_new"] is True
 
@@ -24,9 +25,20 @@ def test_trend_growth_pct():
     assert out["is_new"] is False
 
 
+def test_trend_low_sample_suppresses_delta():
+    # 표본이 부족하면 증감률을 내지 않는다 — 1건 차이가 ±100%로 튀어 무의미하기 때문.
+    # is_new(신규 등장)는 표본과 무관한 사실이라 그대로 유지한다.
+    out = _client_with_trend([{"recent_count": 5, "prev_count": 0}]).get_skill_trend("X")
+    assert out["delta_pct"] is None
+    assert out["low_sample"] is True
+    assert out["is_new"] is True
+
+
 def test_trend_no_data():
+    # 데이터가 전무하면 표본 부족으로 처리 — 증감률 0.0은 "변화 없음"이라는 잘못된 신호다.
     out = _client_with_trend([{"recent_count": 0, "prev_count": 0}]).get_skill_trend("X")
-    assert out["delta_pct"] == 0.0
+    assert out["delta_pct"] is None
+    assert out["low_sample"] is True
     assert out["is_new"] is False
 
 

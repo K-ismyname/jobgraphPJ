@@ -137,8 +137,10 @@ LIMIT $limit
 
 QUERY_SKILL_UNLOCK_COUNT = """
 // 특정 스킬을 모두 보유할 경우 지원 가능한 공고 수
+// INSTANCE_OF 필수 — 미분류 공고를 세면 수치가 부풀려진다(실측 97% 오염)
 MATCH (jp:JobPosting)-[:REQUIRES]->(s:Skill)
 WHERE s.name IN $skill_names
+  AND (jp)-[:INSTANCE_OF]->(:JobFamily)
 WITH jp, count(DISTINCT s) AS matched, size($skill_names) AS total
 WHERE matched = total
 RETURN count(jp) AS posting_count
@@ -166,9 +168,12 @@ LIMIT $limit
 # 특정 직무 제목의 공고들이 어느 지역에 많은지 집계 (location이 빈 문자열인 건 제외)
 
 # 특정 스킬을 REQUIRES하는 JobPosting의 source_id 목록
+# INSTANCE_OF 필수 — 직군 미분류 공고(대부분 Adzuna)는 본문이 빈약해 스킬 추출이 환각이므로
+# 근거로 쓸 수 없다. 실측: 이 필터 없이 Docker를 조회하면 2,528건 중 2,463건(97%)이 미분류 공고였다.
 QUERY_POSTINGS_FOR_SKILL = """
 MATCH (jp:JobPosting)-[:REQUIRES]->(s:Skill)
 WHERE toLower(s.name) = toLower($skill_name)
+  AND (jp)-[:INSTANCE_OF]->(:JobFamily)
 RETURN jp.source_id AS source_id,
        CASE WHEN jp.required_section IS NOT NULL AND jp.required_section <> '' THEN 0 ELSE 1 END AS priority
 ORDER BY priority
@@ -191,6 +196,10 @@ ON MATCH  SET r.weight = r.weight + 1
 #   - {rel_type}          → 파이썬 쪽에서 .format(rel_type="REQUIRES")로 실제 관계 타입 문자열을 끼워 넣는 자리
 # 관계 타입(REQUIRES/PREFERS)은 Cypher에서 $파라미터로 못 넘기고 쿼리 문자열 자체에 박아 넣어야 해서 이런 방식을 씀
 # (관계 타입은 코드에서 "REQUIRES"/"PREFERS" 둘로 고정돼 있어 안전 — 사용자 입력이 그대로 들어가는 게 아님)
+
+# 트렌드 증감률을 계산하기에 최소한 필요한 표본 수 (recent + prev 합계).
+# 활성 공고가 직군당 수십 건 규모라, 이보다 적으면 1건 차이가 ±100%로 튀어 수치가 무의미하다.
+_MIN_TREND_SAMPLE = 10
 
 UPSERT_CO_OCCURS = """
 MATCH (a:Skill {name: $skill_a})
@@ -689,12 +698,16 @@ class Neo4jClient:
         """최근 N일 vs 이전 N일 공고 등장 횟수를 비교해 트렌드를 반환한다.
 
         posted_at이 없거나 비교 불가한 경우 delta_pct=0으로 반환한다.
+        표본이 _MIN_TREND_SAMPLE 미만이면 delta_pct 대신 low_sample=True를 반환한다 —
+        활성 공고가 직군당 수십 건 규모라 1건 차이가 ±100%로 튀어 무의미하기 때문.
         """
         # posted_at은 Neo4j datetime 타입이므로 cutoff 문자열도 datetime()으로 캐스팅해야 비교된다.
+        # INSTANCE_OF 필수 — 미분류(환각) 공고가 트렌드 수치를 오염시키지 않도록.
         query = """
         MATCH (s:Skill)<-[:REQUIRES]-(jp:JobPosting)
         WHERE toLower(s.name) = toLower($skill_name)
           AND jp.posted_at IS NOT NULL
+          AND (jp)-[:INSTANCE_OF]->(:JobFamily)
         WITH jp.posted_at AS posted_at
         WITH
           sum(CASE WHEN posted_at >= datetime($recent_cutoff) THEN 1 ELSE 0 END) AS recent_count,
@@ -724,6 +737,16 @@ class Neo4jClient:
                 return {"skill": skill_name, "recent_count": 0, "prev_count": 0, "delta_pct": 0.0}
             recent = rows[0].get("recent_count") or 0
             prev = rows[0].get("prev_count") or 0
+            # 표본이 너무 적으면 증감률 자체가 무의미하다 — 1건이 늘어도 ±100%가 되어
+            # 리포트가 "수요 100% 급증" 같은 근거 없는 숫자를 사용자에게 제시하게 된다.
+            # 근거 기반을 표방하는 시스템은 신뢰할 수 없는 숫자를 내보내지 않는 편이 정직하다.
+            # is_new(신규 등장)는 표본 수와 무관한 '사실'이므로 그대로 전달하고,
+            # 신뢰할 수 없는 '증감률'만 None으로 막는다.
+            if recent + prev < _MIN_TREND_SAMPLE:
+                return {"skill": skill_name, "recent_count": recent, "prev_count": prev,
+                        "delta_pct": None, "low_sample": True,
+                        "is_new": prev == 0 and recent > 0}
+
             # prev=0, recent>0은 '신규 급증'이지 '변화 없음'이 아니다 — delta 0.0으로 묻히지 않게 처리
             if prev > 0:
                 delta = round((recent - prev) / prev * 100, 1)

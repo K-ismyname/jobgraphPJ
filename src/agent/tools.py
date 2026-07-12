@@ -44,7 +44,13 @@ def _evidence_snippet(skill: str, text: str, max_sentences: int = 2, cap: int = 
 
     단편 1문장은 "그 스킬이 required인지" 문맥이 빈약해 RAGAS faithfulness를
     떨어뜨린다. 키워드 문장을 여러 개 묶어 근거의 충실도를 높인다.
-    키워드 문장이 없으면 앞부분을 cap 길이만큼 반환한다.
+
+    스킬을 언급하는 문장이 하나도 없으면 빈 문자열을 반환한다 — 예전에는 텍스트
+    앞부분을 그대로 근거로 돌려줬는데, 그러면 그 스킬을 한 글자도 언급하지 않는
+    공고 본문이 "근거"로 사용자에게 제시된다(실측: Docker 근거 5건 중 2건이 그랬다).
+    ragas_eval은 _evidence_mentions_skill로 이런 근거를 걸러내고 채점하는데 제품
+    경로에는 그 필터가 없어, 평가는 깨끗한 근거로 하고 사용자는 무관한 근거를 받는
+    불일치가 있었다. 근거가 없으면 없다고 말하는 게(graph_only) 정직하다.
     """
     kws = _keywords_for(skill)
     matched: list[str] = []
@@ -60,7 +66,7 @@ def _evidence_snippet(skill: str, text: str, max_sentences: int = 2, cap: int = 
                 # (생성된 답변이 근거 문서에 얼마나 충실한지 재는 평가 지표)를 높이려는 목적
     if matched:
         return ". ".join(matched)[:cap]
-    return (text or "").strip()[:cap]
+    return ""
 
 
 def create_tools(neo4j: "Neo4jClient") -> list:
@@ -212,6 +218,9 @@ def create_tools(neo4j: "Neo4jClient") -> list:
 
         missing_required 중 우선순위 판단이 필요한 스킬에만 호출한다.
         모든 스킬에 반복 호출하지 않는다.
+
+        low_sample=true 이면 표본이 부족해 증감률(delta_pct)이 null이다.
+        이 경우 트렌드를 근거로 쓰지 말고, 수요 변화를 언급하지 마라.
         """
         try:
             return neo4j.get_skill_trend(skill_name)
