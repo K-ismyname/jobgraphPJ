@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import secrets
@@ -48,6 +49,10 @@ logger = logging.getLogger("jobgraph.api")
 _MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MB
 # 업로드 파일 크기 상한. 10 * 1024 * 1024 바이트 = 10 메가바이트를 이렇게 계산식으로 써둔 것 —
 # "10485760"이라고 그냥 숫자로 쓰는 것보다 "10MB다"라는 의도가 코드만 봐도 바로 보임
+
+_PDF_PARSE_TIMEOUT_SEC = 30
+# 크기 제한을 통과했더라도 파싱에 지나치게 오래 걸리는 PDF(압축 폭탄 등)가 스레드를
+# 무한 점유하는 것을 막는다 — 크기만으로는 CPU 소진을 막을 수 없다.
 
 # 데모 비용 보호 — 방문자별(IP) 하루 분석 횟수 상한(메모리, 날짜 바뀌면 리셋). 기본 3회.
 # DEMO_DAILY_LIMIT=0이면 무제한. 관리자(ACCESS_KEY 일치)는 이 상한을 타지 않음.
@@ -210,10 +215,16 @@ async def upload_resume(
         # delete=False → with문이 끝나도 자동으로 안 지워짐 (아래서 우리가 직접 지울 것이기 때문)
     try:
         # pdfplumber는 CPU 바운드 블로킹 — 스레드풀로 오프로드해 이벤트 루프 보호
-        text, page_count = await run_in_threadpool(extract_pdf_info, tmp_path)
+        # 타임아웃: 크기(10MB)는 통과하지만 파싱에 지나치게 오래 걸리는 PDF(압축 폭탄 등)가
+        # 스레드를 무한 점유하는 것을 막는다. 크기 제한만으로는 CPU 소진을 못 막는다.
+        text, page_count = await asyncio.wait_for(
+            run_in_threadpool(extract_pdf_info, tmp_path), timeout=_PDF_PARSE_TIMEOUT_SEC
+        )
         # run_in_threadpool(함수, 인자) → "이 함수(extract_pdf_info)를 별도 작업자에게 맡겨서 실행하고,
         # 끝나면 결과를 알려줘"라는 뜻. pdf_parser.py의 extract_pdf_info는 시간이 좀 걸리는 작업이라,
         # 이걸 그냥 직접 호출하면(await 없이) 그 시간 동안 서버가 다른 요청을 하나도 못 받게 됨.
+    except asyncio.TimeoutError:
+        raise HTTPException(422, "PDF 처리 시간이 초과되었습니다. 더 단순한 파일로 시도해 주세요.")
     except ValueError as e:
         raise HTTPException(422, str(e))
         # pdf_parser.py의 extract_pdf_info가 파싱 실패 시 ValueError를 던지던 게 여기서 잡혀서
@@ -260,8 +271,13 @@ async def upload_portfolio(
         # 그래서 이력서(/upload)는 텍스트를 바로 뽑아 저장하지만, 포트폴리오는 "파일 경로"만 저장해둠.
 
     try:
-        # 블로킹 PDF 파싱을 스레드풀로 오프로드
-        page_count = await run_in_threadpool(_page_count, tmp_path)
+        # 블로킹 PDF 파싱을 스레드풀로 오프로드 (타임아웃으로 CPU 소진 방어 — 위 /upload와 동일)
+        page_count = await asyncio.wait_for(
+            run_in_threadpool(_page_count, tmp_path), timeout=_PDF_PARSE_TIMEOUT_SEC
+        )
+    except asyncio.TimeoutError:
+        os.unlink(tmp_path)
+        raise HTTPException(422, "PDF 처리 시간이 초과되었습니다. 더 단순한 파일로 시도해 주세요.")
     except Exception:
         os.unlink(tmp_path)
         raise HTTPException(422, "PDF를 열 수 없습니다.")

@@ -373,6 +373,11 @@ class Neo4jClient:
 
                 for skill_name, rel_type in all_pairs:
                     sess.run(UPSERT_SKILL, name=skill_name)
+                    # 관계 타입은 Cypher의 $파라미터로 넘길 수 없어 문자열에 직접 박아야 한다.
+                    # 지금은 호출부가 "REQUIRES"/"PREFERS"만 넘기지만, 미래에 사용자 입력이나
+                    # LLM 출력이 이 자리에 흘러들면 곧바로 Cypher 인젝션이 된다. 화이트리스트로 못 박는다.
+                    if rel_type not in ("REQUIRES", "PREFERS"):
+                        raise ValueError(f"허용되지 않은 관계 타입: {rel_type!r}")
                     cypher = UPSERT_POSTING_SKILL_REL.format(rel_type=rel_type)
                     # .format(rel_type=rel_type) → 쿼리 문자열 안의 {rel_type} 자리를 실제로 "REQUIRES" 또는 "PREFERS"로 치환
                     sess.run(cypher, source_id=source_id, skill_name=skill_name)
