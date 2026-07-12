@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import statistics
 from dataclasses import dataclass, field
 # langfuse_tracer.py에서 본 그 dataclass — 가벼운 데이터 상자를 만드는 방법
 
@@ -271,8 +272,21 @@ def run_ragas_eval(
 
     neo4j/openai_client를 주면, gap_agent reason(옵션 A)과 별도로 그래프에 없는
     "스킬-숙련도/연차 표현" 샘플(옵션 B, _build_skill_proficiency_samples)도 함께 평가한다.
-    옵션 B가 Faithfulness/Answer Relevancy 모두 훨씬 높게 나온다(실측: 0.70대 vs 0.35~0.44) —
-    그래프로 대체 불가능한 질문 + 자연어 답변 조합이라야 RAGAS가 의미 있게 작동하기 때문.
+
+    실측 (2026-07-12, 2케이스 × 3회 반복, 평균 ± 표준편차):
+        옵션 A(reason)      Faithfulness 0.535 ± 0.107 | AnswerRelevancy 0.372 ± 0.080
+        옵션 B(proficiency) Faithfulness 0.533 ± 0.126 | AnswerRelevancy 0.635 ± 0.003
+
+    해석 — 이전에 기록했던 "옵션 B가 Faithfulness 0.70대로 훨씬 높다"는 결론은 단일 실행
+    결과였고, 3회 반복으로 재검증하니 **재현되지 않았다**. 두 옵션의 Faithfulness는 사실상
+    같고(0.535 vs 0.533), 변동폭(±0.11~0.13)이 그 차이보다 크다.
+
+    실제로 유의미한 차이는 Answer Relevancy다(0.372 → 0.635). 옵션 B는 표준편차가 0.003으로
+    극히 안정적이라 노이즈가 아니다. 즉 "그래프로 답할 수 없는 질문"의 이점은 근거 충실도
+    (Faithfulness)가 아니라 **질문에 실제로 답하는가**(Answer Relevancy)에 있다.
+
+    교훈: RAGAS는 LLM 기반 채점이라 단일 실행의 분산이 크다. 표본 5개 규모에서 한 번 돌린
+    수치로 결론을 내면 안 된다 — 반드시 반복 측정하고 표준편차를 함께 봐야 한다.
     """
     # 이 함수가 실제로 "여러 테스트 케이스를 돌려서 RAGAS 점수를 매기는" 진짜 실행부
     if not os.getenv("OPENAI_API_KEY"):
@@ -397,31 +411,42 @@ if __name__ == "__main__":
             "owner": "평가_DE",
         },
     ]
-    # 이 파일을 직접 실행하면(python -m src.evaluation.ragas_eval), 미리 정해둔 3가지 케이스로
-    # 실제 그래프를 돌려서 품질 점수를 콘솔에 출력함 — CLAUDE.md에 적힌
-    # "Faithfulness=0.250, AnswerRelevancy=0.876" 같은 수치가 바로 이 실행 결과였을 것
+    # RAGAS는 LLM이 채점하므로 같은 입력에도 실행마다 점수가 흔들린다. 표본이 적으면
+    # metric이 0/1로 튀어 단일 실행 수치는 신뢰할 수 없다 — 실제로 과거에 "옵션 B는
+    # Faithfulness 0.70대"라고 기록했다가 3회 반복 측정에서 재현되지 않은 전례가 있다.
+    # 그래서 CLI는 기본적으로 여러 번 돌려 평균 ± 표준편차를 함께 출력한다.
+    n_runs = int(os.getenv("RAGAS_RUNS", "3"))
 
-    print("=== 갭 분석 에이전트 RAGAS 평가 (옵션 A: reason / 옵션 B: 스킬-숙련도) ===\n")
-    report = run_ragas_eval(test_cases, graph, neo4j=neo4j, openai_client=openai_client)
+    print(f"=== 갭 분석 에이전트 RAGAS 평가 (옵션 A: reason / 옵션 B: 스킬-숙련도) — {n_runs}회 반복 ===\n")
 
-    if report.error:
-        print(f"오류: {report.error}")
-    else:
-        print("\n=== 전체 결과 ===")
-        print(report.summary())
-        print("\n[케이스별]")
-        for s in report.samples:
-            label = f"{s.job_family} (보유: {', '.join(s.portfolio_skills[:3])}...)" if s.kind == "reason(A)" else "(스킬-숙련도)"
-            print(f"  [{s.kind}] {label}")
-            print(f"    Faithfulness={s.faithfulness:.3f} | AnswerRelevancy={s.answer_relevancy:.3f} | 컨텍스트={s.n_contexts}개")
-
-        # 옵션 A(reason) vs 옵션 B(숙련도) 비교 — 그래프로 대체 가능한 질문(A)과 불가능한 질문(B)의
-        # Faithfulness/Answer Relevancy 차이를 보여주는 게 이 재설계의 핵심 근거
-        for kind in ("reason(A)", "proficiency(B)"):
+    runs: dict[str, dict[str, list[float]]] = {
+        "reason(A)": {"f": [], "r": []},
+        "proficiency(B)": {"f": [], "r": []},
+    }
+    for i in range(n_runs):
+        print(f"\n---------- RUN {i + 1}/{n_runs} ----------")
+        report = run_ragas_eval(test_cases, graph, neo4j=neo4j, openai_client=openai_client)
+        if report.error:
+            print(f"오류: {report.error}")
+            continue
+        for kind, acc in runs.items():
             group = [s for s in report.samples if s.kind == kind]
             if group:
-                avg_f = round(sum(s.faithfulness for s in group) / len(group), 3)
-                avg_r = round(sum(s.answer_relevancy for s in group) / len(group), 3)
-                print(f"\n[{kind}] 샘플 {len(group)}개 — Faithfulness={avg_f} | AnswerRelevancy={avg_r}")
+                acc["f"].append(sum(s.faithfulness for s in group) / len(group))
+                acc["r"].append(sum(s.answer_relevancy for s in group) / len(group))
+
+    print(f"\n\n=== {n_runs}회 반복 종합 (평균 ± 표준편차) ===")
+    for kind, acc in runs.items():
+        if not acc["f"]:
+            continue
+        f_mean = statistics.mean(acc["f"])
+        r_mean = statistics.mean(acc["r"])
+        f_sd = statistics.stdev(acc["f"]) if len(acc["f"]) > 1 else 0.0
+        r_sd = statistics.stdev(acc["r"]) if len(acc["r"]) > 1 else 0.0
+        print(f"\n[{kind}]")
+        print(f"  Faithfulness    : {f_mean:.3f} ± {f_sd:.3f}   (개별: {[round(x, 2) for x in acc['f']]})")
+        print(f"  AnswerRelevancy : {r_mean:.3f} ± {r_sd:.3f}   (개별: {[round(x, 2) for x in acc['r']]})")
+
+    print("\n주의: 표준편차가 두 옵션의 차이보다 크면 그 차이는 근거가 없다.")
 
     neo4j.close()

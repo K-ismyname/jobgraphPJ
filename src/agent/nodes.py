@@ -123,8 +123,10 @@ _PROJECT_DESIGN_CONTEXT = """[이 프로젝트 설계 의사결정]
 - 적합도 ⊥ 신뢰도 분리: "Python 잘 함(이력서 주장)" ≠ "Python 잘 함(GitHub 확인)". 점수와 근거를 분리.
 - consensus/critic LLM 없음: 신뢰도 등급은 규칙 기반으로 결정적 산출. LLM은 숫자를 지어낸다.
 - 4개 평가자 병렬: resume/github/portfolio/deploy 독립 평가 후 교차검증. 이력서 주장만 믿으면 과장이 안 걸러짐.
+- 자기 서술은 서로를 검증하지 못함: resume+portfolio는 같은 사람이 쓴 것이라 둘이 일치해도 Claimed. 외부 관측(github/deploy)이 있어야 Corroborated.
 - Corrective RAG 루프: 근거 부족하면 tools 재호출 (최대 5회). 에이전트가 "증거가 충분한가"를 스스로 판단.
-- RAGAS 평가: Faithfulness=0.250(공고 간접 표현 탓), AnswerRelevancy=0.876."""
+- 근거 없으면 근거 없다고 말함: verify_skills는 스킬을 언급하는 문장이 없으면 빈 근거(graph_only)를 반환. 무관한 본문을 근거인 척 붙이지 않는다.
+- RAGAS 평가(3회 반복, 평균±표준편차): reason Faithfulness 0.535±0.107 / AnswerRelevancy 0.372±0.080, 숙련도 질문 0.533±0.126 / 0.635±0.003. 단일 실행으로 냈던 "0.70대" 수치는 재현되지 않았고, 두 방식의 Faithfulness 차이는 변동폭 안이라 근거가 없음을 스스로 반증함."""
 # 흥미로운 지점: 이 텍스트는 코칭 LLM이 "면접에서 이 프로젝트의 설계 이유를 설명하라"는 코칭을 만들 때
 # 참고하는 배경지식으로 쓰임 (아래 coach_call_model에서 시스템 프롬프트에 이어붙여짐).
 # CLAUDE.md 문서 내용을 코드 상수로도 복제해둔 셈 — 두 군데를 따로 유지보수해야 한다는 뜻이기도 함
