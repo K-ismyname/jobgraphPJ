@@ -9,11 +9,17 @@
 
 import logging
 import os
+import re
 
 import httpx
 
 from src.common.text_match import keywords_for, word_match
 from src.extraction.skill_extractor import DemonstratedSkill
+
+# GitHub owner/repo에 허용되는 문자 — API 경로에 삽입되므로 ".."나 "/" 같은 조각을 막는다.
+# 점은 repo명에 실제로 쓰이므로(예: my.repo) 허용하되, 영숫자를 최소 하나 요구해
+# "." / ".." 처럼 경로 조작에 쓰이는 세그먼트는 거부한다.
+_SAFE_SEGMENT = re.compile(r"(?=.*[A-Za-z0-9])[A-Za-z0-9._-]+")
 # skill_extractor.py의 pydantic 모델 — 이력서에서 추출된 "확인된 스킬" 하나를 표현하는 그 모델
 
 logger = logging.getLogger("jobgraph.portfolio")
@@ -135,6 +141,14 @@ def parse_github_repo(url: str) -> tuple[str, str | None]:
     except (ValueError, IndexError):
         raise ValueError(f"유효하지 않은 GitHub URL: {url}")
     repo = parts[idx + 2] if len(parts) > idx + 2 and parts[idx + 2] else None
+
+    # 이 값들은 https://api.github.com/repos/{owner}/{repo} 경로에 그대로 삽입되므로,
+    # ".." 같은 조각이 들어가면 의도치 않은 GitHub API 엔드포인트를 호출할 수 있다.
+    # GitHub이 실제로 허용하는 문자(영숫자·하이픈·언더스코어·점)만 통과시킨다.
+    if not _SAFE_SEGMENT.fullmatch(owner):
+        raise ValueError(f"유효하지 않은 GitHub owner: {owner!r}")
+    if repo is not None and not _SAFE_SEGMENT.fullmatch(repo):
+        raise ValueError(f"유효하지 않은 GitHub repo: {repo!r}")
     # owner 다음 조각까지 있으면(len 체크) 그리고 그 조각이 빈 문자열이 아니면 repo로 인정,
     # 아니면 None — 즉 "github.com/owner"까지만 준 경우와 "github.com/owner/repo"를 구분해서 처리
     return owner, repo

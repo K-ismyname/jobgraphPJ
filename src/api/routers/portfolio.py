@@ -18,7 +18,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 # BackgroundTasks — "응답은 먼저 보내고, 이 작업은 응답 보낸 뒤에 이어서 해라"는 FastAPI 기능.
 # run_in_threadpool — 시간이 걸리는 일반 함수를, 별도 작업자(스레드)에게 맡겨서 실행하는 도구.
@@ -49,26 +49,56 @@ _MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MB
 # 업로드 파일 크기 상한. 10 * 1024 * 1024 바이트 = 10 메가바이트를 이렇게 계산식으로 써둔 것 —
 # "10485760"이라고 그냥 숫자로 쓰는 것보다 "10MB다"라는 의도가 코드만 봐도 바로 보임
 
-# 데모 비용 보호 — 방문자 하루 분석 횟수 상한(메모리, 날짜 바뀌면 리셋). 기본 1회.
-# DEMO_DAILY_LIMIT=0이면 무제한. 관리자(ACCESS_KEY 일치/로컬)는 이 상한을 타지 않음.
-_demo_usage: dict = {"date": None, "count": 0}
-# 이 프로젝트가 "공개 데모"로 배포되면, 아무나 계속 분석을 요청해서 OpenAI API 비용이
-# 무한정 나갈 수 있음. 그걸 막으려고 "하루에 몇 번까지만" 제한을 두는 용도의 카운터.
+# 데모 비용 보호 — 방문자별(IP) 하루 분석 횟수 상한(메모리, 날짜 바뀌면 리셋). 기본 3회.
+# DEMO_DAILY_LIMIT=0이면 무제한. 관리자(ACCESS_KEY 일치)는 이 상한을 타지 않음.
+#
+# 전역 카운터가 아니라 IP별로 세는 이유: 전역이면 방문자 한 명이 아침에 소진하는 순간
+# 그날 하루 데모가 죽는다(채용담당자 포함). IP별이면 각자 몫이 보장된다.
+_demo_usage: dict[str, dict] = {}   # {ip: {"date": "2026-07-12", "count": 2}}
 _demo_usage_lock = threading.Lock()
 # analyze_portfolio가 def(동기 함수)라 FastAPI가 여러 스레드에서 동시에 실행할 수 있음 —
 # "확인 후 증가"를 이 락으로 감싸지 않으면, 두 요청이 거의 동시에 들어왔을 때 둘 다 상한 확인을
 # 통과해버리는 경쟁 조건(race condition)이 생김. 락으로 "한 번에 한 스레드만" 이 블록을 실행하게 강제.
 
+_MAX_TRACKED_IPS = 10_000
+# IP 딕셔너리가 무한정 커지는 것(메모리 고갈 유발) 방지 — 넘치면 날짜 지난 항목부터 정리한다.
+
+
+def _client_ip(request: Request) -> str:
+    """클라이언트 IP — HF Spaces 등 리버스 프록시 뒤에서는 x-forwarded-for를 본다.
+
+    주의: x-forwarded-for는 클라이언트가 위조할 수 있다. 여기서는 과금 보호(비용 상한)
+    용도라 위조 시 상한 우회가 가능하지만, 인증·권한 판단에는 절대 쓰지 않는다.
+    엄밀한 방어가 필요하면 신뢰 가능한 프록시 IP 화이트리스트가 필요하다.
+    """
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()   # 첫 항목이 최초 클라이언트
+    return request.client.host if request.client else "unknown"
+
+
+def _is_public_deploy() -> bool:
+    """공개 배포 환경인지 — HF Spaces는 SPACE_ID를 자동 주입한다."""
+    return bool(os.getenv("SPACE_ID") or os.getenv("ENV") == "production")
+
 
 def _is_admin(key: str) -> bool:
-    """관리자 여부 — env ACCESS_KEY 미설정(로컬)이거나 키가 맞으면 무제한.
+    """관리자 여부 — ACCESS_KEY가 일치하면 일일 상한 면제.
 
-    공개 배포는 HF 시크릿 ACCESS_KEY로 설정 → 관리자는 무제한,
-    방문자는 일일 상한(기본 1회) 내에서 이용(과금 보호).
+    ACCESS_KEY 미설정 시:
+      - 로컬 개발: 관리자로 취급(편의)
+      - 공개 배포: 관리자 아님(fail-closed)
+    시크릿 설정을 깜빡한 채 배포하면 방문자 전원이 관리자가 되어 상한이 무력화되고
+    OpenAI 과금이 무제한 열린다. 보안 기본값은 fail-open이 아니라 fail-closed여야 한다.
     """
     expected = os.getenv("ACCESS_KEY")
+    if not expected:
+        if _is_public_deploy():
+            logger.warning("ACCESS_KEY 미설정 상태로 공개 배포됨 — 관리자 없이 일일 상한만 적용")
+            return False
+        return True   # 로컬 개발 편의
     # 타이밍 세이프 비교 — 문자열 == 는 조기 종료로 키 길이·prefix가 새어나갈 수 있음
-    return (not expected) or secrets.compare_digest(key or "", expected)
+    return secrets.compare_digest(key or "", expected)
     # 왜 그냥 "key == expected"라고 안 쓰고 secrets.compare_digest()를 쓰는가:
     # 파이썬의 == 비교는 문자열 앞부분부터 비교하다가 다른 글자가 나오면 그 즉시 멈추고 False를 반환함.
     # 이 미세한 "얼마나 빨리 False가 나오는지" 시간 차이를 계속 관찰하면, 공격자가 "정답 키의 앞 글자가
@@ -76,9 +106,9 @@ def _is_admin(key: str) -> bool:
     # 시간이 걸리게 비교해서 이 정보 유출을 막아줌 — 보안 관련 값을 비교할 땐 항상 이런 함수를 써야 함.
 
 
-def _enforce_daily_limit() -> None:
-    """오늘 분석 횟수가 상한을 넘으면 429를 던지고, 아니면 카운트를 1 올린다."""
-    limit = int(os.getenv("DEMO_DAILY_LIMIT", "1") or "1")
+def _enforce_daily_limit(ip: str) -> None:
+    """이 IP의 오늘 분석 횟수가 상한을 넘으면 429를 던지고, 아니면 카운트를 1 올린다."""
+    limit = int(os.getenv("DEMO_DAILY_LIMIT", "3") or "3")
     if limit <= 0:
         return
         # 0 이하로 설정하면 "무제한"으로 취급 — 관리자가 필요하면 환경변수로 이 제한 자체를 끌 수 있음
@@ -86,18 +116,31 @@ def _enforce_daily_limit() -> None:
     # 둘 다 통과해버리는 경쟁 조건이 생기므로, 이 블록 전체를 락으로 묶어 한 번에 한 스레드만 실행하게 함
     with _demo_usage_lock:
         today = datetime.now(timezone.utc).date().isoformat()
-        if _demo_usage["date"] != today:
-            _demo_usage["date"] = today
-            _demo_usage["count"] = 0
+
+        if len(_demo_usage) >= _MAX_TRACKED_IPS:
+            # 날짜가 지난 항목을 청소 — 그래도 안 줄면(전부 오늘자) 전체를 비운다.
+            # 상한 초기화가 되긴 하지만, 메모리 고갈로 서버가 죽는 것보다는 낫다.
+            stale = [k for k, v in _demo_usage.items() if v["date"] != today]
+            for k in stale:
+                del _demo_usage[k]
+            if len(_demo_usage) >= _MAX_TRACKED_IPS:
+                logger.warning("데모 IP 추적 한도 초과 — 카운터 전체 리셋")
+                _demo_usage.clear()
+
+        entry = _demo_usage.get(ip)
+        if entry is None or entry["date"] != today:
+            entry = {"date": today, "count": 0}
+            _demo_usage[ip] = entry
             # 날짜가 바뀌었으면(어제 카운트를 오늘까지 들고 있으면 안 되니까) 카운터를 0으로 리셋
-        if _demo_usage["count"] >= limit:
+
+        if entry["count"] >= limit:
             raise HTTPException(
                 429,
                 f"오늘 데모 분석 한도({limit}회)가 모두 사용되었습니다. "
                 "공개 데모 비용 보호를 위한 제한이며, 내일 다시 시도해 주세요.",
             )
             # 429 = "Too Many Requests"라는 표준 HTTP 상태코드 — "너무 많이 요청했다"는 뜻
-        _demo_usage["count"] += 1
+        entry["count"] += 1
 _NODE_PHASE = {
     "resume_eval": "소스 평가 중", "github_eval": "소스 평가 중",
     "portfolio_eval": "소스 평가 중", "deploy_eval": "소스 평가 중",
@@ -232,6 +275,7 @@ async def upload_portfolio(
 @router.post("/analyze", response_model=AnalyzeAccepted)
 def analyze_portfolio(
     req: AnalyzeRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
     uploads: dict = Depends(get_uploads),
     reports: dict = Depends(get_reports),
@@ -259,9 +303,9 @@ def analyze_portfolio(
         # 409 = "Conflict" — 같은 report_id로 분석을 두 번 동시에 돌리는 걸 막음
         # (같은 사람이 실수로 버튼을 두 번 눌러도 이중으로 비용이 안 나가게)
 
-    # 공개 데모 비용 보호 — 관리자(키 일치/로컬)는 무제한, 방문자는 일일 상한(기본 3회)
+    # 공개 데모 비용 보호 — 관리자(키 일치)는 무제한, 방문자는 IP별 일일 상한(기본 3회)
     if not _is_admin(req.access_key):
-        _enforce_daily_limit()
+        _enforce_daily_limit(_client_ip(request))
 
     portfolio_key = f"pf:{req.portfolio_report_id}" if req.portfolio_report_id else None
     portfolio_path = uploads.get(portfolio_key) if portfolio_key else None

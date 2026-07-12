@@ -10,9 +10,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Callable
 
-import httpx
-
 from src.common.text_match import word_match as _word_match, keywords_for as _keywords_for
+from src.common.url_guard import UnsafeURLError, safe_get
 
 if TYPE_CHECKING:
     from src.agent.state import AppState
@@ -62,13 +61,18 @@ def create_deploy_evaluator(neo4j: "Neo4jClient") -> Callable[["AppState"], dict
     """배포 URL 평가자 팩토리. 작동하는 배포에서 직군 스킬을 코드 외부 근거로 확인한다."""
     def _eval_one(url: str, vocab) -> list:
         try:
-            resp = httpx.get(url, timeout=10, follow_redirects=True,
-                             headers={"User-Agent": "Mozilla/5.0 (job-skill-analyzer)"})
-            # follow_redirects=True → 배포 URL이 다른 주소로 리다이렉트돼도(흔한 경우) 따라가서 최종 응답을 받음
+            # safe_get — 사용자가 제출한 URL이므로 SSRF 가드를 통과해야 한다.
+            # 내부망(127.x, 10.x, 169.254.x 클라우드 메타데이터 등)으로는 요청하지 않으며,
+            # 리다이렉트도 매 hop마다 재검증한다 (302로 내부망 우회를 막기 위해).
             # User-Agent를 명시하는 이유: 일부 서버가 User-Agent가 없거나 "봇스러운" 요청을 차단하는데,
             # 브라우저처럼 보이는 값을 넣어 정상적인 응답을 받을 확률을 높임 (동시에 어떤 프로젝트의
             # 요청인지 식별 가능하게 이름도 남김 — 서버 운영자가 로그에서 알아볼 수 있게)
+            resp = safe_get(url, timeout=10,
+                            headers={"User-Agent": "Mozilla/5.0 (job-skill-analyzer)"})
             resp.raise_for_status()
+        except UnsafeURLError as e:
+            logger.warning(f"[deploy_eval] 차단된 URL: {e}")
+            return []
         except Exception as e:
             logger.warning(f"[deploy_eval] URL fetch 실패 (미작동/접근불가): {e}")
             return []
