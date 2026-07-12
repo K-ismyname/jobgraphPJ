@@ -1,0 +1,117 @@
+{
+  "_meta": {
+    "purpose": "갭 분석의 end-task 정확도(precision/recall)를 재기 위한 정답 라벨. RAGAS Faithfulness는 '말한 것이 근거에 있는가'만 재고, '부족하다고 지목한 스킬이 진짜 부족한가'는 재지 못한다 — 그 공백을 메우는 데이터.",
+    "how_to_use": "python -m src.evaluation.golden_eval",
+    "labeling_rule": "그 직군에 지원하려면 '실제로 갖춰야 하는' 스킬만 core에 넣는다. 공고에 자주 등장해도 그 직무의 본질이 아니면 excluded로 뺀다 — 시스템은 REQUIRES 빈도 상위 10개를 핵심으로 삼는데, 그 휴리스틱이 실제 직무 요구와 어긋나는 지점을 잡아내는 것이 이 라벨의 목적이다.",
+    "status": "DRAFT — 사람 검수 필요. 아래 draft_note를 보고 core/excluded를 확정할 것.",
+    "labeled_at": "2026-07-12",
+    "source": "Neo4j 분류 공고 604건의 REQUIRES 빈도 상위 12개를 후보로 제시하고, 직무 본질에 따라 선별"
+  },
+
+  "AI/LLM Engineer": {
+    "core": ["Python", "LLM", "Machine Learning", "AI", "PyTorch", "RAG", "GenAI", "Docker"],
+    "excluded": {
+      "PostgreSQL": "범용 백엔드 스킬 — AI/LLM 직무의 본질적 요건이 아님",
+      "Java": "일부 공고의 부차적 언급 (빈도 6) — AI/LLM 스택의 핵심이 아님",
+      "C++": "고성능 추론 등 특수 케이스에만 해당 — 일반 AI/LLM 엔지니어 요건 아님",
+      "Scala": "데이터 엔지니어링 스킬이 AI/LLM 직군 공고에 섞여 들어온 것"
+    },
+    "draft_note": "LangChain/LangGraph/Vector DB는 빈도가 낮아 상위 12개에 안 잡히지만 실제로는 핵심일 수 있다. 검수 시 추가 여부 판단 필요."
+  },
+
+  "Frontend Engineer": {
+    "core": ["React", "JavaScript", "TypeScript", "CSS", "HTML"],
+    "excluded": {
+      "Terraform": "인프라 스킬 — 프론트엔드 핵심 요건 아님",
+      "Kubernetes": "동일",
+      "AWS": "있으면 좋지만 프론트엔드의 필수 요건은 아님",
+      "Angular": "React와 대체 관계 — 특정 스택 선택 사항이라 공통 core에서 제외",
+      "Vue.js": "동일"
+    },
+    "draft_note": "Angular/Vue는 React의 대안이라 '핵심 필수'로 보기 어렵다. 대체 관계 스킬을 어떻게 다룰지는 정책 결정이 필요."
+  },
+
+  "Data Analyst": {
+    "core": ["SQL", "Python", "Tableau", "Power BI", "Excel", "dbt"],
+    "excluded": {
+      "GitHub": "협업 도구이지 분석 역량이 아님",
+      "R": "Python과 대체 관계 — 둘 중 하나면 충분",
+      "Looker": "Tableau/PowerBI와 대체 관계"
+    },
+    "draft_note": "BI 도구(Tableau/PowerBI/Looker)는 서로 대체재다. '하나 이상 보유'로 판정해야 정확하나 현재 시스템은 개별 스킬로 센다."
+  },
+
+  "Data Engineer": {
+    "core": ["Python", "SQL", "Spark", "Kafka", "AWS", "ETL", "Snowflake", "Hadoop"],
+    "excluded": {
+      "Java": "Spark/Hadoop 생태계에서 쓰이지만, Python/Scala로 대체 가능",
+      "Scala": "동일 (대체 관계)",
+      "Hive": "Hadoop 생태계의 세부 도구 — 핵심 요건으로 보기엔 지엽적"
+    },
+    "draft_note": "이 직군은 빈도 상위와 실제 요구가 잘 일치한다 (Snowflake/Kafka/Spark 등)."
+  },
+
+  "DevOps/SRE": {
+    "core": ["Kubernetes", "Docker", "Terraform", "CI/CD", "Python", "Ansible", "Jenkins"],
+    "excluded": {
+      "PostgreSQL": "DB 운영이 일부 포함되나 DevOps의 본질적 요건은 아님",
+      "Go": "인프라 도구 개발에 쓰이나 필수는 아님",
+      "Openshift": "Kubernetes 배포판 중 하나 — 특정 벤더 스택",
+      "Distributed Systems": "개념이지 검증 가능한 스킬이 아님"
+    },
+    "draft_note": "'Distributed Systems' 같은 개념어가 스킬로 추출된 사례 — 정규화 블록리스트 보강 후보."
+  },
+
+  "ML Engineer": {
+    "core": ["Python", "Machine Learning", "Docker", "MLOps", "PyTorch", "Deep Learning", "Kubernetes"],
+    "excluded": {
+      "PostgreSQL": "범용 백엔드 스킬",
+      "Kubeflow": "MLOps 도구 중 하나 — 특정 스택",
+      "Azure": "클라우드는 대체 관계 (AWS/GCP/Azure 중 하나)",
+      "GCP": "동일",
+      "AWS": "동일"
+    },
+    "draft_note": "클라우드 3사는 대체 관계다. '하나 이상'으로 판정해야 정확하다."
+  },
+
+  "Data Scientist": {
+    "core": ["Python", "SQL", "Machine Learning", "Pandas", "AI"],
+    "excluded": {
+      "R": "Python과 대체 관계",
+      "Docker": "있으면 좋지만 DS의 필수 요건은 아님",
+      "AWS": "동일",
+      "Microsoft Azure": "동일",
+      "Spark": "대용량 처리 시에만 — 일반 DS 요건은 아님",
+      "Computer Vision": "특화 분야 — 일반 DS 공통 요건 아님",
+      "GenAI": "최근 부상했으나 아직 DS 공통 필수로 보기 어려움",
+      "RAG": "동일"
+    },
+    "draft_note": "DS는 도메인에 따라 요구가 크게 갈린다 (CV/NLP/통계). 공통 핵심만 남겼다."
+  },
+
+  "Security Engineer": {
+    "core": ["SIEM", "Python", "Cloud Security", "Penetration Testing", "AWS", "Terraform"],
+    "excluded": {
+      "CI/CD": "DevSecOps 맥락에서 등장하나 보안 직무의 본질은 아님",
+      "GCP": "클라우드 대체 관계",
+      "GitHub": "협업 도구",
+      "Microsoft Sentinel": "SIEM 제품 중 하나 — 특정 벤더",
+      "Datadog": "관측 도구 — 보안 핵심 아님",
+      "SQL": "쿼리 능력은 부차적"
+    },
+    "draft_note": "이 직군은 공고 107건인데 스킬 빈도가 매우 낮다(최다 AWS 7건) — 스킬 추출이 잘 안 되는 직군. 라벨 신뢰도 낮음."
+  },
+
+  "Software Engineer": {
+    "core": ["Python", "SQL", "Docker", "AWS", "CI/CD", "PostgreSQL"],
+    "excluded": {
+      "React": "프론트엔드 특화 — 범용 SE 요건 아님",
+      "TypeScript": "동일",
+      "JavaScript": "동일",
+      "Java": "언어는 대체 관계 (Python/Java/Go 중 하나)",
+      "Go": "동일",
+      "Kubernetes": "인프라 심화 — SE 공통 필수는 아님"
+    },
+    "draft_note": "SE는 범용 직군이라 '핵심 필수'를 정의하기 가장 어렵다. 언어는 대체 관계이므로 특정 언어를 필수로 두면 오탐이 난다. 현재 core는 언어 중립적인 것만 남겼는데, 이 판단 자체가 검수 대상이다."
+  }
+}
