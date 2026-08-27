@@ -165,6 +165,23 @@ function renderReport(d) {
 
   // ① 충족한 스킬 — 직군 핵심 중 보유 (가로 배지 + 신뢰도)
   const met = renderSkillBadges(cf.met);
+  const hasProjectCoaching = Boolean(
+    understanding.one_liner || understanding.architecture || understanding.data_flow
+    || (d.evidence_cards || []).length || (d.project_roadmap || []).length
+    || (d.project_suggestions || []).length || (d.portfolio_sentences || []).length
+  );
+  const hasVerifiedEvidence = (counts.Verified || 0) + (counts.Corroborated || 0) > 0;
+  const githubProfiles = (((d.trace || {}).coach || {}).github_profiles || []);
+  const githubNotice = (!hasProjectCoaching && !hasVerifiedEvidence)
+    ? `<div class="notice">
+        GitHub 코드 근거가 잡히지 않아 프로젝트 이해·코드 근거 카드가 비어 있습니다.
+        ${githubProfiles.length ? "관측 페이지에서 GitHub 분석 결과를 확인하세요." : "GitHub URL이 제대로 입력됐는지 확인하고 다시 분석해 주세요."}
+      </div>`
+    : "";
+
+  const coachingSummary = d.coaching_summary
+    ? `<h3>코칭 요약</h3><div class="suggestion rich-section"><div class="head">${esc(d.coaching_summary)}</div></div>`
+    : "";
 
   const designChoices = (understanding.core_design_choices || [])
     .map((x) => `<li>${esc(x)}</li>`)
@@ -200,6 +217,13 @@ function renderReport(d) {
     .map((s) => `<div class="sentence">${esc(s)}</div>`)
     .join("");
 
+  const interviewCoaching = (d.interview_coaching || [])
+    .map((s) => `<div class="suggestion interview-card ${esc(s.type || "strength")}">
+      <div class="head">${s.type === "gap" ? "갭 대응" : "강점 어필"} · ${esc(s.title)}</div>
+      <div class="rew">${esc(s.coaching)}</div>
+    </div>`)
+    .join("");
+
   // ② 채우면 좋을 스킬 — 없는 직군 핵심 → 학습 (왜 + 어떻게)
   const learnings = (d.learning_recommendations || [])
     .map((s) => `<div class="suggestion">
@@ -233,8 +257,11 @@ function renderReport(d) {
     ${TRUST_LEGEND}
     <h3>충족한 스킬</h3>
     <div>${met || "<p class='prio'>없음</p>"}</div>
+    ${coachingSummary}
+    ${githubNotice}
     ${projectUnderstanding}
     ${evidenceCards ? `<h3>코드 근거 기반 강점</h3>${evidenceCards}` : ""}
+    ${interviewCoaching ? `<h3>면접 코칭</h3>${interviewCoaching}` : ""}
     ${portfolioSentences ? `<h3>포트폴리오 문장</h3><div class="sentence-box">${portfolioSentences}</div>` : ""}
     ${learnings ? `<h3>채우면 좋을 스킬</h3>${learnings}` : ""}
     ${projects ? `<h3>코드로 보강할 스킬</h3>${projects}` : ""}
