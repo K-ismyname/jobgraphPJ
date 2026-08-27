@@ -1510,3 +1510,37 @@ langgraph 1.x 재고정 · PART_OF 간접 실증 · 파일경로 환각 차단 �
 
 - learning_recommendations의 "how" 필드 사실 왜곡(예: 실제 스택과 다른 기술을 "현재 사용 중"이라 서술) — 전략적으로 미해결 유지. 재발 시 "이미 확인된 기술 스택" 한 줄 요약을 코칭 프롬프트 최상단에 주입하는 일반화된 가드 고려.
 - `_skills_from_sources`의 매니페스트 스캔이 레포 루트만 확인 — 중첩된 requirements.txt/package.json을 놓쳐 일부 스킬이 Verified 대신 Corroborated로 저평가될 수 있음.
+
+---
+
+## [2026-08-27] HF Space 재배포 — 런타임 시드 누락 발견·수정
+
+### 작업 절차
+
+1. 로컬 커밋 2개(`Improve portfolio analysis safety and coaching reliability`, `Update pj1`)와 HF Space tip 비교 → HF에는 앞의 1개만 반영돼 있음을 확인.
+2. 배포 전 검증으로 Dockerfile 그대로 이미지를 빌드하고 컨테이너에서 `pytest tests/unit` 실행 → 351 passed, 2 skipped.
+3. 같은 이미지 안을 열어보다 `/app/data`가 통째로 없는 것을 발견 → `.dockerignore`의 `data` 라인이 원인.
+4. `.dockerignore`를 `data/raw`·`data/processed`·`data/chroma`로 좁히고 재빌드해 시드 로드 확인(대체군 7개, 면접 컨텍스트 84스킬).
+5. `.omc/state/sessions/*` 6개가 공개 저장소에 커밋돼 있던 것을 인덱스에서 제거하고 `.gitignore`에 `.omc/` 추가.
+6. `git subtree split --prefix=pj1` → HF Space(force)·GitHub(fast-forward) 푸시 → `runtime.sha` 일치·라이브 엔드포인트 확인.
+
+### 발생 문제
+
+- **배포 이미지에 런타임 시드가 없었다.** `.dockerignore`의 `data` 한 줄이 `data/seeds`까지 제외해, `skill_alternatives.json`(대체군 7개)은 코드 기본값 2개로, `skill_interview_context.json`(84스킬)은 빈 dict로 fallback되고 있었다. 두 파일 다 `try/except`로 조용히 넘어가는 설계라 로그에도 흔적이 남지 않아, 기능이 "동작하는 것처럼 보이면서 실제로는 무동작"인 상태였다. 저장소에는 파일이 있으니 git만 봐서는 절대 못 잡는다.
+- **HF Space git 히스토리가 로컬 subtree split과 갈라져 있었다.** HF tip `e037014`와 split의 `ed570d2`는 트리 해시가 `411bd3a1`로 같은데 커밋 해시만 달랐다 — 과거에 split이 아닌 경로로 한 번 푸시된 흔적. 그대로는 fast-forward가 불가능.
+- **워크스페이스 저장소에서 HF로 fetch가 실패한다.** `fatal: expected 'acknowledgments'` — 커밋 400개 규모의 obsidian 저장소에서 협상이 깨진다.
+
+### 해결 방법 / 결론
+
+- **"빌드 산출물을 직접 열어본다"가 이번 배포를 살렸다.** 테스트는 전부 통과했고 저장소에도 파일이 있었다 — 이미지 내부를 `ls` 해보지 않았으면 기능 2개가 죽은 채로 배포됐다. 조용한 fallback(`except: return 기본값`)은 안전장치인 동시에 결함 은폐 장치다.
+- **트리 해시가 같음을 먼저 확인하고 force-push했다.** `e037014`와 `ed570d2`의 트리가 동일하므로 교체돼도 잃는 파일이 없다는 걸 증명한 뒤 실행 — 이제 HF·GitHub 히스토리가 일치해 다음 배포부터는 fast-forward만으로 끝난다.
+- **HF fetch는 별도 디렉토리에 clone해서 비교한다.** 워크스페이스 저장소에서의 fetch는 포기하고, 스크래치패드에 clone해 tip을 확인하는 우회가 안정적이다.
+
+### 커밋 (2개 — pj1 경로만)
+
+`.dockerignore` 범위 축소(런타임 시드 포함) · `.omc` 세션 상태 추적 제외.
+
+### 남은 과제
+
+- 배포 이미지에 `.DS_Store`·`jobs.json`·`notebooks/`·`interview_prep.html` 등 불필요한 파일이 함께 들어간다(기존부터). 이미지 크기 문제일 뿐 동작에는 영향 없음.
+- 시드 누락 같은 "조용한 fallback" 결함을 잡을 스모크 체크가 없다 — 기동 시 시드 로드 건수를 로그로 남기면 다음번엔 배포 직후 눈에 띈다.
