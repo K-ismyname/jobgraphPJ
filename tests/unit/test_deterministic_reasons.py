@@ -4,6 +4,9 @@ import json
 from src.agent.nodes import (
     build_deterministic_reasons,
     build_deterministic_project_reasons,
+    build_evidence_cards,
+    build_project_roadmap,
+    build_project_understanding,
     _excerpt_around_keyword,
 )
 
@@ -142,3 +145,62 @@ def test_finalize_coach_overwrites_project_suggestion_why(monkeypatch):
     assert "supervisor.py" in rec["why"]
     assert "고급 패턴" in rec["why"]
     assert rec["why"] != "추가하면 강화됩니다."
+
+
+def test_finalize_coach_enriches_sparse_coaching(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-fake")
+    from langchain_core.messages import AIMessage
+    from src.agent.nodes import create_coach_nodes
+
+    _, finalize = create_coach_nodes([])
+    state = {
+        "coach_messages": [AIMessage(content=json.dumps({"summary": "간단 요약"}, ensure_ascii=False))],
+        "gap_result": {},
+        "consensus": {"LangGraph": {"verification": "Verified", "evidences": [{"source": "github"}]}},
+        "project_contexts": [{
+            "repo": "K-ismyname/da_agent",
+            "structure_summary": "FastAPI와 LangGraph 기반 커뮤니티 성장 분석 시스템",
+            "skill_assessments": [{
+                "skill": "LangGraph",
+                "current_usage": "고급 패턴",
+                "used_patterns": ["Supervisor 라우팅"],
+                "how_to_add": "체크포인트 저장소를 연결하세요.",
+                "relevant_files": ["src/agents/graph.py"],
+                "repo_paths": ["src/agents/graph.py"],
+            }],
+            "repo_paths": ["src/agents/graph.py"],
+        }],
+    }
+
+    out = finalize(state)
+    coaching = out["coaching_result"]
+    assert coaching["project_understanding"]["one_liner"].startswith("K-ismyname/da_agent")
+    assert coaching["evidence_cards"][0]["skill"] == "LangGraph"
+    assert coaching["project_roadmap"][0]["step"] == "LangGraph 보강"
+    assert "LangGraph" in coaching["portfolio_sentences"][0]
+
+
+def test_project_context_enrichment_builds_rich_sections():
+    contexts = [{
+        "repo": "K-ismyname/da_agent",
+        "structure_summary": "FastAPI와 LangGraph 기반 커뮤니티 성장 분석 시스템",
+        "skill_assessments": [{
+            "skill": "LangGraph",
+            "current_usage": "고급 패턴",
+            "used_patterns": ["Supervisor 라우팅", "Evaluator 합류"],
+            "missing_patterns": ["checkpoint 기반 재시작"],
+            "how_to_add": "현재 그래프 실행 결과를 저장하고 재시도 시 이어 실행되도록 체크포인트 저장소를 연결하세요.",
+            "relevant_files": ["src/agents/graph.py", "src/main.py"],
+        }],
+    }]
+
+    understanding = build_project_understanding(contexts)
+    cards = build_evidence_cards(contexts)
+    roadmap = build_project_roadmap(contexts)
+
+    assert "K-ismyname/da_agent" in understanding["one_liner"]
+    assert "LangGraph" in understanding["core_design_choices"][0]
+    assert cards[0]["evidence"] == "src/agents/graph.py, src/main.py"
+    assert "Supervisor 라우팅" in cards[0]["what_it_shows"]
+    assert roadmap[0]["step"] == "LangGraph 보강"
+    assert "체크포인트" in roadmap[0]["how"]

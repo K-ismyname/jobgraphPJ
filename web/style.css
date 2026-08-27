@@ -48,6 +48,12 @@ button.ghost:hover { color:#dc2626; border-color:#fecaca; }
 .suggestion .head { font-weight:600; font-size:.9rem; }
 .suggestion .rew { background:#f3f4f6; border-radius:6px; padding:8px; margin:6px 0;
   font-size:.85rem; white-space:pre-wrap; }
+.rich-section .head { margin-bottom:6px; }
+.evidence-card { border-left:3px solid var(--verified); }
+.compact-list { margin:8px 0 0; padding-left:18px; color:var(--muted); font-size:.82rem; }
+.sentence-box { display:grid; gap:8px; }
+.sentence { padding:10px 12px; background:#f8fafc; border:1px solid var(--line);
+  border-radius:8px; font-size:.86rem; }
 .prio { font-size:.72rem; color:var(--muted); }
 h3 { margin:18px 0 6px; font-size:.95rem; }
 .tabs { display:flex; gap:8px; margin-bottom:16px; }

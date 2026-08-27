@@ -238,6 +238,26 @@ strength 최소 2개 최대 3개, gap 최대 3개. 임팩트 높은 것부터.
 최종 출력 형식 (코드 펜스 없이):
 {{
   "summary": "전체 코칭 방향 2-3문장",
+  "project_understanding": {{
+    "one_liner": "이 프로젝트가 무엇을 하는지 한 문장",
+    "architecture": "주요 런타임·프레임워크·저장소·에이전트 구조",
+    "data_flow": "입력 → 처리 → 출력 흐름",
+    "core_design_choices": ["면접에서 설명할 설계 선택 1", "설계 선택 2"]
+  }},
+  "evidence_cards": [
+    {{"skill": "스킬명",
+      "evidence": "실제 파일 또는 레포 단위 근거",
+      "what_it_shows": "그 근거가 보여주는 구현 역량",
+      "interview_angle": "면접에서 이 근거를 어떻게 말할지"}}
+  ],
+  "project_roadmap": [
+    {{"step": "보강 단계",
+      "why": "왜 이 보강이 현재 프로젝트와 자연스럽게 이어지는지",
+      "how": "README·구조 요약 기준으로 무엇을 추가/검증할지"}}
+  ],
+  "portfolio_sentences": [
+    "포트폴리오에 바로 넣을 수 있는 프로젝트 설명 문장"
+  ],
   "project_suggestions": [
     {{"repo": "owner/repo", "add_skill": "보강 대상 스킬",
       "why": "이 스킬이 이 프로젝트에 필요한 이유",
@@ -440,6 +460,135 @@ def build_deterministic_project_reasons(project_contexts: list[dict]) -> dict[st
     return reasons
 
 
+def _as_nonempty_strings(items: object, limit: int = 3) -> list[str]:
+    return [str(x).strip() for x in (items or []) if str(x).strip()][:limit] if isinstance(items, list) else []
+
+
+def build_project_understanding(project_contexts: list[dict]) -> dict:
+    """GitHub project_contexts에서 프로젝트 이해 요약을 결정적으로 조립한다."""
+    contexts = [c for c in (project_contexts or []) if isinstance(c, dict)]
+    if not contexts:
+        return {"one_liner": "", "architecture": "", "data_flow": "", "core_design_choices": []}
+
+    repo_names = [str(c.get("repo") or "").strip() for c in contexts if str(c.get("repo") or "").strip()]
+    summaries = [str(c.get("structure_summary") or "").strip() for c in contexts if str(c.get("structure_summary") or "").strip()]
+    first_repo = repo_names[0] if repo_names else "GitHub 프로젝트"
+    first_summary = summaries[0] if summaries else ""
+
+    choices: list[str] = []
+    for ctx in contexts:
+        for sa in ctx.get("skill_assessments") or []:
+            if not isinstance(sa, dict):
+                continue
+            skill = normalize_skill(sa.get("skill") or "")
+            patterns = _as_nonempty_strings(sa.get("used_patterns"), limit=2)
+            files = _as_nonempty_strings(sa.get("relevant_files"), limit=2)
+            if skill and patterns and files:
+                choices.append(f"{skill}: {', '.join(files)}에서 {', '.join(patterns)} 확인")
+            elif skill and patterns:
+                choices.append(f"{skill}: {', '.join(patterns)} 확인")
+            if len(choices) >= 4:
+                break
+        if len(choices) >= 4:
+            break
+
+    return {
+        "one_liner": f"{first_repo}는 {first_summary}" if first_summary else f"{first_repo} 분석 기반 프로젝트입니다.",
+        "architecture": " / ".join(summaries[:3]),
+        "data_flow": "GitHub 소스와 README를 읽어 구조를 요약하고, skill_assessments의 실제 파일·패턴 근거로 역량과 보강 방향을 산출합니다.",
+        "core_design_choices": choices,
+    }
+
+
+def build_evidence_cards(project_contexts: list[dict], max_cards: int = 6) -> list[dict]:
+    """skill_assessments의 relevant_files/used_patterns를 면접용 근거 카드로 바꾼다."""
+    cards: list[dict] = []
+    for ctx in project_contexts or []:
+        if not isinstance(ctx, dict):
+            continue
+        repo = str(ctx.get("repo") or "").strip()
+        for sa in ctx.get("skill_assessments") or []:
+            if not isinstance(sa, dict):
+                continue
+            skill = normalize_skill(sa.get("skill") or "")
+            files = _as_nonempty_strings(sa.get("relevant_files"), limit=3)
+            patterns = _as_nonempty_strings(sa.get("used_patterns"), limit=3)
+            usage = str(sa.get("current_usage") or "").strip()
+            if not skill or not (files or patterns or usage):
+                continue
+            evidence = ", ".join(files) if files else repo
+            what = "; ".join(patterns) if patterns else usage
+            cards.append({
+                "skill": skill,
+                "evidence": evidence,
+                "what_it_shows": what,
+                "interview_angle": f"{skill}을(를) 단순 보유 스킬이 아니라 {evidence}에서 확인되는 구현 경험으로 설명하세요.",
+            })
+            if len(cards) >= max_cards:
+                return cards
+    return cards
+
+
+def build_project_roadmap(project_contexts: list[dict], max_steps: int = 5) -> list[dict]:
+    """github_eval의 how_to_add를 프로젝트 보강 로드맵으로 승격한다."""
+    steps: list[dict] = []
+    for ctx in project_contexts or []:
+        if not isinstance(ctx, dict):
+            continue
+        repo = str(ctx.get("repo") or "").strip()
+        for sa in ctx.get("skill_assessments") or []:
+            if not isinstance(sa, dict):
+                continue
+            how = str(sa.get("how_to_add") or "").strip()
+            skill = normalize_skill(sa.get("skill") or "")
+            if not skill or not how:
+                continue
+            missing = _as_nonempty_strings(sa.get("missing_patterns"), limit=2)
+            usage = str(sa.get("current_usage") or "").strip()
+            reason_parts = []
+            if repo:
+                reason_parts.append(f"{repo}의 기존 구조에 이어 붙일 수 있습니다.")
+            if usage:
+                reason_parts.append(f"현재 {usage} 수준이므로 다음 단계 보강 여지가 있습니다.")
+            if missing:
+                reason_parts.append(f"빠진 패턴: {', '.join(missing)}.")
+            steps.append({"step": f"{skill} 보강", "why": " ".join(reason_parts), "how": how})
+            if len(steps) >= max_steps:
+                return steps
+    return steps
+
+
+def build_portfolio_sentences(project_contexts: list[dict], verification: dict) -> list[str]:
+    """분석 결과를 포트폴리오 문장으로 쓸 수 있게 짧게 재구성한다."""
+    understanding = build_project_understanding(project_contexts)
+    skills = [
+        s.get("skill") for s in (verification.get("skills") or [])
+        if isinstance(s, dict) and s.get("verification") in ("Verified", "Corroborated") and s.get("skill")
+    ][:4]
+    sentences: list[str] = []
+    if understanding.get("one_liner"):
+        tail = f" 특히 {', '.join(skills)} 역량이 코드·복수 출처로 검증되었습니다." if skills else ""
+        sentences.append(f"{understanding['one_liner']}{tail}")
+    if understanding.get("architecture"):
+        sentences.append(f"구조적으로는 {understanding['architecture']} 흐름을 갖추고 있어, 구현 근거와 개선 로드맵을 함께 설명할 수 있습니다.")
+    return sentences[:2]
+
+
+def enrich_coaching_with_project_context(coaching: dict, project_contexts: list[dict], verification: dict) -> dict:
+    """LLM 코칭이 비어 있거나 얕으면 GitHub 분석 결과로 풍부한 섹션을 채운다."""
+    if not isinstance(coaching, dict) or coaching.get("error"):
+        return coaching
+    if not isinstance(coaching.get("project_understanding"), dict) or not any(coaching.get("project_understanding", {}).values()):
+        coaching["project_understanding"] = build_project_understanding(project_contexts)
+    if not coaching.get("evidence_cards"):
+        coaching["evidence_cards"] = build_evidence_cards(project_contexts)
+    if not coaching.get("project_roadmap"):
+        coaching["project_roadmap"] = build_project_roadmap(project_contexts)
+    if not coaching.get("portfolio_sentences"):
+        coaching["portfolio_sentences"] = build_portfolio_sentences(project_contexts, verification)
+    return coaching
+
+
 def scrub_invented_paths(coaching: dict, valid_paths: set[str]) -> dict:
     """코칭 결과에서 지어낸 파일 경로를 결정적으로 제거한다.
 
@@ -483,6 +632,17 @@ def scrub_invented_paths(coaching: dict, valid_paths: set[str]) -> dict:
             # learning_recommendations는 project_suggestions와 다르게, 항목 전체를 버리지 않고
             # "지어낸 경로가 든 문장만" 골라서 제거 — 이 갭 분석 자체는 결정적으로 이미 검증됐으니
             # 문장 하나 잘못됐다고 통째로 버릴 필요는 없다는 판단
+
+    kept_evidence = []
+    for card in coaching.get("evidence_cards") or []:
+        if not isinstance(card, dict):
+            continue
+        if _invented_paths(f"{card.get('evidence', '')} {card.get('what_it_shows', '')}", valid_paths):
+            removed.append(f"{card.get('skill')} → evidence card 제거")
+            continue
+        kept_evidence.append(card)
+    if "evidence_cards" in coaching:
+        coaching["evidence_cards"] = kept_evidence
 
     if removed:
         coaching["scrubbed_paths"] = removed   # 관측용 흔적
@@ -1002,6 +1162,7 @@ def create_coach_nodes(coach_tools: list["BaseTool"]):
         # 4개 소스(이력서·포폴·GitHub·배포) 교차검증 결과를 신뢰도 축 산출물로 surface한다.
         from src.agent.consensus import build_verification_summary
         verification = build_verification_summary(state.get("consensus") or {})
+        coaching_dict = enrich_coaching_with_project_context(coaching_dict, contexts_all, verification)
 
         return {
             "coaching_result": coaching_dict,

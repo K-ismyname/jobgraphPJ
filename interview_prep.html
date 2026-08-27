@@ -1,0 +1,439 @@
+<title>면접 준비 — Job Skill Analyzer</title>
+<meta name="description" content="Job Skill Analyzer 프로젝트 면접 준비 카드: 모듈별 핵심 설명 + 예상 질문 + 답변 힌트">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 24px 16px; }
+  h1 { font-size: 1.4rem; font-weight: 700; color: #a78bfa; margin-bottom: 4px; }
+  .subtitle { font-size: 0.85rem; color: #64748b; margin-bottom: 28px; }
+
+  .module { background: #1e2130; border: 1px solid #2d3148; border-radius: 12px;
+            margin-bottom: 12px; overflow: hidden; }
+  .module-header { display: flex; align-items: center; gap: 12px; padding: 16px 20px;
+                   cursor: pointer; user-select: none; transition: background 0.15s; }
+  .module-header:hover { background: #252840; }
+  .module-num { font-size: 0.72rem; font-weight: 700; background: #7c3aed;
+                color: #fff; border-radius: 6px; padding: 2px 8px; flex-shrink: 0; }
+  .module-title { font-size: 1rem; font-weight: 600; flex: 1; }
+  .chevron { color: #475569; font-size: 0.8rem; transition: transform 0.2s; }
+  .module.open .chevron { transform: rotate(90deg); }
+
+  .module-body { display: none; padding: 0 20px 20px; border-top: 1px solid #2d3148; }
+  .module.open .module-body { display: block; }
+
+  .section-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+                   color: #7c3aed; text-transform: uppercase; margin: 16px 0 8px; }
+  .desc { font-size: 0.88rem; line-height: 1.7; color: #cbd5e1; }
+  .desc p { margin-bottom: 6px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 4px; }
+  th { background: #252840; color: #94a3b8; font-weight: 600;
+       padding: 8px 10px; text-align: left; border-bottom: 1px solid #2d3148; }
+  td { padding: 7px 10px; border-bottom: 1px solid #1e2130; color: #cbd5e1; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+
+  .flow { font-family: "SF Mono", "Fira Code", monospace; font-size: 0.78rem;
+          background: #12141f; border: 1px solid #2d3148; border-radius: 8px;
+          padding: 12px 16px; color: #a5b4fc; line-height: 1.8; overflow-x: auto; }
+
+  .q-list { margin-top: 4px; }
+  .q-item { border: 1px solid #2d3148; border-radius: 8px; margin-bottom: 6px; overflow: hidden; }
+  .q-header { display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px;
+              cursor: pointer; background: #171929; transition: background 0.15s; }
+  .q-header:hover { background: #1e2130; }
+  .q-icon { color: #f59e0b; font-size: 0.85rem; flex-shrink: 0; margin-top: 1px; }
+  .q-text { font-size: 0.85rem; color: #e2e8f0; flex: 1; line-height: 1.5; }
+  .q-arrow { color: #475569; font-size: 0.7rem; flex-shrink: 0; margin-top: 3px;
+             transition: transform 0.2s; }
+  .q-item.open .q-arrow { transform: rotate(90deg); }
+  .q-answer { display: none; padding: 10px 14px 12px 36px; background: #12141f;
+              font-size: 0.83rem; color: #94a3b8; line-height: 1.7;
+              border-top: 1px solid #2d3148; }
+  .q-item.open .q-answer { display: block; }
+
+  .tag { display: inline-block; background: #1e3a5f; color: #60a5fa;
+         font-size: 0.72rem; border-radius: 4px; padding: 2px 7px; margin: 2px; }
+  .tag.green { background: #14352a; color: #4ade80; }
+  .tag.purple { background: #2d1f5e; color: #a78bfa; }
+  .tag.red { background: #3b1515; color: #f87171; }
+
+  .decision { background: #12141f; border-left: 3px solid #7c3aed;
+              border-radius: 0 8px 8px 0; padding: 10px 14px; margin-bottom: 8px; }
+  .decision-title { font-size: 0.82rem; font-weight: 700; color: #a78bfa; margin-bottom: 4px; }
+  .decision-body { font-size: 0.82rem; color: #94a3b8; line-height: 1.6; }
+
+  .stat-row { display: flex; gap: 12px; margin-top: 6px; flex-wrap: wrap; }
+  .stat { background: #12141f; border: 1px solid #2d3148; border-radius: 8px;
+          padding: 10px 16px; text-align: center; flex: 1; min-width: 120px; }
+  .stat-val { font-size: 1.4rem; font-weight: 700; color: #a78bfa; }
+  .stat-label { font-size: 0.72rem; color: #64748b; margin-top: 2px; }
+</style>
+
+<h1>Job Skill Analyzer 면접 준비</h1>
+<p class="subtitle">모듈 클릭 → 내용 보기 · 질문 클릭 → 답변 힌트</p>
+
+<!-- 모듈 0 -->
+<div class="module open" id="m0">
+  <div class="module-header" onclick="toggle('m0')">
+    <span class="module-num">M0</span>
+    <span class="module-title">한 줄 피치</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="module-body">
+    <div class="section-label">핵심 공식</div>
+    <div class="desc">
+      <p><strong>문제 → 해결책 → 차별점</strong> (40초 오프닝)</p>
+      <p>문제: 기존 플랫폼은 점수만 주고 근거가 없다</p>
+      <p>해결책: 실제 공고 데이터 + 코드·배포 교차검증</p>
+      <p>차별점: <strong>적합도와 신뢰도를 분리</strong>해서 보여줌</p>
+    </div>
+    <div class="section-label">예상 질문</div>
+    <div class="q-list">
+      <div class="q-item open">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"이 프로젝트를 간단히 소개해주세요."</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">
+          채용공고를 수집·분석해 이력서를 올리면 직무 대비 갭과 개선 방향을 알려주는 Agentic RAG 시스템입니다.
+          기존 서비스가 점수만 주는 것과 달리, "이 스킬이 부족하다"는 주장이 공고 텍스트와 GitHub 코드로
+          실제로 뒷받침되는지를 신뢰도 등급으로 분리해 보여줍니다.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 모듈 1 -->
+<div class="module" id="m1">
+  <div class="module-header" onclick="toggle('m1')">
+    <span class="module-num">M1</span>
+    <span class="module-title">왜 만들었나</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="module-body">
+    <div class="section-label">핵심 설명</div>
+    <div class="desc">
+      <p>단순 키워드 매칭: "Python 잘 함"이 이력서에 있으면 무조건 통과 → 근거 없음</p>
+      <p>LLM이 "이 주장이 코드/배포로 확인되는가?"를 판단</p>
+      <p><strong>신뢰도를 적합도와 분리</strong> — 점수와 근거를 구분해 다룸</p>
+    </div>
+    <div class="section-label">예상 질문</div>
+    <div class="q-list">
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"이 프로젝트를 만든 계기가 뭔가요?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">취업 준비 중 이력서 점수 서비스를 써봤는데 "왜 부족한지"에 대한 근거가 전혀 없었습니다.
+          공고를 직접 분석하고 코드와 배포로 검증하면 근거 있는 갭 분석이 가능하다고 판단해 만들었습니다.</div>
+      </div>
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"기존 채용 플랫폼과 어떻게 다른가요?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">기존 서비스는 이력서 텍스트만 보고 점수를 냅니다. 이 시스템은
+          ① 실제 공고 데이터를 수집해 직군별 요구 스킬을 파악하고,
+          ② GitHub 코드와 배포 URL로 주장을 교차검증해,
+          ③ 적합도(몇 개 충족)와 신뢰도(그 주장이 얼마나 확실한가)를 분리합니다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 모듈 2 -->
+<div class="module" id="m2">
+  <div class="module-header" onclick="toggle('m2')">
+    <span class="module-num">M2</span>
+    <span class="module-title">아키텍처 큰 그림</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="module-body">
+    <div class="section-label">6개 레이어</div>
+    <div class="flow">수집(L1) → Neo4j(L2) → LangGraph 에이전트(L3)
+→ 갭 분석(L4) → RAGAS 평가(L5) → FastAPI(L6)
+
+데이터 흐름:
+이력서 PDF → 4개 평가자 병렬 → 교차검증
+→ gap 루프(최대 5회) → 코칭 → 최종 리포트</div>
+    <div class="desc" style="margin-top:10px">
+      <p><strong>원칙:</strong> 뒤 레이어를 앞 레이어보다 먼저 짜지 않는다 — API 서버는 에이전트 완성 후, 평가는 기능 완성 후</p>
+    </div>
+    <div class="section-label">예상 질문</div>
+    <div class="q-list">
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"시스템 아키텍처를 설명해주세요."</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">6개 레이어로 나눴습니다. Adzuna API로 공고를 수집해 Neo4j 그래프에 저장하고,
+          LangGraph 에이전트가 이력서·GitHub·배포 URL을 병렬로 평가한 뒤 교차검증합니다.
+          갭 분석 루프가 근거를 찾고, RAGAS로 품질을 측정하며, FastAPI로 서빙합니다.</div>
+      </div>
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"어떤 순서로 개발했나요? 왜 그 순서인가요?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">데이터 없이는 에이전트를 테스트할 수 없고, 에이전트 없이는 API를 의미 있게 만들 수 없습니다.
+          그래서 수집→저장→에이전트→분석→평가→서빙 순으로 진행했습니다.
+          뒤 레이어를 앞보다 먼저 짜지 않는 원칙을 명시적으로 정해두었습니다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 모듈 3 -->
+<div class="module" id="m3">
+  <div class="module-header" onclick="toggle('m3')">
+    <span class="module-num">M3</span>
+    <span class="module-title">기술 스택 선택 이유</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="module-body">
+    <div class="section-label">선택 근거</div>
+    <table>
+      <tr><th>기술</th><th>선택 이유</th><th>대안 버린 이유</th></tr>
+      <tr><td><span class="tag purple">LangGraph</span></td><td>조건 분기·루프·HITL 필수</td><td>LangChain만으론 불가</td></tr>
+      <tr><td><span class="tag purple">Neo4j</span></td><td>직무-기술 관계 표현 최적</td><td>벡터DB는 관계 표현 불가</td></tr>
+      <tr><td><span class="tag red">Chroma 제거</span></td><td>효과 없음을 측정 후 제거</td><td>검색 12건 중 11건 동일</td></tr>
+      <tr><td><span class="tag green">Adzuna API</span></td><td>무료·합법·JSON 구조화</td><td>크롤링은 약관 위반</td></tr>
+      <tr><td><span class="tag">OpenAI 단일</span></td><td>비용 효율·통일 인터페이스</td><td>복수 공급자는 복잡도만↑</td></tr>
+    </table>
+    <div class="section-label">예상 질문</div>
+    <div class="q-list">
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"왜 LangGraph를 선택했나요?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">이 시스템에는 세 가지가 필수입니다: 조건 분기(증거 충분한가?), 루프(부족하면 다시 검색),
+          HITL(애매한 경우 사용자에게 되묻기). LangChain 체인만으로는 이 세 가지를 동시에 구현할 수 없습니다.
+          LangGraph의 StateGraph가 정확히 이 용도입니다.</div>
+      </div>
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"벡터 DB를 안 쓴 이유가 뭔가요?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">처음에 Chroma를 도입했는데, 검색 12건을 직접 실행해서 키워드 매칭 결과와 비교했습니다.
+          11건이 동일한 결과였고, 1건도 실질적 차이가 없었습니다.
+          복잡도만 올라가고 효과는 없어서 제거했고, Neo4j 그래프 쿼리로 대체했습니다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 모듈 4 -->
+<div class="module" id="m4">
+  <div class="module-header" onclick="toggle('m4')">
+    <span class="module-num">M4</span>
+    <span class="module-title">핵심 설계 의사결정 ★</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="module-body">
+    <div class="section-label">5개 결정</div>
+    <div class="decision">
+      <div class="decision-title">1. 적합도 ⊥ 신뢰도 분리</div>
+      <div class="decision-body">적합도(fit): 직군 핵심 스킬 중 몇 개 보유 (코드로 계산)<br>
+        신뢰도: 그 주장이 얼마나 믿을 만한가 (Verified / Corroborated / Claimed)<br>
+        → "Python 잘 함(이력서 주장)" ≠ "Python 잘 함(GitHub 확인)"</div>
+    </div>
+    <div class="decision">
+      <div class="decision-title">2. 결정적 계산 — LLM이 숫자를 못 만들게</div>
+      <div class="decision-body">consensus.py, critic.py는 LLM 없이 코드로만 동작<br>
+        LLM은 숫자를 지어낸다 → 신뢰도 등급은 규칙 기반으로 산출</div>
+    </div>
+    <div class="decision">
+      <div class="decision-title">3. 다중 소스 교차검증 (4개 평가자 병렬)</div>
+      <div class="decision-body">resume / github / portfolio / deploy 독립 평가 후 합의<br>
+        이력서 주장만 믿으면 과장이 걸러지지 않음</div>
+    </div>
+    <div class="decision">
+      <div class="decision-title">4. Corrective RAG 루프</div>
+      <div class="decision-body">근거가 부족하면 tools를 다시 호출 (최대 5회)<br>
+        에이전트가 스스로 "증거가 충분한가?"를 판단 → 부족하면 재검색</div>
+    </div>
+    <div class="decision">
+      <div class="decision-title">5. Critic = 판단 없는 서기</div>
+      <div class="decision-body">Gap 리포트 ↔ Consensus 대조해 환각만 제거<br>
+        적합도 판단은 Gap 루프에 위임, Critic은 라벨 교정만 (역할 분리)</div>
+    </div>
+    <div class="section-label">예상 질문</div>
+    <div class="q-list">
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"RAG 구조를 어떻게 설계했나요?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">검색 소스를 벡터 유사도가 아니라 Neo4j 그래프 쿼리와 GitHub API로 구성했습니다.
+          에이전트가 근거를 검색하고, "이 근거가 충분한가?"를 스스로 판단해서 부족하면 다시 검색합니다(Corrective RAG).
+          최종 리포트의 각 주장은 어느 공고에서 근거를 가져왔는지 출처가 붙습니다.</div>
+      </div>
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"환각(hallucination)은 어떻게 처리했나요?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">두 단계입니다. ① Critic이 Gap 리포트의 스킬 목록과 Consensus(실제 평가 결과)를 대조해서
+          Consensus에 없는 스킬 주장을 제거합니다. ② 신뢰도 등급은 LLM이 아닌 규칙 기반 코드로 산출해서
+          LLM이 임의로 등급을 만들 수 없게 막았습니다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 모듈 5 -->
+<div class="module" id="m5">
+  <div class="module-header" onclick="toggle('m5')">
+    <span class="module-num">M5</span>
+    <span class="module-title">LangGraph 에이전트 상세</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="module-body">
+    <div class="section-label">흐름도</div>
+    <div class="flow">입력 → evaluator_dispatch
+  ↓ [Send API — 병렬 fan-out]
+resume_eval | github_eval | portfolio_eval | deploy_eval
+  ↓ (모두 완료 후)
+consensus  →  seed_gap
+  ↓ [루프, 최대 5회]
+call_model ↔ tools(verify_skills, graph_query …)
+  ↓
+synthesizer → critic
+  ↓ [루프, 최대 3회]
+coach → finalize_coach → END</div>
+    <div class="section-label">예상 질문</div>
+    <div class="q-list">
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"병렬 처리는 어떻게 했나요?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">LangGraph의 Send API를 사용했습니다. evaluator_dispatch 노드에서
+          활성화된 소스(이력서·GitHub·포트폴리오·배포) 각각에 Send를 발행하면,
+          LangGraph가 이를 병렬로 실행합니다. 모두 완료된 후 consensus 노드로 합류합니다.</div>
+      </div>
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"루프는 언제 멈추나요?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">gap 루프는 MAX_ITERATIONS(5회) 카운터로 제한합니다.
+          LLM이 "증거 충분"으로 판단하거나 5회가 되면 종료됩니다.
+          코치 루프도 별도로 최대 3회입니다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 모듈 6 -->
+<div class="module" id="m6">
+  <div class="module-header" onclick="toggle('m6')">
+    <span class="module-num">M6</span>
+    <span class="module-title">핵심 코드 파일</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="module-body">
+    <div class="section-label">파일별 역할</div>
+    <table>
+      <tr><th>파일</th><th>역할 한 줄</th></tr>
+      <tr><td><code>consensus.py</code></td><td>4개 평가자 결과 → Verified/Corroborated/Claimed (LLM 없음)</td></tr>
+      <tr><td><code>critic.py</code></td><td>Gap 리포트 ↔ Consensus 대조, 환각 제거 + 라벨 교정</td></tr>
+      <tr><td><code>gap_analyzer.py</code></td><td>직군 상위 10개 스킬 vs 이력서 교집합 계산</td></tr>
+      <tr><td><code>normalizer.py</code></td><td>"React.js" → "React" 동의어 70개 규칙</td></tr>
+      <tr><td><code>supervisor.py</code></td><td>전체 StateGraph 조립·실행 진입점</td></tr>
+    </table>
+    <div class="section-label">예상 질문</div>
+    <div class="q-list">
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"코드에서 LLM 의존성을 줄인 곳이 있나요?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">consensus.py와 critic.py가 대표적입니다. 신뢰도 등급 산출과 환각 제거를
+          LLM이 아닌 규칙 기반 코드로 구현했습니다. LLM이 숫자나 라벨을 만들면 임의성이 생겨서
+          같은 입력에 다른 신뢰도가 나올 수 있기 때문입니다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 모듈 7 -->
+<div class="module" id="m7">
+  <div class="module-header" onclick="toggle('m7')">
+    <span class="module-num">M7</span>
+    <span class="module-title">심층 질문 대비</span>
+    <span class="chevron">▶</span>
+  </div>
+  <div class="module-body">
+    <div class="section-label">RAGAS 수치</div>
+    <div class="stat-row">
+      <div class="stat">
+        <div class="stat-val">0.250</div>
+        <div class="stat-label">Faithfulness</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val">0.876</div>
+        <div class="stat-label">Answer Relevancy</div>
+      </div>
+    </div>
+    <div class="section-label">예상 질문</div>
+    <div class="q-list">
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"RAGAS 지표 결과가 어떻게 됩니까? Faithfulness가 낮은 이유는?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">Faithfulness 0.250, Answer Relevancy 0.876입니다.
+          Faithfulness가 낮은 건 구조적 한계입니다. Adzuna 공고가 "required" 명시 없이
+          "familiarity with X is a plus" 같은 간접 표현을 써서 NLI 매칭이 어렵습니다.
+          이 한계를 알고 있기 때문에 개선 방향(공고 텍스트 품질 향상, structured 근거 포맷)도 제시할 수 있습니다.</div>
+      </div>
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"벡터 검색 없이 어떻게 RAG인가요?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">RAG의 핵심은 외부 소스에서 증거를 검색해 LLM 답변을 보강하는 것입니다.
+          벡터 유사도 검색이 유일한 방법이 아닙니다. Neo4j 그래프 쿼리와 GitHub API·배포 URL 검색이
+          검색 역할을 합니다. 오히려 그래프 쿼리는 관계 기반 검색이 가능해서 "LangGraph를 쓰면 LangChain도 씀"
+          같은 생태계 연관 스킬도 찾을 수 있습니다.</div>
+      </div>
+      <div class="q-item">
+        <div class="q-header" onclick="toggleQ(this)">
+          <span class="q-icon">❓</span>
+          <span class="q-text">"Chroma 제거 측정 데이터가 있나요?"</span>
+          <span class="q-arrow">▶</span>
+        </div>
+        <div class="q-answer">검색 12건을 직접 실행해 결과를 키워드 매칭과 비교했습니다.
+          11건이 동일한 결과, 1건도 실질적 차이 없음을 확인했습니다.
+          효과 없음을 데이터로 증명한 뒤 복잡도 추가 없이 제거를 결정했습니다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggle(id) {
+  document.getElementById(id).classList.toggle('open');
+}
+function toggleQ(header) {
+  header.closest('.q-item').classList.toggle('open');
+}
+</script>

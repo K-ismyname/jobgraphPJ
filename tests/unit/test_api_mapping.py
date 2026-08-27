@@ -72,3 +72,36 @@ def test_map_final_report_passes_capability():
     resp = _map_final_report("rid", "owner", "Software Engineer", final)
     assert resp.capability_fit["fit"] == 0.5
     assert resp.recommended_families[0]["job_family"] == "Software Engineer"
+
+
+def test_map_final_report_passes_rich_coaching_fields():
+    final = {
+        "gap": {"match_rate": 0.5},
+        "verification": {"counts": {}, "skills": []},
+        "coaching": {
+            "summary": "s",
+            "project_understanding": {
+                "one_liner": "me/app는 분석 서비스입니다.",
+                "architecture": "FastAPI + LangGraph",
+                "data_flow": "PDF → 분석 → 리포트",
+                "core_design_choices": ["LangGraph로 분기 제어"],
+            },
+            "evidence_cards": [{
+                "skill": "LangGraph",
+                "evidence": "src/agent/supervisor.py",
+                "what_it_shows": "그래프 오케스트레이션",
+                "interview_angle": "분기와 합류를 설명",
+            }],
+            "project_roadmap": [{
+                "step": "테스트 보강",
+                "why": "분석 신뢰도 향상",
+                "how": "fixture 기반 회귀 테스트 추가",
+            }],
+            "portfolio_sentences": ["LangGraph 기반 분석 파이프라인을 구현했습니다."],
+        },
+    }
+    resp = _map_final_report("rid", "owner", "Software Engineer", final)
+    assert resp.project_understanding.one_liner.startswith("me/app")
+    assert resp.evidence_cards[0].skill == "LangGraph"
+    assert resp.project_roadmap[0].step == "테스트 보강"
+    assert "LangGraph" in resp.portfolio_sentences[0]

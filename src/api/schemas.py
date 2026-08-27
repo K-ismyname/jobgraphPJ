@@ -177,6 +177,26 @@ class InterviewCoaching(BaseModel):
     coaching: str
 
 
+class ProjectUnderstanding(BaseModel):
+    one_liner: str = ""
+    architecture: str = ""
+    data_flow: str = ""
+    core_design_choices: list[str] = Field(default_factory=list)
+
+
+class EvidenceCard(BaseModel):
+    skill: str
+    evidence: str = ""
+    what_it_shows: str = ""
+    interview_angle: str = ""
+
+
+class RoadmapStep(BaseModel):
+    step: str = ""
+    why: str = ""
+    how: str = ""
+
+
 class ReportResponse(BaseModel):
     # 이 프로젝트 전체에서 제일 큰 응답 모양 — Layer 1~5의 결과가 전부 여기 한곳에 모임
     report_id: str
@@ -199,6 +219,10 @@ class ReportResponse(BaseModel):
     project_suggestions: list[ProjectSuggestion] = Field(default_factory=list)
     learning_recommendations: list[LearningRecommendation] = Field(default_factory=list)
     interview_coaching: list[InterviewCoaching] = Field(default_factory=list)
+    project_understanding: ProjectUnderstanding | None = None
+    evidence_cards: list[EvidenceCard] = Field(default_factory=list)
+    project_roadmap: list[RoadmapStep] = Field(default_factory=list)
+    portfolio_sentences: list[str] = Field(default_factory=list)
     error_detail: str | None = None
     generated_at: str | None = None
     trace: dict | None = None

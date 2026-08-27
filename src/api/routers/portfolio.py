@@ -30,12 +30,15 @@ from src.api.deps import get_graph, get_neo4j, get_reports, get_uploads
 from src.api.schemas import (
     AnalyzeAccepted,
     AnalyzeRequest,
+    EvidenceCard,
     InterviewCoaching,
     LearningRecommendation,
     PortfolioUploadResponse,
+    ProjectUnderstanding,
     ProjectSuggestion,
     RecommendedPosting,
     ReportResponse,
+    RoadmapStep,
     UploadResponse,
     VerificationItem,
 )
@@ -492,17 +495,26 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
     gap = final.get("gap") or {}
     ver = final.get("verification") or {}
     coaching = final.get("coaching") if isinstance(final.get("coaching"), dict) else {}
+
+    def _txt(value: object) -> str:
+        return str(value or "").strip()
+
+    def _txt_list(value: object, limit: int = 5) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [_txt(v) for v in value if _txt(v)][:limit]
+
     project_suggestions = [
-        ProjectSuggestion(repo=s.get("repo", ""),
-                          add_skill=s.get("add_skill") or s.get("skill", ""),
-                          why=s.get("why", ""), how=s.get("how", ""))
+        ProjectSuggestion(repo=_txt(s.get("repo")),
+                          add_skill=_txt(s.get("add_skill") or s.get("skill")),
+                          why=_txt(s.get("why")), how=_txt(s.get("how")))
         for s in (coaching.get("project_suggestions") or [])
         if isinstance(s, dict) and (s.get("add_skill") or s.get("skill"))
         # coaching_agent가 만든 dict 리스트를, schemas.py의 ProjectSuggestion 모델 리스트로 변환.
         # add_skill이나 skill 둘 중 하나라도 있어야 통과 — 둘 다 없으면 의미 없는 항목이라 걸러냄
     ]
     learning_recommendations = [
-        LearningRecommendation(skill=s.get("skill", ""), reason=s.get("reason", ""), how=s.get("how", ""))
+        LearningRecommendation(skill=_txt(s.get("skill")), reason=_txt(s.get("reason")), how=_txt(s.get("how")))
         for s in (coaching.get("learning_recommendations") or [])
         if isinstance(s, dict) and s.get("skill")
     ]
@@ -520,6 +532,30 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         for s in (coaching.get("interview_coaching") or [])
         if isinstance(s, dict) and s.get("title") and s.get("coaching")
     ]
+    understanding_raw = coaching.get("project_understanding")
+    project_understanding = (
+        ProjectUnderstanding(
+            one_liner=_txt(understanding_raw.get("one_liner")),
+            architecture=_txt(understanding_raw.get("architecture")),
+            data_flow=_txt(understanding_raw.get("data_flow")),
+            core_design_choices=_txt_list(understanding_raw.get("core_design_choices")),
+        )
+        if isinstance(understanding_raw, dict) and any(understanding_raw.values())
+        else None
+    )
+    evidence_cards = [
+        EvidenceCard(skill=_txt(s.get("skill")), evidence=_txt(s.get("evidence")),
+                     what_it_shows=_txt(s.get("what_it_shows")),
+                     interview_angle=_txt(s.get("interview_angle")))
+        for s in (coaching.get("evidence_cards") or [])
+        if isinstance(s, dict) and s.get("skill")
+    ]
+    project_roadmap = [
+        RoadmapStep(step=_txt(s.get("step")), why=_txt(s.get("why")), how=_txt(s.get("how")))
+        for s in (coaching.get("project_roadmap") or [])
+        if isinstance(s, dict) and (s.get("step") or s.get("how"))
+    ]
+    portfolio_sentences = _txt_list(coaching.get("portfolio_sentences"))
     return ReportResponse(
         report_id=report_id, status="done", owner=owner, job_family=job_family,
         match_rate=gap.get("match_rate") or 0.0,
@@ -532,6 +568,10 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         project_suggestions=project_suggestions,
         learning_recommendations=learning_recommendations,
         interview_coaching=interview_coaching,
+        project_understanding=project_understanding,
+        evidence_cards=evidence_cards,
+        project_roadmap=project_roadmap,
+        portfolio_sentences=portfolio_sentences,
         generated_at=datetime.now(timezone.utc).isoformat(),
         trace=final.get("trace"),
         capability_fit=final.get("capability_fit"),

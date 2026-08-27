@@ -161,9 +161,44 @@ function renderSkillBadges(met) {
 function renderReport(d) {
   const counts = d.verification_counts || {};
   const cf = d.capability_fit || {};
+  const understanding = d.project_understanding || {};
 
   // ① 충족한 스킬 — 직군 핵심 중 보유 (가로 배지 + 신뢰도)
   const met = renderSkillBadges(cf.met);
+
+  const designChoices = (understanding.core_design_choices || [])
+    .map((x) => `<li>${esc(x)}</li>`)
+    .join("");
+  const projectUnderstanding = (
+    understanding.one_liner || understanding.architecture || understanding.data_flow || designChoices
+  ) ? `<h3>프로젝트 이해</h3>
+    <div class="suggestion rich-section">
+      ${understanding.one_liner ? `<div class="head">${esc(understanding.one_liner)}</div>` : ""}
+      ${understanding.architecture ? `<div class="rew">구조: ${esc(understanding.architecture)}</div>` : ""}
+      ${understanding.data_flow ? `<div class="prio">흐름: ${esc(understanding.data_flow)}</div>` : ""}
+      ${designChoices ? `<ul class="compact-list">${designChoices}</ul>` : ""}
+    </div>` : "";
+
+  const evidenceCards = (d.evidence_cards || [])
+    .map((s) => `<div class="suggestion evidence-card">
+      <div class="head">${esc(s.skill)}</div>
+      ${s.evidence ? `<div class="prio">근거: ${esc(s.evidence)}</div>` : ""}
+      ${s.what_it_shows ? `<div class="rew">${esc(s.what_it_shows)}</div>` : ""}
+      ${s.interview_angle ? `<div class="prio">면접: ${esc(s.interview_angle)}</div>` : ""}
+    </div>`)
+    .join("");
+
+  const roadmap = (d.project_roadmap || [])
+    .map((s, i) => `<div class="suggestion">
+      <div class="head">${i + 1}. ${esc(s.step || "프로젝트 보강")}</div>
+      ${s.why ? `<div class="prio">왜: ${esc(s.why)}</div>` : ""}
+      ${s.how ? `<div class="rew">어떻게: ${esc(s.how)}</div>` : ""}
+    </div>`)
+    .join("");
+
+  const portfolioSentences = (d.portfolio_sentences || [])
+    .map((s) => `<div class="sentence">${esc(s)}</div>`)
+    .join("");
 
   // ② 채우면 좋을 스킬 — 없는 직군 핵심 → 학습 (왜 + 어떻게)
   const learnings = (d.learning_recommendations || [])
@@ -198,8 +233,12 @@ function renderReport(d) {
     ${TRUST_LEGEND}
     <h3>충족한 스킬</h3>
     <div>${met || "<p class='prio'>없음</p>"}</div>
+    ${projectUnderstanding}
+    ${evidenceCards ? `<h3>코드 근거 기반 강점</h3>${evidenceCards}` : ""}
+    ${portfolioSentences ? `<h3>포트폴리오 문장</h3><div class="sentence-box">${portfolioSentences}</div>` : ""}
     ${learnings ? `<h3>채우면 좋을 스킬</h3>${learnings}` : ""}
     ${projects ? `<h3>코드로 보강할 스킬</h3>${projects}` : ""}
+    ${roadmap ? `<h3>프로젝트 보강 로드맵</h3>${roadmap}` : ""}
     ${postings ? `<h3>지원해볼 만한 회사</h3>${postings}` : ""}
     <p style="margin-top:16px"><a href="/observe?report_id=${encodeURIComponent(state.reportId)}&tab=workflow">→ 이 분석의 실행 과정 보기</a></p>
     <p style="margin-top:8px"><button id="delete-report" class="ghost" type="button">리포트 삭제</button></p>
