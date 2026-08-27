@@ -16,6 +16,9 @@ env/
 .env.*
 !.env.example
 
+# 에이전트 운영 상태 (세션·핸드오프 등)
+.omc/
+
 # 로컬 데이터·산출물
 chroma/
 *.sqlite3
