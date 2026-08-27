@@ -5,7 +5,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi import HTTPException
 
-from src.api.routers.portfolio import _ANALYSIS_TIMEOUT_SEC, get_report
+from src.api.routers import portfolio as portfolio_router
+from src.api.routers.portfolio import _ANALYSIS_TIMEOUT_SEC, _run_analysis, delete_portfolio_upload, delete_report, get_report
 from src.api.schemas import ReportResponse
 
 
@@ -41,3 +42,110 @@ def test_missing_report_404():
     with pytest.raises(HTTPException) as ei:
         asyncio.run(get_report("nope", {}))
     assert ei.value.status_code == 404
+
+
+def test_expired_done_report_is_purged(monkeypatch):
+    monkeypatch.setenv("REPORT_TTL_SEC", "10")
+    old = datetime.now(timezone.utc) - timedelta(seconds=30)
+    reports = {
+        "r1": ReportResponse(
+            report_id="r1", status="done", owner="tester", job_family="AI/LLM Engineer",
+            generated_at=old.isoformat(),
+        )
+    }
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(get_report("r1", reports))
+    assert ei.value.status_code == 404
+    assert "r1" not in reports
+
+
+def test_report_ttl_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("REPORT_TTL_SEC", "0")
+    old = datetime.now(timezone.utc) - timedelta(days=30)
+    reports = {
+        "r1": ReportResponse(
+            report_id="r1", status="done", owner="tester", job_family="AI/LLM Engineer",
+            generated_at=old.isoformat(),
+        )
+    }
+    out = asyncio.run(get_report("r1", reports))
+    assert out.status == "done"
+
+
+def test_delete_report_removes_report_and_upload():
+    reports = {"r1": _report(0, status="done")}
+    uploads = {"r1": "resume text"}
+    out = asyncio.run(delete_report("r1", reports, uploads))
+    assert out == {"report_id": "r1", "status": "deleted"}
+    assert reports == {}
+    assert uploads == {}
+
+
+def test_delete_report_missing_404():
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(delete_report("missing", {}, {}))
+    assert ei.value.status_code == 404
+
+
+def test_delete_portfolio_upload_removes_temp_file(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.api.routers.portfolio.tempfile.gettempdir", lambda: str(tmp_path))
+    pdf = tmp_path / "portfolio.pdf"
+    pdf.write_bytes(b"%PDF")
+    uploads = {"pf:p1": str(pdf)}
+
+    out = asyncio.run(delete_portfolio_upload("p1", uploads))
+
+    assert out == {"portfolio_report_id": "p1", "status": "deleted"}
+    assert uploads == {}
+    assert not pdf.exists()
+
+
+def test_delete_portfolio_upload_missing_404():
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(delete_portfolio_upload("missing", {}))
+    assert ei.value.status_code == 404
+
+
+def test_deleted_report_is_not_resurrected_by_late_background_success(monkeypatch):
+    monkeypatch.setattr(
+        portfolio_router,
+        "run_supervisor",
+        lambda *a, **k: {"gap": {"match_rate": 0.7}, "verification": {"counts": {}}},
+    )
+    reports = {}
+
+    _run_analysis(
+        report_id="r1",
+        resume_text="resume",
+        job_family="AI/LLM Engineer",
+        owner_name="tester",
+        github_urls=[],
+        deploy_urls=[],
+        graph=object(),
+        neo4j=object(),
+        reports=reports,
+    )
+
+    assert reports == {}
+
+
+def test_deleted_report_is_not_resurrected_by_late_background_error(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("late failure")
+
+    monkeypatch.setattr(portfolio_router, "run_supervisor", boom)
+    reports = {}
+
+    _run_analysis(
+        report_id="r1",
+        resume_text="resume",
+        job_family="AI/LLM Engineer",
+        owner_name="tester",
+        github_urls=[],
+        deploy_urls=[],
+        graph=object(),
+        neo4j=object(),
+        reports=reports,
+    )
+
+    assert reports == {}

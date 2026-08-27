@@ -6,13 +6,15 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 # Literal["a", "b", "c"] → "이 값은 반드시 a, b, c 중 하나여야 한다"는 제한된 타입.
 # 그냥 str이라고 하면 아무 문자열이나 다 되지만, Literal은 오타나 잘못된 값이 들어오는 걸 미리 막아줌.
 
 from pydantic import BaseModel, Field
 # BaseModel — skill_extractor.py에서 이미 본 그 pydantic 기본 클래스.
 # Field — 필드에 "기본값 + 추가 규칙"(최솟값, 최댓값 등)을 같이 지정할 때 쓰는 도구.
+
+BoundedUrlString = Annotated[str, Field(min_length=1, max_length=500)]
 
 
 # ── Jobs Request ────────────────────────────────────────────────
@@ -42,16 +44,16 @@ class SalaryQuery(BaseModel):
 class AnalyzeRequest(BaseModel):
     # 이건 URL 쿼리가 아니라, POST 요청의 "본문"(body)으로 받는 모양 — portfolio.py의
     # analyze_portfolio(req: AnalyzeRequest)에서 req가 바로 이 모양으로 자동 채워짐
-    report_id: str
-    job_family: str = "AI/LLM Engineer"   # 유효 직군명 (Neo4j JobFamily)
-    owner_name: str | None = None         # None이면 PDF에서 추출한 이름 사용
-    github_urls: list[str] = Field(default_factory=list)   # 선택 — 코드 검증 (여러 개)
-    deploy_urls: list[str] = Field(default_factory=list)   # 선택 — 작동 실증 (여러 개)
+    report_id: str = Field(min_length=1, max_length=80)
+    job_family: str = Field("AI/LLM Engineer", min_length=1, max_length=80)   # 유효 직군명 (Neo4j JobFamily)
+    owner_name: str | None = Field(default=None, max_length=80)         # None이면 PDF에서 추출한 이름 사용
+    github_urls: list[BoundedUrlString] = Field(default_factory=list, max_length=5)   # 선택 — 코드 검증 (여러 개)
+    deploy_urls: list[BoundedUrlString] = Field(default_factory=list, max_length=5)   # 선택 — 작동 실증 (여러 개)
     # Field(default_factory=list) → 기본값이 빈 리스트([])라는 뜻.
     # langfuse_tracer.py에서 이미 봤듯이, 리스트나 딕셔너리 같은 "바뀔 수 있는" 기본값은
     # 그냥 "= []"라고 못 쓰고 이렇게 default_factory로 써야 하는 게 파이썬의 규칙.
-    portfolio_report_id: str | None = None  # 선택 — 포트폴리오 PDF 업로드 ID
-    access_key: str = ""                    # 관리자 분석 키 (env ACCESS_KEY 설정 시 필수)
+    portfolio_report_id: str | None = Field(default=None, max_length=80)  # 선택 — 포트폴리오 PDF 업로드 ID
+    access_key: str = Field("", max_length=200)                    # 관리자 분석 키 (env ACCESS_KEY 설정 시 필수)
 
 
 # ── Jobs Response ───────────────────────────────────────────────

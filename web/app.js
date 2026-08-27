@@ -1,5 +1,7 @@
 // 이력서 분석 데모 — 업로드→분석→폴링→결과 렌더 (바닐라 JS)
 const state = { reportId: null, portfolioReportId: null };
+const POLL_INTERVAL_MS = 3000;
+const MAX_POLL_ATTEMPTS = 200; // 백엔드 분석 유실 판단(10분)과 맞춤
 
 const $ = (id) => document.getElementById(id);
 
@@ -73,7 +75,7 @@ async function startAnalysis() {
     job_family: $("job-family").value,
     github_urls: collectUrls("github-urls"),
     deploy_urls: collectUrls("deploy-urls"),
-    access_key: localStorage.getItem("access_key") || "",
+    access_key: sessionStorage.getItem("access_key") || "",
     ...(state.portfolioReportId ? { portfolio_report_id: state.portfolioReportId } : {}),
   };
   setMsg($("analyze-msg"), "");
@@ -88,7 +90,7 @@ async function startAnalysis() {
       // 429: 데모 일일 한도(3회) 초과 — 관리자 키 있으면 입력 후 무제한
       if (res.status === 429) {
         const k = prompt("오늘 데모 분석 한도(3회)에 도달했습니다.\n관리자 키가 있으면 입력하세요 (없으면 취소):");
-        if (k) { localStorage.setItem("access_key", k); return startAnalysis(); }
+        if (k) { sessionStorage.setItem("access_key", k); return startAnalysis(); }
         return setMsg($("analyze-msg"), e.detail || "오늘 데모 한도(3회)를 모두 사용했습니다. 내일 다시 시도하세요.", true);
       }
       return setMsg($("analyze-msg"), `분석 시작 실패: ${e.detail || res.status}`, true);
@@ -102,9 +104,9 @@ async function startAnalysis() {
   }
 }
 
-// 3. 폴링 (3초 간격, 최대 100회 = 5분)
+// 3. 폴링 (3초 간격, 최대 200회 = 10분)
 async function pollReport(attempt) {
-  if (attempt > 100) {
+  if (attempt > MAX_POLL_ATTEMPTS) {
     $("progress").classList.add("hidden");
     $("result").innerHTML = "<p class='msg error'>분석이 지연됩니다. 잠시 후 다시 시도하세요.</p>";
     return;
@@ -123,7 +125,7 @@ async function pollReport(attempt) {
     const data = await res.json();
     if (data.status === "processing") {
       $("progress").innerHTML = `<span class="spinner"></span> ${esc(data.phase || "분석 중…")}`;
-      setTimeout(() => pollReport(attempt + 1), 3000);
+      setTimeout(() => pollReport(attempt + 1), POLL_INTERVAL_MS);
       return;
     }
     $("progress").classList.add("hidden");
@@ -133,7 +135,7 @@ async function pollReport(attempt) {
     }
     renderReport(data);
   } catch (err) {
-    setTimeout(() => pollReport(attempt + 1), 3000);
+    setTimeout(() => pollReport(attempt + 1), POLL_INTERVAL_MS);
   }
 }
 
@@ -200,7 +202,32 @@ function renderReport(d) {
     ${projects ? `<h3>코드로 보강할 스킬</h3>${projects}` : ""}
     ${postings ? `<h3>지원해볼 만한 회사</h3>${postings}` : ""}
     <p style="margin-top:16px"><a href="/observe?report_id=${encodeURIComponent(state.reportId)}&tab=workflow">→ 이 분석의 실행 과정 보기</a></p>
+    <p style="margin-top:8px"><button id="delete-report" class="ghost" type="button">리포트 삭제</button></p>
   `;
+  $("delete-report").addEventListener("click", deleteCurrentReport);
+}
+
+async function deleteCurrentReport() {
+  if (!state.reportId) return;
+  if (!confirm("이 분석 리포트와 업로드된 파일을 삭제할까요?")) return;
+  try {
+    const deletions = [
+      fetch(`/portfolio/report/${encodeURIComponent(state.reportId)}`, { method: "DELETE" }),
+    ];
+    if (state.portfolioReportId) {
+      deletions.push(fetch(`/portfolio/upload-portfolio/${encodeURIComponent(state.portfolioReportId)}`, { method: "DELETE" }));
+    }
+    const results = await Promise.all(deletions);
+    const failed = results.find((res) => !res.ok && res.status !== 404);
+    if (failed) throw new Error(`HTTP ${failed.status}`);
+    state.reportId = null;
+    state.portfolioReportId = null;
+    $("result").innerHTML = "<p class='msg'>리포트를 삭제했습니다.</p>";
+    $("progress").classList.add("hidden");
+    $("step-result").classList.add("disabled");
+  } catch (err) {
+    $("result").innerHTML = `<p class='msg error'>삭제 실패: ${esc(err.message)}</p>`;
+  }
 }
 
 // URL 입력칸 수집·추가
@@ -230,9 +257,9 @@ $("portfolio-upload-btn").addEventListener("click", uploadPortfolio);
 $("analyze-btn").addEventListener("click", startAnalysis);
 $("admin-key").addEventListener("click", (e) => {
   e.preventDefault();
-  const cur = localStorage.getItem("access_key") || "";
-  const k = prompt("관리자 키를 입력하면 무제한으로 분석할 수 있습니다.\n(비우고 확인하면 해제)", cur);
+  const cur = sessionStorage.getItem("access_key") || "";
+  const k = prompt("관리자 키를 입력하면 이 탭에서 무제한으로 분석할 수 있습니다.\n(비우고 확인하면 해제)", cur);
   if (k === null) return;
-  if (k) { localStorage.setItem("access_key", k); alert("관리자 키 저장됨 — 무제한 분석"); }
-  else { localStorage.removeItem("access_key"); alert("관리자 키 해제 — 하루 3회 제한"); }
+  if (k) { sessionStorage.setItem("access_key", k); alert("관리자 키 저장됨 — 이 탭에서 무제한 분석"); }
+  else { sessionStorage.removeItem("access_key"); alert("관리자 키 해제 — 하루 3회 제한"); }
 });

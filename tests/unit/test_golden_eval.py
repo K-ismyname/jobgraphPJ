@@ -1,7 +1,7 @@
 # 골든셋 기반 end-task 정확도 — 정답 도출·채점 로직 (LLM 없이 검증 가능한 순수 부분)
 import pytest
 
-from src.evaluation.golden_eval import CaseScore, expected_missing, load_golden
+from src.evaluation.golden_eval import CaseScore, expected_missing, load_golden, run_golden_eval
 
 _GOLDEN = {
     "AI/LLM Engineer": {"core": ["Python", "LLM", "PyTorch", "RAG"], "excluded": {}},
@@ -90,3 +90,29 @@ def test_shipped_golden_file_is_valid():
         # core와 excluded가 겹치면 라벨이 모순이다
         overlap = set(entry["core"]) & set(entry.get("excluded", {}))
         assert not overlap, f"{family}: core와 excluded가 겹침 — {overlap}"
+
+
+def test_run_golden_eval_fails_fast_when_neo4j_unavailable(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    class NoDataNeo4j:
+        def list_job_families(self):
+            return []
+
+    report = run_golden_eval([], graph=object(), neo4j=NoDataNeo4j())
+    assert report.error == "Neo4j 직군 데이터 없음 또는 연결 실패"
+
+
+def test_run_golden_eval_fails_fast_when_family_missing(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    class Neo4j:
+        def list_job_families(self):
+            return ["Software Engineer"]
+
+    report = run_golden_eval(
+        [{"case_id": "c", "job_family": "AI/LLM Engineer", "resume_skills": []}],
+        graph=object(),
+        neo4j=Neo4j(),
+    )
+    assert report.error == "Neo4j에 없는 직군: AI/LLM Engineer"

@@ -7,6 +7,10 @@ from src.agent.evaluators.github_eval import (
     _keywords_for,
     _skills_from_sources,
     _skills_from_pkg_json,
+    _skills_from_python_manifest,
+    _code_detected_skills,
+    _read_repo_manifests,
+    _validate_project_context,
 )
 from src.portfolio.github_connector import parse_github_repo
 
@@ -89,6 +93,18 @@ def test_skills_from_vocab_matches_alias_and_manifest():
     assert all(s["source"] == "github" for s in skills)
 
 
+def test_code_detected_skills_excludes_readme_only_mentions():
+    skills = _skills_from_sources(
+        owner="me", repo="proj",
+        lang_text="Python",
+        readme_text="나쁜 예: Neo4j를 PostgreSQL로 전환하지 말 것",
+        manifest_text="",
+        vocab=["Python", "PostgreSQL"],
+    )
+    assert {s["skill"] for s in skills} == {"Python", "PostgreSQL"}
+    assert _code_detected_skills(skills) == ["Python"]
+
+
 def test_skills_none_when_no_match():
     skills = _skills_from_sources("me", "proj", "", "", "", vocab=["Kotlin", "Rust"])
     assert skills == []
@@ -137,6 +153,12 @@ def test_skills_from_pkg_json_maps_ecosystem():
     assert by_skill["PostgreSQL"]["source"] == "github"
 
 
+def test_skills_from_pkg_json_keeps_source_path_in_evidence():
+    pkg = json.dumps({"dependencies": {"@langchain/langgraph": "^0.2.0"}})
+    results = _skills_from_pkg_json(pkg, ["LangGraph"], source_path="apps/api/package.json")
+    assert results[0]["evidence"].startswith("apps/api/package.json 의존성")
+
+
 def test_skills_from_pkg_json_no_out_of_vocab():
     pkg = json.dumps({"dependencies": {"redis": "^4.0.0"}})
     # Redis not in vocab
@@ -159,6 +181,29 @@ def test_skills_from_pkg_json_invalid_json_returns_empty():
     assert _skills_from_pkg_json("not json", ["PostgreSQL"]) == []
 
 
+def test_skills_from_python_manifest_maps_dependencies():
+    text = """
+    fastapi>=0.115
+    psycopg[binary]>=3.1
+    transformers==4.44.0
+    """
+    results = _skills_from_python_manifest(
+        text,
+        ["FastAPI", "PostgreSQL", "Hugging Face Transformers", "React"],
+        "backend/requirements.txt",
+    )
+    by_skill = {r["skill"]: r for r in results}
+    assert set(by_skill) == {"FastAPI", "PostgreSQL", "Hugging Face Transformers"}
+    assert by_skill["PostgreSQL"]["evidence"].startswith("backend/requirements.txt 의존성 psycopg")
+    assert all(r["strength"] == "code" for r in results)
+
+
+def test_skills_from_python_manifest_respects_vocab():
+    text = "fastapi\npsycopg\n"
+    results = _skills_from_python_manifest(text, ["FastAPI"], "requirements.txt")
+    assert [r["skill"] for r in results] == ["FastAPI"]
+
+
 def test_assess_no_openai_returns_empty():
     result = _assess_project_and_skills(None, "me", "proj", {}, ["Python"], "")
     assert result == {}
@@ -168,3 +213,77 @@ def test_assess_bad_json_returns_empty():
     result = _assess_project_and_skills(_fake_openai("not json"), "me", "proj",
                                         {"f.py": "x=1"}, ["Python"], "")
     assert result == {}
+
+
+def test_validate_project_context_removes_existing_but_irrelevant_file():
+    ctx = {
+        "skill_assessments": [
+            {
+                "skill": "PostgreSQL",
+                "current_usage": "중급 패턴",
+                "relevant_files": ["src/storage/neo4j_client.py"],
+            }
+        ]
+    }
+    out = _validate_project_context(
+        ctx,
+        {"src/storage/neo4j_client.py"},
+        {"src/storage/neo4j_client.py": "from neo4j import GraphDatabase\nclass Neo4jClient: pass\n"},
+    )
+    assert out["skill_assessments"] == []
+
+
+def test_validate_project_context_keeps_file_with_skill_alias():
+    ctx = {
+        "skill_assessments": [
+            {
+                "skill": "PostgreSQL",
+                "current_usage": "기본 사용",
+                "relevant_files": ["db.py"],
+            }
+        ]
+    }
+    out = _validate_project_context(
+        ctx,
+        {"db.py"},
+        {"db.py": "import psycopg\n# connects to postgres\n"},
+    )
+    assert out["skill_assessments"][0]["relevant_files"] == ["db.py"]
+
+
+def test_read_repo_manifests_reads_nested_paths(monkeypatch):
+    class Resp:
+        def __init__(self, text):
+            self.status_code = 200
+            self.text = text
+
+    bodies = {
+        "https://api.github.com/repos/me/proj/contents/backend/requirements.txt": "fastapi\n",
+        "https://api.github.com/repos/me/proj/contents/frontend/package.json": json.dumps(
+            {"dependencies": {"react": "^18.0.0"}}
+        ),
+    }
+
+    def fake_get(url, headers=None, timeout=None):
+        return Resp(bodies[url])
+
+    import src.agent.evaluators.github_eval as ge
+    monkeypatch.setattr(ge.httpx, "get", fake_get)
+
+    manifest_text, package_jsons, python_manifests = _read_repo_manifests(
+        "me",
+        "proj",
+        {},
+        {
+            "backend/requirements.txt",
+            "frontend/package.json",
+            "frontend/src/App.tsx",
+            "infra/Dockerfile",
+        },
+    )
+    assert "backend/requirements.txt" in manifest_text
+    assert "frontend/package.json" in manifest_text
+    assert "infra/Dockerfile" in manifest_text
+    assert "fastapi" in manifest_text
+    assert package_jsons == [("frontend/package.json", bodies["https://api.github.com/repos/me/proj/contents/frontend/package.json"])]
+    assert python_manifests == [("backend/requirements.txt", "fastapi\n")]

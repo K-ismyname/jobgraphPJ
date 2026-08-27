@@ -20,6 +20,8 @@ select, input[type=url] { display:block; width:100%; margin-top:4px; padding:8px
 button { margin-top:12px; padding:9px 18px; border:0; border-radius:8px;
   background:var(--accent); color:#fff; font-size:.95rem; cursor:pointer; }
 button:disabled { background:#c7c7d1; cursor:not-allowed; }
+button.ghost { background:#fff; color:var(--muted); border:1px solid var(--line); }
+button.ghost:hover { color:#dc2626; border-color:#fecaca; }
 .msg { font-size:.85rem; margin:8px 0 0; }
 .msg.error { color:#dc2626; }
 .hidden { display:none; }

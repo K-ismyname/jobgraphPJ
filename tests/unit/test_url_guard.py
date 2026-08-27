@@ -67,5 +67,18 @@ def test_github_parse_rejects_traversal():
         parse_github_repo("https://github.com/../../etc")
 
 
+@pytest.mark.parametrize("url", [
+    "https://example.com/github.com/owner/repo",
+    "https://github.com.evil.test/owner/repo",
+    "https://github.com@evil.test/owner/repo",
+    "ssh://github.com/owner/repo",
+])
+def test_github_parse_rejects_non_github_hosts(url):
+    with pytest.raises(ValueError):
+        parse_github_repo(url)
+
+
 def test_github_parse_accepts_normal_repo():
     assert parse_github_repo("https://github.com/K-ismyname/jobgraphPJ") == ("K-ismyname", "jobgraphPJ")
+    assert parse_github_repo("github.com/K-ismyname/jobgraphPJ") == ("K-ismyname", "jobgraphPJ")
+    assert parse_github_repo("https://www.github.com/K-ismyname/jobgraphPJ") == ("K-ismyname", "jobgraphPJ")

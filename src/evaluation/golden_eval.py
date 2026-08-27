@@ -165,6 +165,13 @@ def run_golden_eval(cases: list[dict], graph, neo4j=None) -> GoldenReport:
         golden = load_golden()
     except FileNotFoundError:
         return GoldenReport(error=f"골든셋 파일 없음: {_GOLDEN_PATH}")
+    if neo4j is not None:
+        families = neo4j.list_job_families()
+        if not families:
+            return GoldenReport(error="Neo4j 직군 데이터 없음 또는 연결 실패")
+        missing_families = sorted({c["job_family"] for c in cases} - set(families))
+        if missing_families:
+            return GoldenReport(error=f"Neo4j에 없는 직군: {', '.join(missing_families)}")
 
     report = GoldenReport()
     for case in cases:

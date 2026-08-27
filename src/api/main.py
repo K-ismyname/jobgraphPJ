@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from contextlib import asynccontextmanager
 # asynccontextmanager — "시작할 때 한 번, 끝날 때 한 번" 실행되는 코드 블록을 쉽게 만드는 도구.
 # 아래 lifespan()이 바로 이걸로 만든, "서버 켤 때 준비하고 끌 때 정리하는" 함수.
@@ -42,6 +43,33 @@ _MAX_INFLIGHT = 500
 # 메모리가 끝없이 늘어나지 않게 "최대 이만큼만 기억한다"는 상한을 둠
 
 
+def _cleanup_evicted_upload(key: object, value: object) -> None:
+    """uploads에서 포트폴리오 임시 파일 항목이 밀려날 때 실제 파일도 삭제한다."""
+    if not (isinstance(key, str) and key.startswith("pf:") and isinstance(value, str)):
+        return
+    tmp_dir = os.path.realpath(tempfile.gettempdir())
+    path = os.path.realpath(value)
+    if not path.startswith(tmp_dir + os.sep):
+        logger.warning("임시 디렉터리 밖 포트폴리오 경로는 삭제하지 않음: %s", value)
+        return
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        logger.warning("축출된 포트폴리오 임시 파일 삭제 실패: %s", value, exc_info=True)
+
+
+def _cleanup_upload_store(uploads: object) -> None:
+    """서버 종료 시 uploads에 남은 포트폴리오 임시 파일을 모두 정리한다."""
+    if not hasattr(uploads, "items"):
+        return
+    for key, value in list(uploads.items()):
+        _cleanup_evicted_upload(key, value)
+    if hasattr(uploads, "clear"):
+        uploads.clear()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     # 이 함수가 바로 "서버가 켜질 때 한 번, 꺼질 때 한 번" 실행되는 부분.
@@ -57,7 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     )
     # OpenAI 키가 없으면 openai 클라이언트를 아예 안 만들고 None으로 둠 —
     # CLAUDE.md 규칙("키 없으면 mock/비활성")대로, 키가 없어도 서버 자체는 죽지 않고 뜨게 함
-    app.state.uploads = BoundedDict(_MAX_INFLIGHT)   # report_id → PDF 텍스트
+    app.state.uploads = BoundedDict(_MAX_INFLIGHT, on_evict=_cleanup_evicted_upload)   # report_id → PDF 텍스트
     app.state.reports = BoundedDict(_MAX_INFLIGHT)   # report_id → ReportResponse
     # v3 그래프는 1회 빌드해 재사용 (openai 키 없으면 None — /analyze가 503)
     app.state.graph = (
@@ -74,6 +102,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # 꺼지라는 신호가 오면 아래(shutdown) 코드로 이어서 실행됨.
 
     # ── shutdown ─────────────────────────────────────────────────
+    _cleanup_upload_store(app.state.uploads)
     app.state.neo4j.close()
     # 서버가 꺼질 때 Neo4j 연결을 정리 — pipeline.py의 step_ingest()에서 본 것과 같은 습관
 

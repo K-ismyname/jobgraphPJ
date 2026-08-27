@@ -20,3 +20,13 @@ def test_reinsert_refreshes_recency():
     assert "b" not in d
     assert d["a"] == 10
     assert d["c"] == 3
+
+
+def test_calls_on_evict_for_oldest_entry():
+    evicted = []
+    d = BoundedDict(1, on_evict=lambda key, value: evicted.append((key, value)))
+
+    d["a"] = 1
+    d["b"] = 2
+
+    assert evicted == [("a", 1)]

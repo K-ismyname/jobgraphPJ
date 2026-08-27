@@ -2,8 +2,8 @@
 
 ## 고칠 부분
 
-- [ ] **`github_eval.py`의 `_validate_project_context()`가 "파일 존재"만 검증하고
-  "내용 관련성"은 검증 안 함 — 실제 환각 사례 확인** (2026-07-08 발견, 미수정)
+- [x] ~~`github_eval.py`의 `_validate_project_context()`가 "파일 존재"만 검증하고
+  "내용 관련성"은 검증 안 함 — 실제 환각 사례 확인~~ (2026-08-26 수정 완료)
   실제 레포(K-ismyname/jobgraphPJ)로 테스트 중 `PostgreSQL` 스킬이 `current_usage: 중급 패턴`,
   `relevant_files: ['src/storage/neo4j_client.py']`로 잘못 평가됨 — 이 프로젝트는 PostgreSQL을
   전혀 안 쓰고(`neo4j_client.py`에 postgres 언급 0회, `requirements.txt`에도 없음), 원인은
@@ -12,8 +12,11 @@
   으로 잡고, 이후 `_assess_project_and_skills()`의 LLM이 그걸 근거로 그럴듯한 `current_usage`·
   `relevant_files`까지 만들어냄. `_validate_project_context()`는 `relevant_files` 경로가
   레포에 "존재하는지"만 확인해서(존재함 — `neo4j_client.py`는 진짜 파일), 파일 내용이 실제로
-  그 스킬을 뒷받침하는지는 검증하지 않아 이 환각이 그대로 통과됨. 개선 방향: `relevant_files`에
-  적힌 파일들이 실제로 해당 스킬 키워드(`_word_match`/`keywords_for`)를 포함하는지 2차 대조 추가.
+  그 스킬을 뒷받침하는지는 검증하지 않아 이 환각이 그대로 통과됐음. 수정: `relevant_files`가
+  실제 경로에 존재하는지뿐 아니라 파일 내용·언어 확장자가 해당 스킬을 뒷받침하는지 2차 대조하고,
+  README-only mention은 LLM의 "이미 확인된 스킬(반드시 포함)" 힌트에서 제외. 함께 루트 전용
+  manifest 스캔도 재귀 스캔으로 확장해 `backend/requirements.txt`, `frontend/package.json` 같은
+  하위 의존성 파일을 놓치지 않게 함. 회귀 테스트 추가, 전체 unit 312개 통과.
 
 - [x] ~~`src/agent/supervisor.py`의 `verified_names` 계산이 항상 빈 리스트였던 버그~~ (2026-07-07 수정 완료)
   `result.get("consensus").get("skills", [])`를 호출하고 있었는데, consensus는 `{스킬명: {verification, evidences}}`

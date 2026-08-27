@@ -18,10 +18,10 @@ def test_skill_overlap_dedup_and_empty():
 def test_skill_fit_counts_and_grades():
     consensus = {"React": {"verification": "Verified"}}
     r = skill_fit(["React.js", "Python"], ["React", "Vue.js", "HTML"], consensus)
-    assert r["total"] == 3
-    assert r["fit"] == 0.33
+    assert r["total"] == 2
+    assert r["fit"] == 0.5
     assert r["met"] == [{"skill": "React.js", "verification": "Verified"}]
-    assert r["unmet"] == ["Vue.js", "HTML"]
+    assert r["unmet"] == ["HTML"]
 
 
 def test_skill_fit_default_grade_claimed():

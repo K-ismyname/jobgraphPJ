@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from src.common.skill_groups import collapse_alternatives
 from src.extraction.normalizer import normalize_skill
 # 예전에 본 그 함수. "React"랑 "react.js"를 같은 스킬로 보게 표기를 통일해줌.
 
@@ -63,6 +64,7 @@ def skill_fit(resume_skills: list[str], core_skills: list[str], consensus: dict)
     """직군 핵심 스킬 중 이력서 충족 비율 + 충족(검증등급)/미충족."""
     # 이 함수가 실제로 "적합도 몇 %"를 계산하는 핵심 함수.
 
+    core_skills = collapse_alternatives(core_skills, resume_skills)
     count, met = skill_overlap(resume_skills, core_skills)
     # 위에서 만든 함수로 "핵심 스킬 중 몇 개를 갖고 있는지" 구함
     # count = 겹치는 개수, met = 겹치는 스킬 이름 리스트

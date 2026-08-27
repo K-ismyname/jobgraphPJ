@@ -10,6 +10,7 @@
 import logging
 import os
 import re
+from urllib.parse import urlparse
 
 import httpx
 
@@ -132,15 +133,22 @@ def boost_confidence_from_github(
 def parse_github_repo(url: str) -> tuple[str, str | None]:
     """github.com/owner/repo[/blob/...] → (owner, repo). 레포 조각 없으면 (owner, None)."""
     # 이 함수가 github_eval.py의 _eval_one()에서 실제로 호출되는 그 함수
-    parts = url.rstrip("/").split("/")
+    candidate = url.strip()
+    if "://" not in candidate and candidate.startswith(("github.com/", "www.github.com/")):
+        candidate = f"https://{candidate}"
+
+    parsed = urlparse(candidate)
+    if parsed.scheme not in ("http", "https") or parsed.hostname not in {"github.com", "www.github.com"}:
+        raise ValueError(f"유효하지 않은 GitHub URL: {url}")
+
+    parts = [p for p in parsed.path.rstrip("/").split("/") if p]
     try:
-        idx = parts.index("github.com")
-        owner = parts[idx + 1]
+        owner = parts[0]
         if not owner:
             raise ValueError
     except (ValueError, IndexError):
         raise ValueError(f"유효하지 않은 GitHub URL: {url}")
-    repo = parts[idx + 2] if len(parts) > idx + 2 and parts[idx + 2] else None
+    repo = parts[1] if len(parts) > 1 and parts[1] else None
 
     # 이 값들은 https://api.github.com/repos/{owner}/{repo} 경로에 그대로 삽입되므로,
     # ".." 같은 조각이 들어가면 의도치 않은 GitHub API 엔드포인트를 호출할 수 있다.

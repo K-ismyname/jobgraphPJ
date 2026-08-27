@@ -14,6 +14,7 @@ SKILL_ALIASES: dict[str, str] = {
     # "react.js", "reactjs", "react", "리액트" 네 가지 다른 표기 → 전부 "React" 하나로 통일
     "typescript": "TypeScript", "ts": "TypeScript",
     "javascript": "JavaScript", "js": "JavaScript",
+    "angular": "Angular", "angular.js": "Angular", "angularjs": "Angular",
     "vue.js": "Vue.js", "vuejs": "Vue.js", "vue": "Vue.js",
     "next.js": "Next.js", "nextjs": "Next.js",
     "tailwind": "Tailwind CSS", "tailwindcss": "Tailwind CSS", "tailwind css": "Tailwind CSS",
@@ -40,11 +41,19 @@ SKILL_ALIASES: dict[str, str] = {
     # AI / ML
     "langchain": "LangChain", "langgraph": "LangGraph",
     "pytorch": "PyTorch", "torch": "PyTorch",
+    "tensorflow": "TensorFlow", "tf": "TensorFlow",
     "huggingface": "Hugging Face", "hugging face": "Hugging Face",
     "transformers": "Hugging Face Transformers",
     "vllm": "vLLM",
     "lora": "LoRA", "qlora": "QLoRA",
     "ragas": "RAGAS",
+    "numpy": "NumPy",
+    "polars": "Polars",
+    "looker": "Looker",
+    "jest": "Jest",
+    "vitest": "Vitest",
+    "playwright": "Playwright",
+    "cypress": "Cypress",
     # Vector DB
     "qdrant": "Qdrant",
     "chroma": "Chroma", "chromadb": "Chroma",

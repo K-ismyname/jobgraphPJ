@@ -12,6 +12,12 @@ from src.extraction.normalizer import normalize_skill
     ("langgraph",  "LangGraph"),
     ("LangGraph",  "LangGraph"),
     ("fastapi",    "FastAPI"),
+    ("tensorflow", "TensorFlow"),
+    ("tf",         "TensorFlow"),
+    ("powerbi",    "Power BI"),
+    ("looker",     "Looker"),
+    ("polars",     "Polars"),
+    ("vitest",     "Vitest"),
     # 이미 정규화된 이름은 그대로
     ("Python",     "Python"),
     ("LangChain",  "LangChain"),

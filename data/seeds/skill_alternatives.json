@@ -1,0 +1,30 @@
+[
+  {
+    "group": ["React", "Vue.js", "Angular"],
+    "reason": "Frontend UI framework alternatives"
+  },
+  {
+    "group": ["AWS", "Azure", "GCP"],
+    "reason": "Cloud provider alternatives"
+  },
+  {
+    "group": ["Tableau", "Power BI", "Looker"],
+    "reason": "BI/dashboard tool alternatives"
+  },
+  {
+    "group": ["PyTorch", "TensorFlow"],
+    "reason": "Deep learning framework alternatives"
+  },
+  {
+    "group": ["Pandas", "Polars"],
+    "reason": "DataFrame library alternatives"
+  },
+  {
+    "group": ["Jest", "Vitest"],
+    "reason": "JavaScript unit test runner alternatives"
+  },
+  {
+    "group": ["Playwright", "Cypress"],
+    "reason": "Browser end-to-end test framework alternatives"
+  }
+]

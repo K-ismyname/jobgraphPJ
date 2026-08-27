@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Annotated
 from langchain_core.tools import tool
 # @tool 데코레이터 — 평범한 함수를 LLM이 호출 가능한 "도구"로 변환하는 LangChain 기능
 
+from src.common.skill_groups import alternative_group_id, alternative_skill_groups
 from src.common.text_match import keywords_for as _keywords_for, word_match as _word_match
 from src.extraction.normalizer import normalize_skill
 
@@ -37,6 +38,30 @@ LIMIT 30
 """
 # type(r) → Cypher 함수, 관계 r의 타입 이름을 문자열로 반환 (REQUIRES 또는 PREFERS 중 어느 쪽인지)
 # 이 쿼리 하나로 "이 직군의 상위 30개 스킬이, 각각 필수인지 우대인지, 몇 개 공고에서 요구되는지"를 한 번에 얻음
+
+
+def _collapse_required_rows(required_raw: list[dict], owned_skills: list[str]) -> list[dict]:
+    """REQUIRES rows를 대체군 기준으로 접되, 보유한 대체 스킬은 충족 대표로 유지한다."""
+    owned_norm = {normalize_skill(s).lower() for s in owned_skills}
+    seen_groups: set[int] = set()
+    collapsed: list[dict] = []
+
+    for row in required_raw:
+        skill = row.get("skill", "")
+        group_id = alternative_group_id(skill)
+        if group_id is None:
+            collapsed.append(row)
+            continue
+        if group_id in seen_groups:
+            continue
+        seen_groups.add(group_id)
+        group = alternative_skill_groups()[group_id]
+        owned_in_group = [s for s in group if normalize_skill(s).lower() in owned_norm]
+        if owned_in_group:
+            collapsed.append({**row, "skill": owned_in_group[0]})
+        else:
+            collapsed.append(row)
+    return collapsed
 
 
 def _evidence_snippet(skill: str, text: str, max_sentences: int = 2, cap: int = 450) -> str:
@@ -100,10 +125,13 @@ def create_tools(neo4j: "Neo4jClient") -> list:
                 return {"error": f"'{job_family}' 직군 데이터 없음. 유효한 직군명인지 확인하세요."}
                 # 에러도 그냥 문자열이 아니라 "무엇이 잘못됐는지" LLM이 읽고 다음 행동을 판단할 수 있게 안내문 형태로 반환
 
-            # rows는 weight(요구 공고 수) 내림차순 → REQUIRES 상위 N개만 '핵심 필수'로
-            required = [r for r in rows if r["importance"] == "REQUIRES"][:_CORE_REQUIRED_N]
+            # rows는 weight(요구 공고 수) 내림차순 → REQUIRES 상위 N개만 '핵심 필수'로.
+            # React/Vue/Angular, AWS/Azure/GCP처럼 같은 역할의 대체군은 그룹당 하나로 접어
+            # "대체 기술을 이미 갖고 있는데도 나머지를 전부 부족"으로 지목하는 오탐을 줄인다.
+            required_raw = [r for r in rows if r["importance"] == "REQUIRES"]
+            required = _collapse_required_rows(required_raw, portfolio_skills)[:_CORE_REQUIRED_N]
             preferred = [r for r in rows if r["importance"] == "PREFERS"]
-            portfolio_lower = {s.lower() for s in portfolio_skills}
+            portfolio_lower = {normalize_skill(s).lower() for s in portfolio_skills}
 
             # consensus(=state["consensus"], tools_node가 주입)에서 검증 등급을 조회.
             # 예전엔 neo4j.get_portfolio_demonstrated_skills(owner)로 조회했는데, 그 데이터를
@@ -119,7 +147,7 @@ def create_tools(neo4j: "Neo4jClient") -> list:
             have_req: list = []
             unverified_req: list = []
             for r in required:
-                skill_lower = r["skill"].lower()
+                skill_lower = normalize_skill(r["skill"]).lower()
                 if skill_lower in portfolio_lower:
                     grade = consensus_grade.get(skill_lower)
                     # consensus에 정보가 없는 스킬(예: LLM이 문맥에서 스킬명을 살짝 다르게 재구성한 경우)은
@@ -130,9 +158,9 @@ def create_tools(neo4j: "Neo4jClient") -> list:
                     else:
                         have_req.append(r)
 
-            missing_req = [r for r in required if r["skill"].lower() not in portfolio_lower]
-            have_pref = [r for r in preferred if r["skill"].lower() in portfolio_lower]
-            missing_pref = [r for r in preferred if r["skill"].lower() not in portfolio_lower]
+            missing_req = [r for r in required if normalize_skill(r["skill"]).lower() not in portfolio_lower]
+            have_pref = [r for r in preferred if normalize_skill(r["skill"]).lower() in portfolio_lower]
+            missing_pref = [r for r in preferred if normalize_skill(r["skill"]).lower() not in portfolio_lower]
 
             # match_rate: have_required / 전체 required (unverified는 제외)
             match_rate = len(have_req) / len(required) if required else 0.0

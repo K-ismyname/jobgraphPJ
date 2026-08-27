@@ -26,7 +26,7 @@ def extract_pdf_info(pdf_path: str) -> tuple[str, int]:
                     # 페이지가 이미지만 있고 글자가 없으면 text가 None이나 빈 문자열일 수 있어서,
                     # 그런 페이지는 그냥 건너뜀 (리스트에 안 넣음)
     except Exception as e:
-        raise ValueError(f"PDF 파싱 실패: {pdf_path} — {e}") from e
+        raise ValueError("PDF 파싱 실패") from e
         # 파일이 손상됐거나 암호가 걸려있는 등 이유로 못 열면, 여기서 우리가 만든 에러 메시지로 바꿔서 다시 던짐.
         # "from e" → 원래 에러(e)를 "원인"으로 같이 남겨둠. 나중에 문제 생기면 진짜 원인(e)까지 같이 보임.
     return "\n\n".join(text_blocks), page_count

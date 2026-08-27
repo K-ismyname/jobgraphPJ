@@ -37,3 +37,59 @@ def test_fewer_than_n_required_uses_actual_count():
     res = gap.invoke({"job_family": "Software Engineer", "portfolio_skills": ["R0", "R1"], "owner": "t"})
     assert res["required_total"] == 4
     assert res["match_rate"] == 0.5  # 2/4
+
+
+def test_alternative_required_skills_collapse_to_one_gap():
+    rows = [
+        {"skill": "React", "importance": "REQUIRES", "weight": 30},
+        {"skill": "Vue.js", "importance": "REQUIRES", "weight": 20},
+        {"skill": "Angular", "importance": "REQUIRES", "weight": 10},
+        {"skill": "HTML", "importance": "REQUIRES", "weight": 9},
+    ]
+    gap = _make_gap_tool(rows)
+    res = gap.invoke({"job_family": "Frontend Engineer", "portfolio_skills": ["React"], "owner": "t"})
+
+    assert res["required_total"] == 2
+    assert res["match_rate"] == 0.5
+    assert res["have_required"] == ["React"]
+    assert [m["skill"] for m in res["missing_required"]] == ["HTML"]
+
+
+def test_alternative_required_skills_count_owned_alternative_not_in_required_rows():
+    rows = [
+        {"skill": "Vue.js", "importance": "REQUIRES", "weight": 20},
+        {"skill": "Angular", "importance": "REQUIRES", "weight": 10},
+        {"skill": "HTML", "importance": "REQUIRES", "weight": 9},
+    ]
+    gap = _make_gap_tool(rows)
+    res = gap.invoke({"job_family": "Frontend Engineer", "portfolio_skills": ["React"], "owner": "t"})
+
+    assert res["required_total"] == 2
+    assert res["match_rate"] == 0.5
+    assert res["have_required"] == ["React"]
+    assert [m["skill"] for m in res["missing_required"]] == ["HTML"]
+
+
+def test_alternative_required_skills_pick_single_missing_when_none_owned():
+    rows = [
+        {"skill": "AWS", "importance": "REQUIRES", "weight": 30},
+        {"skill": "Azure", "importance": "REQUIRES", "weight": 20},
+        {"skill": "GCP", "importance": "REQUIRES", "weight": 10},
+    ]
+    gap = _make_gap_tool(rows)
+    res = gap.invoke({"job_family": "DevOps/SRE", "portfolio_skills": [], "owner": "t"})
+
+    assert res["required_total"] == 1
+    assert [m["skill"] for m in res["missing_required"]] == ["AWS"]
+
+
+def test_gap_analysis_normalizes_owned_skill_aliases():
+    rows = [
+        {"skill": "React", "importance": "REQUIRES", "weight": 20},
+        {"skill": "TypeScript", "importance": "REQUIRES", "weight": 10},
+    ]
+    gap = _make_gap_tool(rows)
+    res = gap.invoke({"job_family": "Frontend Engineer", "portfolio_skills": ["react.js"], "owner": "t"})
+
+    assert res["have_required"] == ["React"]
+    assert [m["skill"] for m in res["missing_required"]] == ["TypeScript"]

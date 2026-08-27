@@ -48,3 +48,16 @@ def test_rejects_oversize_before_full_read(monkeypatch):
     with pytest.raises(HTTPException) as ei:
         asyncio.run(p._read_pdf_upload(_FakeUpload(big)))
     assert ei.value.status_code == 413
+
+
+def test_upload_resume_hides_pdf_parser_internal_error(monkeypatch):
+    def fail_parse(path):
+        raise ValueError(f"PDF 파싱 실패: {path} — internal library detail")
+
+    monkeypatch.setattr(p, "extract_pdf_info", fail_parse)
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(p.upload_resume(_FakeUpload(b"%PDF-1.7 broken"), uploads={}))
+
+    assert ei.value.status_code == 422
+    assert ei.value.detail == "PDF를 처리할 수 없습니다. 파일이 손상되었거나 암호화되었을 수 있습니다."
+    assert "internal library detail" not in ei.value.detail

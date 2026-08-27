@@ -71,6 +71,15 @@ _MAX_TRACKED_IPS = 10_000
 _ANALYSIS_TIMEOUT_SEC = 600   # 10분
 # 이보다 오래 "processing"에 머물러 있으면 백그라운드 작업이 유실된 것으로 보고 error로 강등한다
 # (BackgroundTasks는 프로세스가 재시작되면 함께 사라지는데, 그 흔적이 상태에 남지 않기 때문).
+_DEFAULT_REPORT_TTL_SEC = 24 * 60 * 60
+# 완료/실패 리포트 보관 시간. 인증 없는 링크 기반 조회라 데모 서버에서는 오래 들고 있지 않는다.
+
+
+def _report_ttl_sec() -> int:
+    try:
+        return int(os.getenv("REPORT_TTL_SEC", str(_DEFAULT_REPORT_TTL_SEC)) or _DEFAULT_REPORT_TTL_SEC)
+    except ValueError:
+        return _DEFAULT_REPORT_TTL_SEC
 
 
 def _client_ip(request: Request) -> str:
@@ -150,6 +159,63 @@ def _enforce_daily_limit(ip: str) -> None:
             )
             # 429 = "Too Many Requests"라는 표준 HTTP 상태코드 — "너무 많이 요청했다"는 뜻
         entry["count"] += 1
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _is_report_expired(report: ReportResponse, now: datetime | None = None) -> bool:
+    """완료/실패 리포트 TTL 만료 여부. processing은 별도 timeout 로직에서 처리한다."""
+    if report.status == "processing":
+        return False
+    ttl = _report_ttl_sec()
+    if ttl <= 0:
+        return False
+    stamped = _parse_iso(report.generated_at) or _parse_iso(report.started_at)
+    if stamped is None:
+        return False
+    return ((now or datetime.now(timezone.utc)) - stamped).total_seconds() > ttl
+
+
+def _purge_report(report_id: str, reports: dict, uploads: dict | None = None) -> None:
+    """리포트와 같은 report_id의 이력서 텍스트를 메모리에서 제거한다."""
+    reports.pop(report_id, None)
+    if uploads is not None:
+        uploads.pop(report_id, None)
+
+
+def _delete_portfolio_upload(portfolio_report_id: str, uploads: dict) -> bool:
+    """포트폴리오 업로드 항목과 실제 임시 PDF 파일을 삭제한다."""
+    key = f"pf:{portfolio_report_id}"
+    path = uploads.pop(key, None)
+    if not path:
+        return False
+    tmp_dir = os.path.realpath(tempfile.gettempdir())
+    real_path = os.path.realpath(path)
+    if not real_path.startswith(tmp_dir + os.sep):
+        logger.warning("임시 디렉터리 밖 포트폴리오 경로는 삭제하지 않음: %s", path)
+        return True
+    try:
+        os.unlink(real_path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        logger.warning("포트폴리오 임시 파일 삭제 실패: %s", path, exc_info=True)
+    return True
+
+
+def _store_report_if_active(report_id: str, reports: dict, report: ReportResponse) -> None:
+    """사용자가 삭제했거나 저장소에서 축출된 report_id에는 늦은 결과를 다시 쓰지 않는다."""
+    if report_id not in reports:
+        logger.info("이미 삭제되었거나 축출된 리포트 결과 저장 생략 (report_id=%s)", report_id)
+        return
+    reports[report_id] = report
 _NODE_PHASE = {
     "resume_eval": "소스 평가 중", "github_eval": "소스 평가 중",
     "portfolio_eval": "소스 평가 중", "deploy_eval": "소스 평가 중",
@@ -225,8 +291,8 @@ async def upload_resume(
         # 이걸 그냥 직접 호출하면(await 없이) 그 시간 동안 서버가 다른 요청을 하나도 못 받게 됨.
     except asyncio.TimeoutError:
         raise HTTPException(422, "PDF 처리 시간이 초과되었습니다. 더 단순한 파일로 시도해 주세요.")
-    except ValueError as e:
-        raise HTTPException(422, str(e))
+    except ValueError:
+        raise HTTPException(422, "PDF를 처리할 수 없습니다. 파일이 손상되었거나 암호화되었을 수 있습니다.")
         # pdf_parser.py의 extract_pdf_info가 파싱 실패 시 ValueError를 던지던 게 여기서 잡혀서
         # 422("Unprocessable Entity" — 요청은 이해했지만 처리할 수 없다는 뜻)로 바뀜
     finally:
@@ -369,6 +435,9 @@ async def get_report(
     report = reports.get(report_id)
     if report is None:
         raise HTTPException(404, "report_id를 찾을 수 없습니다.")
+    if _is_report_expired(report):
+        _purge_report(report_id, reports)
+        raise HTTPException(404, "리포트 보관 시간이 만료되었습니다.")
 
     # 유실된 작업 감지 — BackgroundTasks는 프로세스 재시작 시 함께 사라지므로,
     # 그 경우 status가 "processing"에 영원히 머물러 프론트가 무한 폴링하게 된다.
@@ -386,6 +455,31 @@ async def get_report(
     return report
     # status가 "processing"이면 프론트가 알아서 조금 뒤 다시 물어보고,
     # "done"이나 "error"면 그 결과를 화면에 보여줌 (이 판단은 프론트엔드 쪽 로직)
+
+
+@router.delete("/report/{report_id}")
+async def delete_report(
+    report_id: str,
+    reports: dict = Depends(get_reports),
+    uploads: dict = Depends(get_uploads),
+) -> dict:
+    """분석 리포트와 업로드 이력서 텍스트를 메모리에서 삭제한다."""
+    existed = report_id in reports or report_id in uploads
+    _purge_report(report_id, reports, uploads)
+    if not existed:
+        raise HTTPException(404, "report_id를 찾을 수 없습니다.")
+    return {"report_id": report_id, "status": "deleted"}
+
+
+@router.delete("/upload-portfolio/{portfolio_report_id}")
+async def delete_portfolio_upload(
+    portfolio_report_id: str,
+    uploads: dict = Depends(get_uploads),
+) -> dict:
+    """분석 전에 업로드된 포트폴리오 PDF 임시 파일을 삭제한다."""
+    if not _delete_portfolio_upload(portfolio_report_id, uploads):
+        raise HTTPException(404, "portfolio_report_id를 찾을 수 없습니다.")
+    return {"portfolio_report_id": portfolio_report_id, "status": "deleted"}
 
 
 # ── 매핑 (순수) ────────────────────────────────────────────────
@@ -487,22 +581,30 @@ def _run_analysis(
         )
         # supervisor.py에서 본 그 함수 — 여기서 실제로 Layer 3 전체 그래프가 실행됨
         if out.get("error"):
-            reports[report_id] = ReportResponse(
-                report_id=report_id, status="error", owner=owner, job_family=job_family,
-                error_detail=out.get("message") or out.get("error"),
-                generated_at=datetime.now(timezone.utc).isoformat(),
+            _store_report_if_active(
+                report_id,
+                reports,
+                ReportResponse(
+                    report_id=report_id, status="error", owner=owner, job_family=job_family,
+                    error_detail=out.get("message") or out.get("error"),
+                    generated_at=datetime.now(timezone.utc).isoformat(),
+                ),
             )
             return
             # run_supervisor()가 "no_input"이나 "invalid_job_family" 같은 안내를 반환했으면
             # (그래프를 아예 안 돌린 경우) 그걸 그대로 에러 리포트로 저장하고 끝
-        reports[report_id] = _map_final_report(report_id, owner, job_family, out)
+        _store_report_if_active(report_id, reports, _map_final_report(report_id, owner, job_family, out))
         # 성공하면 위에서 본 매핑 함수로 최종 결과를 예쁘게 정리해서 저장
     except Exception:
         logger.exception("분석 실패 (report_id=%s, job_family=%s)", report_id, job_family)
-        reports[report_id] = ReportResponse(
-            report_id=report_id, status="error", owner=owner, job_family=job_family,
-            error_detail="분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
-            generated_at=datetime.now(timezone.utc).isoformat(),
+        _store_report_if_active(
+            report_id,
+            reports,
+            ReportResponse(
+                report_id=report_id, status="error", owner=owner, job_family=job_family,
+                error_detail="분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+                generated_at=datetime.now(timezone.utc).isoformat(),
+            ),
         )
         # 예상 못 한 에러가 나도(코드 버그, 네트워크 문제 등), 서버가 죽지 않고
         # "이 report_id는 실패했다"는 결과를 정상적으로 저장해서 사용자가 조회했을 때 알 수 있게 함

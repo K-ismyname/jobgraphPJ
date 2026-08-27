@@ -84,6 +84,41 @@ _PKG_TO_SKILL: dict[str, str] = {
     "langgraph": "LangGraph", "@langchain/langgraph": "LangGraph",
 }
 
+_PY_PKG_TO_SKILL: dict[str, str] = {
+    # Web
+    "fastapi": "FastAPI",
+    "django": "Django",
+    "flask": "Flask",
+    # Database drivers / ORMs
+    "psycopg": "PostgreSQL",
+    "psycopg2": "PostgreSQL",
+    "asyncpg": "PostgreSQL",
+    "pg8000": "PostgreSQL",
+    "sqlalchemy": "SQL",
+    "pymongo": "MongoDB",
+    "redis": "Redis",
+    "elasticsearch": "Elasticsearch",
+    # AI / ML
+    "openai": "OpenAI API",
+    "anthropic": "Claude API",
+    "langchain": "LangChain",
+    "langchain-core": "LangChain",
+    "langgraph": "LangGraph",
+    "torch": "PyTorch",
+    "pytorch": "PyTorch",
+    "transformers": "Hugging Face Transformers",
+    "sentence-transformers": "Hugging Face Transformers",
+    "scikit-learn": "Scikit-learn",
+    "sklearn": "Scikit-learn",
+    "pandas": "Pandas",
+    "polars": "Polars",
+    "numpy": "NumPy",
+    "ragas": "RAGAS",
+    "chromadb": "Chroma",
+    "qdrant-client": "Qdrant",
+    "pinecone-client": "Pinecone",
+}
+
 # 본문을 읽어 패키지명을 매칭할 의존성 파일 (소문자)
 _TEXT_MANIFESTS = {
     "requirements.txt", "pyproject.toml", "pipfile", "setup.py",
@@ -116,6 +151,7 @@ _SOURCE_EXTENSIONS = {
 _MAX_FILES = 25       # LLM에게 보여줄 파일 개수 상한 — 토큰 비용·응답 시간 통제
 _MAX_FILE_CHARS = 8_000   # 파일당 최대 문자 수 — 파일 하나가 너무 크면 앞부분만 자름
 _MAX_CODE_CHARS = 40_000  # LLM에 넘길 총 코드 최대 문자 수 — 전체 예산
+_MAX_MANIFEST_FILES = 40  # 재귀 manifest 읽기 상한 — 대형 모노레포 API 비용 통제
 
 # 골격 파일 — 프로젝트 구조를 가장 잘 드러내는 파일을 25개 예산에서 우선 선택
 _MANIFEST_FILES = {
@@ -127,7 +163,11 @@ _ENTRY_STEMS = {"main", "app", "index", "supervisor", "server", "__main__", "cli
 # (이 프로젝트 자체의 src/ingestion/pipeline.py도 "run_pipeline"류 함수를 가진 진입점이었던 걸 떠올리면 이해 쉬움)
 
 
-def _skills_from_pkg_json(pkg_json_text: str, vocab: list[str]) -> list[dict]:
+def _skills_from_pkg_json(
+    pkg_json_text: str,
+    vocab: list[str],
+    source_path: str = "package.json",
+) -> list[dict]:
     """package.json 의존성을 파싱해 _PKG_TO_SKILL로 스킬을 매핑한다."""
     if not pkg_json_text:
         return []
@@ -156,9 +196,38 @@ def _skills_from_pkg_json(pkg_json_text: str, vocab: list[str]) -> list[dict]:
         seen.add(skill)
         results.append({
             "skill": skill,
-            "evidence": f"package.json 의존성 {pkg_name} → {skill} 확인",
+            "evidence": f"{source_path} 의존성 {pkg_name} → {skill} 확인",
             "source": "github",
             "strength": "code",   # 의존성 선언 = 코드 근거
+            "level_hint": "실무",
+        })
+    return results
+
+
+def _skills_from_python_manifest(
+    manifest_text: str,
+    vocab: list[str],
+    source_path: str,
+) -> list[dict]:
+    """Python 의존성 파일(requirements/pyproject 등)에서 패키지명을 스킬로 매핑한다."""
+    if not manifest_text:
+        return []
+    vocab_set = {v.lower(): v for v in vocab}
+    results: list[dict] = []
+    seen: set[str] = set()
+    text = manifest_text.lower().replace("_", "-")
+    for pkg_name, skill_raw in _PY_PKG_TO_SKILL.items():
+        if not _word_match(pkg_name.lower(), text):
+            continue
+        skill = vocab_set.get(skill_raw.lower(), skill_raw)
+        if skill.lower() not in vocab_set or skill in seen:
+            continue
+        seen.add(skill)
+        results.append({
+            "skill": skill,
+            "evidence": f"{source_path} 의존성 {pkg_name} → {skill} 확인",
+            "source": "github",
+            "strength": "code",
             "level_hint": "실무",
         })
     return results
@@ -369,22 +438,142 @@ def _read_source_tree(owner: str, repo: str, headers: dict, openai=None) -> tupl
     return contents, all_paths
 
 
-def _validate_project_context(ctx: dict, all_paths: set[str]) -> dict:
-    """relevant_files를 실제 레포 파일 목록과 대조해 존재하지 않는 경로를 제거한다 (LLM 없이 결정적)."""
+def _manifest_name(path: str) -> str:
+    return path.rsplit("/", 1)[-1].lower()
+
+
+def _manifest_priority(path: str) -> tuple[int, int, str]:
+    depth = path.count("/")
+    name = _manifest_name(path)
+    if depth == 0:
+        return (0, depth, path)
+    if name == "package.json":
+        return (1, depth, path)
+    if name in _TEXT_MANIFESTS:
+        return (2, depth, path)
+    return (3, depth, path)
+
+
+def _read_repo_manifests(
+    owner: str,
+    repo: str,
+    headers: dict,
+    all_paths: set[str],
+) -> tuple[str, list[tuple[str, str]], list[tuple[str, str]]]:
+    """레포 전체 경로에서 의존성/설정 manifest를 재귀적으로 읽는다."""
+    if not all_paths:
+        return "", [], []
+    manifest_paths = [
+        p for p in all_paths
+        if _manifest_name(p) in _ALL_MANIFESTS
+    ]
+    manifest_paths = sorted(manifest_paths, key=_manifest_priority)[:_MAX_MANIFEST_FILES]
+    if not manifest_paths:
+        return "", []
+
+    base = f"https://api.github.com/repos/{owner}/{repo}"
+    raw_headers = {**headers, "Accept": "application/vnd.github.raw"}
+    manifest_parts: list[str] = []
+    package_jsons: list[tuple[str, str]] = []
+    python_manifests: list[tuple[str, str]] = []
+
+    def _fetch(path: str) -> tuple[str, str | None]:
+        name = _manifest_name(path)
+        if name not in _TEXT_MANIFESTS:
+            return path, None
+        try:
+            resp = httpx.get(f"{base}/contents/{path}", headers=raw_headers, timeout=10)
+            if resp.status_code == 200:
+                return path, resp.text[:_MAX_FILE_CHARS]
+        except Exception as e:
+            logger.warning(f"[github_eval] manifest 읽기 실패 ({path}): {e}")
+        return path, None
+
+    fetched: dict[str, str | None] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        for path, text in ex.map(_fetch, manifest_paths):
+            fetched[path] = text
+
+    for path in manifest_paths:
+        name = _manifest_name(path)
+        manifest_parts.append(path)  # 파일 존재 자체가 Dockerfile/go.mod 등 신호가 될 수 있다.
+        text = fetched.get(path)
+        if text:
+            manifest_parts.append(text)
+            if name == "package.json":
+                package_jsons.append((path, text))
+            elif name in _TEXT_MANIFESTS:
+                python_manifests.append((path, text))
+
+    return " ".join(manifest_parts), package_jsons, python_manifests
+
+
+_SKILL_EXTENSION_HINTS: dict[str, set[str]] = {
+    "python": {".py"},
+    "javascript": {".js", ".jsx"},
+    "typescript": {".ts", ".tsx"},
+    "go": {".go"},
+    "java": {".java"},
+    "rust": {".rs"},
+}
+
+
+def _path_extension(path: str) -> str:
+    filename = path.rsplit("/", 1)[-1]
+    return "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+
+def _file_supports_skill(skill: str, path: str, text: str | None) -> bool:
+    """파일 내용 또는 언어 확장자가 해당 스킬을 실제로 뒷받침하는지 확인한다."""
+    skill_norm = normalize_skill(skill).lower()
+    if _path_extension(path) in _SKILL_EXTENSION_HINTS.get(skill_norm, set()):
+        return True
+    haystack = (text or "").lower()
+    if not haystack:
+        return False
+    return any(_word_match(kw, haystack) for kw in _keywords_for(skill))
+
+
+def _validate_project_context(
+    ctx: dict,
+    all_paths: set[str],
+    file_contents: dict[str, str] | None = None,
+) -> dict:
+    """relevant_files를 실제 레포 파일 목록·파일 내용과 대조해 환각 근거를 제거한다."""
     # LLM(pass2)이 "이 스킬은 src/foo.py에서 확인됨"이라고 답했는데, 실제로 src/foo.py가 레포에
     # 없으면(지어낸 경로) 그건 환각 — 이 함수가 그걸 코드로 걸러낸다 (LLM을 다시 안 부르고 그냥 대조)
     if not ctx or not all_paths:
         return ctx
+    file_contents = file_contents or {}
     cleaned = []
     for sa in ctx.get("skill_assessments", []):
-        real = [f for f in sa.get("relevant_files", []) if f in all_paths]
-        ghost = [f for f in sa.get("relevant_files", []) if f not in all_paths]
+        files = sa.get("relevant_files", []) or []
+        existing = [f for f in files if f in all_paths]
+        ghost = [f for f in files if f not in all_paths]
         if ghost:
             logger.warning(f"[github_eval] 환각 파일 제거 ({sa.get('skill')}): {ghost}")
+        real = [
+            f for f in existing
+            if not file_contents or _file_supports_skill(sa.get("skill", ""), f, file_contents.get(f))
+        ]
+        unsupported = [f for f in existing if f not in real]
+        if unsupported:
+            logger.warning(f"[github_eval] 내용 불일치 파일 제거 ({sa.get('skill')}): {unsupported}")
+        if files and not real:
+            logger.warning(f"[github_eval] 근거 파일 없는 skill_assessment 제거: {sa.get('skill')}")
+            continue
         cleaned.append({**sa, "relevant_files": real})
         # {**sa, "relevant_files": real} → sa 딕셔너리를 복사하면서 relevant_files 키만 검증된 값으로 교체
 
     return {**ctx, "skill_assessments": cleaned}
+
+
+def _code_detected_skills(skills: list[dict]) -> list[str]:
+    """README 언급은 제외하고, 코드·의존성·언어로 감지된 스킬만 LLM 강제 포함 힌트로 사용한다."""
+    return [
+        s["skill"] for s in skills
+        if isinstance(s, dict) and s.get("skill") and s.get("strength") == "code"
+    ]
 
 
 def _assess_project_and_skills(
@@ -582,45 +771,30 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
         except Exception as e:
             logger.warning(f"[github_eval] README 조회 실패: {e}")
 
-        # 루트 의존성/설정 파일 (기존 키워드 매칭용)
-        file_names: list = []
-        manifest_parts: list[str] = []
-        pkg_json_text = ""
-        try:
-            root = _get_json(f"{base}/contents", headers)
-            if isinstance(root, list):
-                file_names = [it["name"] for it in root]
-                for it in root:
-                    name = it["name"]
-                    if name.lower() in _ALL_MANIFESTS:
-                        manifest_parts.append(name)   # 파일명 자체를 텍스트에 추가 (존재만으로 신호인 것들 대비)
-                        if name.lower() in _TEXT_MANIFESTS:
-                            body = httpx.get(f"{base}/contents/{name}", headers=raw_headers, timeout=10)
-                            if body.status_code == 200:
-                                manifest_parts.append(body.text)   # 내용까지 읽어서 텍스트에 추가
-                                if name.lower() == "package.json":
-                                    pkg_json_text = body.text   # package.json은 나중에 별도로 다시 파싱할 거라 따로 보관
-        except Exception as e:
-            logger.warning(f"[github_eval] 의존성 파일 조회 실패: {e}")
-        manifest_text = " ".join(manifest_parts)
-
         # 소스 파일 읽기 (새로 추가)
         file_contents, all_paths = _read_source_tree(owner, repo, headers, openai)
+        manifest_text, package_jsons, python_manifests = _read_repo_manifests(owner, repo, headers, all_paths)
 
         # 스킬 키워드 매칭 (빠른 presence 감지)
         skills = _skills_from_sources(owner, repo, lang_text, readme_text, manifest_text, vocab)
 
         # package.json 생태계 매핑 (drizzle-orm → PostgreSQL 등)
-        pkg_skills = _skills_from_pkg_json(pkg_json_text, vocab)
         existing_skills = {s["skill"] for s in skills}
-        for s in pkg_skills:
-            if s["skill"] not in existing_skills:
-                skills.append(s)
-                existing_skills.add(s["skill"])
-                # 두 방식(키워드 매칭, package.json 매핑)에서 중복 발견된 스킬은 한 번만 남김
+        for path, text in package_jsons:
+            for s in _skills_from_pkg_json(text, vocab, source_path=path):
+                if s["skill"] not in existing_skills:
+                    skills.append(s)
+                    existing_skills.add(s["skill"])
+                    # 두 방식(키워드 매칭, package.json 매핑)에서 중복 발견된 스킬은 한 번만 남김
+        for path, text in python_manifests:
+            for s in _skills_from_python_manifest(text, vocab, source_path=path):
+                if s["skill"] not in existing_skills:
+                    skills.append(s)
+                    existing_skills.add(s["skill"])
 
-        # 프로젝트 심층 분석 (소스 코드 기반) — 키워드 매칭 결과를 힌트로 전달
-        detected = [s["skill"] for s in skills]
+        # 프로젝트 심층 분석 (소스 코드 기반) — README mention은 강제 포함하지 않는다.
+        # README는 반례·금지사항에도 기술명이 등장하므로, 코드/의존성/언어 근거만 "이미 확인"으로 넘긴다.
+        detected = _code_detected_skills(skills)
         # CO_OCCURS 이웃 — 보강 방향을 연관 스킬로 제약(환각 도약 차단)
         skill_neighbors = neo4j.get_skill_neighbors(vocab) if neo4j else {}
         project_context = _assess_project_and_skills(
@@ -629,7 +803,7 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
         )
 
         # relevant_files 환각 제거 (결정적, LLM 없이)
-        project_context = _validate_project_context(project_context, all_paths)
+        project_context = _validate_project_context(project_context, all_paths, file_contents)
 
         # 레포 전체 경로를 context에 실어 보냄 — finalize_coach가 코칭 텍스트의
         # 파일 경로 환각을 대조·제거하는 데 사용. LLM 프롬프트 직렬화 시에는 제외됨.

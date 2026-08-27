@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import Callable
 # OrderedDict — 파이썬 3.7+ 이후 일반 dict도 순서를 기억하지만, OrderedDict는
 # move_to_end() 같은 "순서를 직접 조작하는" 메서드가 따로 있어서 아래 BoundedDict가 이걸 상속함
 
@@ -26,12 +27,13 @@ class BoundedDict(OrderedDict):
     # langfuse_tracer.py의 deque(maxlen=1000)이랑 목적은 똑같은데, deque는 "리스트"이고
     # 이건 "딕셔너리"(key로 찾아야 하는 데이터)라서 다른 방식으로 구현됨.
 
-    def __init__(self, maxlen: int) -> None:
+    def __init__(self, maxlen: int, on_evict: Callable[[object, object], None] | None = None) -> None:
         super().__init__()
         # super().__init__() → 부모(OrderedDict)의 초기화 코드를 먼저 실행. 이게 있어야
         # 이 객체가 진짜 딕셔너리처럼 제대로 동작함.
         self._maxlen = maxlen
         # 최대 개수를 이 객체 안에 저장해둠 (나중에 __setitem__에서 참조)
+        self._on_evict = on_evict
 
     def __setitem__(self, key, value) -> None:
         # __setitem__은 "dict[키] = 값"을 실행할 때 파이썬이 자동으로 호출하는 특수 메서드.
@@ -42,7 +44,9 @@ class BoundedDict(OrderedDict):
         super().__setitem__(key, value)
         # 실제로 값을 넣는 건 부모(OrderedDict)의 원래 동작을 그대로 씀
         while len(self) > self._maxlen:
-            self.popitem(last=False)
+            evicted_key, evicted_value = self.popitem(last=False)
+            if self._on_evict is not None:
+                self._on_evict(evicted_key, evicted_value)
             # popitem(last=False) → "제일 먼저 들어온"(가장 오래된) 항목을 하나 꺼내서 버림.
             # while문이라 만약 한 번에 여러 개가 넘쳐도 상한을 넘지 않을 때까지 계속 반복해서 지움
 
