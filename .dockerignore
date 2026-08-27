@@ -11,7 +11,10 @@ __pycache__
 .ruff_cache
 
 # 런타임에 볼륨 마운트/재적재되는 데이터 (이미지에 넣지 않음)
-data
+# data/seeds·data/golden은 런타임에 읽는 시드라 이미지에 포함한다
+data/raw
+data/processed
+data/chroma
 chroma_db
 neo4j_data
 
