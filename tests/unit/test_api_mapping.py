@@ -1,5 +1,6 @@
 # final_report → v3 ReportResponse 매핑 (순수 함수)
 from src.api.routers.portfolio import _map_final_report
+from src.api.routers.portfolio import _normalize_url_inputs
 
 
 def test_map_final_report():
@@ -105,3 +106,12 @@ def test_map_final_report_passes_rich_coaching_fields():
     assert resp.evidence_cards[0].skill == "LangGraph"
     assert resp.project_roadmap[0].step == "테스트 보강"
     assert "LangGraph" in resp.portfolio_sentences[0]
+
+
+def test_normalize_url_inputs_extracts_multiple_markdown_urls():
+    raw = "[https://github.com/K-ismyname/da\\_agent](https://github.com/K-ismyname/da_agent) https://github.com/K-ismyname/jobgraphPJ"
+    out = _normalize_url_inputs([raw], allowed_host="github.com")
+    assert out == [
+        "https://github.com/K-ismyname/da_agent",
+        "https://github.com/K-ismyname/jobgraphPJ",
+    ]

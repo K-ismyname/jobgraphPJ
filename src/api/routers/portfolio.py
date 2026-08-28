@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import secrets
 import tempfile
 import threading
@@ -76,6 +77,8 @@ _ANALYSIS_TIMEOUT_SEC = 600   # 10분
 # (BackgroundTasks는 프로세스가 재시작되면 함께 사라지는데, 그 흔적이 상태에 남지 않기 때문).
 _DEFAULT_REPORT_TTL_SEC = 24 * 60 * 60
 # 완료/실패 리포트 보관 시간. 인증 없는 링크 기반 조회라 데모 서버에서는 오래 들고 있지 않는다.
+
+_URL_RE = re.compile(r"https?://[^\s)\]]+")
 
 
 def _report_ttl_sec() -> int:
@@ -219,6 +222,25 @@ def _store_report_if_active(report_id: str, reports: dict, report: ReportRespons
         logger.info("이미 삭제되었거나 축출된 리포트 결과 저장 생략 (report_id=%s)", report_id)
         return
     reports[report_id] = report
+
+
+def _normalize_url_inputs(values: list[str], allowed_host: str | None = None, limit: int = 5) -> list[str]:
+    """입력칸 하나에 여러 URL/Markdown 링크가 붙어도 실제 URL 목록만 뽑는다."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values or []:
+        raw = str(value or "").strip().replace("\\_", "_")
+        candidates = _URL_RE.findall(raw) or ([raw] if raw else [])
+        for url in candidates:
+            cleaned = url.rstrip(".,;")
+            if allowed_host and allowed_host not in cleaned:
+                continue
+            if cleaned and cleaned not in seen:
+                seen.add(cleaned)
+                out.append(cleaned)
+            if len(out) >= limit:
+                return out
+    return out
 _NODE_PHASE = {
     "resume_eval": "소스 평가 중", "github_eval": "소스 평가 중",
     "portfolio_eval": "소스 평가 중", "deploy_eval": "소스 평가 중",
@@ -416,7 +438,8 @@ def analyze_portfolio(
         _run_analysis,
         report_id=req.report_id, resume_text=uploads[req.report_id],
         job_family=req.job_family, owner_name=req.owner_name,
-        github_urls=req.github_urls, deploy_urls=req.deploy_urls,
+        github_urls=_normalize_url_inputs(req.github_urls, allowed_host="github.com"),
+        deploy_urls=_normalize_url_inputs(req.deploy_urls),
         portfolio_path=portfolio_path, portfolio_key=portfolio_key, uploads=uploads,
         graph=graph, neo4j=neo4j, reports=reports,
     )

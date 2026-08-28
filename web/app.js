@@ -298,8 +298,15 @@ async function deleteCurrentReport() {
 
 // URL 입력칸 수집·추가
 function collectUrls(containerId) {
+  const seen = new Set();
   return Array.from(document.querySelectorAll(`#${containerId} input`))
-    .map((i) => i.value.trim()).filter(Boolean);
+    .flatMap((i) => {
+      const raw = i.value.trim().replace(/\\_/g, "_");
+      const urls = raw.match(/https?:\/\/[^\s)\]]+/g);
+      return urls || (raw ? [raw] : []);
+    })
+    .map((u) => u.replace(/[.,;]+$/g, ""))
+    .filter((u) => u && !seen.has(u) && seen.add(u));
 }
 function addUrlField(containerId, placeholder) {
   const row = document.createElement("div");

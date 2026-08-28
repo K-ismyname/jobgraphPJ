@@ -576,6 +576,47 @@ def _code_detected_skills(skills: list[dict]) -> list[str]:
     ]
 
 
+def _fallback_project_context(
+    owner: str,
+    repo: str,
+    languages: dict,
+    skills: list[dict],
+    readme_text: str,
+) -> dict:
+    """심층 LLM 분석이 실패해도 1차 GitHub 감지 결과로 최소 코칭 컨텍스트를 만든다."""
+    lang_names = list(languages.keys()) if isinstance(languages, dict) else []
+    readme_line = " ".join((readme_text or "").split())[:180]
+    summary_parts = []
+    if lang_names:
+        summary_parts.append(f"주요 언어는 {', '.join(lang_names[:4])}입니다.")
+    if readme_line:
+        summary_parts.append(f"README 기준 프로젝트 설명: {readme_line}")
+
+    assessments = []
+    for item in skills:
+        if not isinstance(item, dict) or not item.get("skill"):
+            continue
+        skill = normalize_skill(item["skill"])
+        strength = item.get("strength")
+        current_usage = "기본 사용" if strength == "code" else "언급 확인"
+        assessments.append({
+            "skill": skill,
+            "current_usage": current_usage,
+            "used_patterns": [item.get("evidence", "")],
+            "missing_patterns": [],
+            "how_to_add": "",
+            "relevant_files": [],
+        })
+    if not summary_parts and not assessments:
+        return {}
+    return {
+        "repo": f"{owner}/{repo}",
+        "project_type": "GitHub 분석 기반 프로젝트",
+        "structure_summary": " ".join(summary_parts) or f"{owner}/{repo}에서 감지된 기술 스택 기반 프로젝트입니다.",
+        "skill_assessments": assessments[:12],
+    }
+
+
 def _assess_project_and_skills(
     openai,
     owner: str,
@@ -804,6 +845,8 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
 
         # relevant_files 환각 제거 (결정적, LLM 없이)
         project_context = _validate_project_context(project_context, all_paths, file_contents)
+        if not project_context or not project_context.get("skill_assessments"):
+            project_context = _fallback_project_context(owner, repo, languages, skills, readme_text)
 
         # 레포 전체 경로를 context에 실어 보냄 — finalize_coach가 코칭 텍스트의
         # 파일 경로 환각을 대조·제거하는 데 사용. LLM 프롬프트 직렬화 시에는 제외됨.

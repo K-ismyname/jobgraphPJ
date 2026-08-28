@@ -11,6 +11,7 @@ from src.agent.evaluators.github_eval import (
     _code_detected_skills,
     _read_repo_manifests,
     _validate_project_context,
+    _fallback_project_context,
 )
 from src.portfolio.github_connector import parse_github_repo
 
@@ -249,6 +250,23 @@ def test_validate_project_context_keeps_file_with_skill_alias():
         {"db.py": "import psycopg\n# connects to postgres\n"},
     )
     assert out["skill_assessments"][0]["relevant_files"] == ["db.py"]
+
+
+def test_fallback_project_context_uses_detected_github_skills():
+    ctx = _fallback_project_context(
+        "K-ismyname",
+        "da_agent",
+        {"Python": 10, "TypeScript": 5},
+        [
+            {"skill": "Python", "evidence": "주 언어에서 Python 확인", "strength": "code"},
+            {"skill": "LangGraph", "evidence": "requirements.txt 의존성 langgraph 확인", "strength": "code"},
+        ],
+        "# 데이터 분석 멀티 에이전트",
+    )
+    assert ctx["repo"] == "K-ismyname/da_agent"
+    assert "Python" in ctx["structure_summary"]
+    assert [s["skill"] for s in ctx["skill_assessments"]] == ["Python", "LangGraph"]
+    assert ctx["skill_assessments"][0]["used_patterns"] == ["주 언어에서 Python 확인"]
 
 
 def test_read_repo_manifests_reads_nested_paths(monkeypatch):
