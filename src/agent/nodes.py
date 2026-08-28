@@ -376,6 +376,22 @@ def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
     if coaching:
         executed += ["coach_agent", "finalize_coach"]
 
+    github_profiles = (state.get("github_eval") or {}).get("profiles") or []
+    if not github_profiles:
+        github_profiles = [
+            {
+                "repo": ctx.get("repo", ""),
+                "summary": ctx.get("structure_summary", ""),
+                "tech_stack": [
+                    sa.get("skill") for sa in (ctx.get("skill_assessments") or [])
+                    if isinstance(sa, dict) and sa.get("skill")
+                ][:8],
+                "observations": [],
+            }
+            for ctx in (state.get("project_contexts") or [])
+            if isinstance(ctx, dict) and ctx.get("repo")
+        ]
+
     return {
         "executed_nodes": executed,
         "evaluators": evaluators,
@@ -388,7 +404,7 @@ def _build_trace(state: "AppState", coaching: dict | None = None) -> dict:
         "coach": {
             "project_suggestion_count": len(coaching.get("project_suggestions") or []),
             "learning_count": len(coaching.get("learning_recommendations") or []),
-            "github_profiles": (state.get("github_eval") or {}).get("profiles") or [],
+            "github_profiles": github_profiles,
             "missing_skills": _gap_missing_names(state.get("gap_result") or {}),
         },
     }
