@@ -281,12 +281,14 @@ sdk: docker
 > 채용공고와 GitHub 프로젝트를 함께 분석해 커리어 코칭 리포트를 생성합니다.
 
 **FastAPI**와 `LangGraph` 기반으로 이력서, 공고, 저장소 근거를 통합합니다.
+라이브 데모: https://gaheelee-job-graph.hf.space · 관측: /observe
 """
     out = _readme_summary(text)
     assert "title:" not in out
     assert "sdk:" not in out
     assert "Job Skill Analyzer" not in out
     assert "https://example.com" not in out
+    assert "https://gaheelee-job-graph.hf.space" not in out
     assert "**" not in out and "`" not in out
     assert "채용공고와 GitHub 프로젝트" in out
     assert "FastAPI와 LangGraph" in out
