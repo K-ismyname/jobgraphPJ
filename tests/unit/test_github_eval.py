@@ -12,6 +12,7 @@ from src.agent.evaluators.github_eval import (
     _read_repo_manifests,
     _validate_project_context,
     _fallback_project_context,
+    _readme_summary,
 )
 from src.portfolio.github_connector import parse_github_repo
 
@@ -267,6 +268,25 @@ def test_fallback_project_context_uses_detected_github_skills():
     assert "Python" in ctx["structure_summary"]
     assert [s["skill"] for s in ctx["skill_assessments"]] == ["Python", "LangGraph"]
     assert ctx["skill_assessments"][0]["used_patterns"] == ["주 언어에서 Python 확인"]
+
+
+def test_readme_summary_skips_frontmatter_badges_and_title():
+    text = """---
+title: JobGraph
+sdk: docker
+---
+# Job Skill Analyzer
+[![build](badge.svg)](example)
+> 채용공고와 GitHub 프로젝트를 함께 분석해 커리어 코칭 리포트를 생성합니다.
+
+FastAPI와 LangGraph 기반으로 이력서, 공고, 저장소 근거를 통합합니다.
+"""
+    out = _readme_summary(text)
+    assert "title:" not in out
+    assert "sdk:" not in out
+    assert "Job Skill Analyzer" not in out
+    assert "채용공고와 GitHub 프로젝트" in out
+    assert "FastAPI와 LangGraph" in out
 
 
 def test_read_repo_manifests_reads_nested_paths(monkeypatch):

@@ -35,6 +35,7 @@ from src.api.schemas import (
     InterviewCoaching,
     LearningRecommendation,
     PortfolioUploadResponse,
+    ProjectBrief,
     ProjectUnderstanding,
     ProjectSuggestion,
     RecommendedPosting,
@@ -579,6 +580,19 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         if isinstance(s, dict) and (s.get("step") or s.get("how"))
     ]
     portfolio_sentences = _txt_list(coaching.get("portfolio_sentences"))
+    project_briefs = [
+        ProjectBrief(
+            repo=_txt(s.get("repo")),
+            readme_summary=_txt(s.get("readme_summary")),
+            architecture=_txt(s.get("architecture")),
+            code_structure=_txt(s.get("code_structure")),
+            confirmed_stack=_txt_list(s.get("confirmed_stack"), limit=12),
+            key_files=_txt_list(s.get("key_files"), limit=10),
+            coaching_angles=_txt_list(s.get("coaching_angles"), limit=8),
+        )
+        for s in (coaching.get("project_briefs") or [])
+        if isinstance(s, dict) and s.get("repo")
+    ]
     return ReportResponse(
         report_id=report_id, status="done", owner=owner, job_family=job_family,
         match_rate=gap.get("match_rate") or 0.0,
@@ -595,6 +609,7 @@ def _map_final_report(report_id: str, owner: str, job_family: str, final: dict) 
         evidence_cards=evidence_cards,
         project_roadmap=project_roadmap,
         portfolio_sentences=portfolio_sentences,
+        project_briefs=project_briefs,
         generated_at=datetime.now(timezone.utc).isoformat(),
         trace=final.get("trace"),
         capability_fit=final.get("capability_fit"),

@@ -196,6 +196,23 @@ function renderReport(d) {
       ${designChoices ? `<ul class="compact-list">${designChoices}</ul>` : ""}
     </div>` : "";
 
+  const projectBriefs = (d.project_briefs || [])
+    .map((p) => {
+      const stack = (p.confirmed_stack || []).map((x) => `<span class="cap met">${esc(x)}</span>`).join("");
+      const files = (p.key_files || []).map((x) => `<li>${esc(x)}</li>`).join("");
+      const angles = (p.coaching_angles || []).map((x) => `<li>${esc(x)}</li>`).join("");
+      return `<div class="suggestion project-brief">
+        <div class="head">${esc(p.repo)}</div>
+        ${p.readme_summary ? `<div class="rew">README: ${esc(p.readme_summary)}</div>` : ""}
+        ${p.architecture ? `<div class="prio">아키텍처: ${esc(p.architecture)}</div>` : ""}
+        ${p.code_structure ? `<div class="prio">코드 구조: ${esc(p.code_structure)}</div>` : ""}
+        ${stack ? `<div class="stack-row">${stack}</div>` : ""}
+        ${files ? `<div class="mini-title">핵심 파일</div><ul class="compact-list">${files}</ul>` : ""}
+        ${angles ? `<div class="mini-title">코칭 포인트</div><ul class="compact-list">${angles}</ul>` : ""}
+      </div>`;
+    })
+    .join("");
+
   const evidenceCards = (d.evidence_cards || [])
     .map((s) => `<div class="suggestion evidence-card">
       <div class="head">${esc(s.skill)}</div>
@@ -260,6 +277,7 @@ function renderReport(d) {
     ${coachingSummary}
     ${githubNotice}
     ${projectUnderstanding}
+    ${projectBriefs ? `<h3>프로젝트별 이해</h3>${projectBriefs}` : ""}
     ${evidenceCards ? `<h3>코드 근거 기반 강점</h3>${evidenceCards}` : ""}
     ${interviewCoaching ? `<h3>면접 코칭</h3>${interviewCoaching}` : ""}
     ${portfolioSentences ? `<h3>포트폴리오 문장</h3><div class="sentence-box">${portfolioSentences}</div>` : ""}

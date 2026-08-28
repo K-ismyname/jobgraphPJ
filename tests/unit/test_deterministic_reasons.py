@@ -5,6 +5,7 @@ from src.agent.nodes import (
     build_deterministic_reasons,
     build_deterministic_project_reasons,
     build_evidence_cards,
+    build_project_briefs,
     build_project_roadmap,
     build_project_understanding,
     _excerpt_around_keyword,
@@ -175,6 +176,7 @@ def test_finalize_coach_enriches_sparse_coaching(monkeypatch):
     out = finalize(state)
     coaching = out["coaching_result"]
     assert coaching["project_understanding"]["one_liner"].startswith("K-ismyname/da_agent")
+    assert coaching["project_briefs"][0]["repo"] == "K-ismyname/da_agent"
     assert coaching["evidence_cards"][0]["skill"] == "LangGraph"
     assert coaching["project_roadmap"][0]["step"] == "LangGraph 보강"
     assert "LangGraph" in coaching["portfolio_sentences"][0]
@@ -183,6 +185,10 @@ def test_finalize_coach_enriches_sparse_coaching(monkeypatch):
 def test_project_context_enrichment_builds_rich_sections():
     contexts = [{
         "repo": "K-ismyname/da_agent",
+        "readme_summary": "데이터 팀 없이도 데이터 팀처럼 분석하는 커뮤니티 성장 분석 시스템",
+        "project_type": "FastAPI + LangGraph 멀티 에이전트",
+        "confirmed_stack": ["Python", "FastAPI", "LangGraph"],
+        "key_files": ["src/agents/graph.py", "src/main.py"],
         "structure_summary": "FastAPI와 LangGraph 기반 커뮤니티 성장 분석 시스템",
         "skill_assessments": [{
             "skill": "LangGraph",
@@ -195,12 +201,16 @@ def test_project_context_enrichment_builds_rich_sections():
     }]
 
     understanding = build_project_understanding(contexts)
+    briefs = build_project_briefs(contexts)
     cards = build_evidence_cards(contexts)
     roadmap = build_project_roadmap(contexts)
 
-    assert "K-ismyname/da_agent" in understanding["one_liner"]
+    assert understanding["one_liner"].startswith("K-ismyname/da_agent")
+    assert briefs[0]["repo"] == "K-ismyname/da_agent"
+    assert briefs[0]["readme_summary"].startswith("데이터 팀 없이도")
+    assert briefs[0]["confirmed_stack"] == ["Python", "FastAPI", "LangGraph"]
     assert "LangGraph" in understanding["core_design_choices"][0]
-    assert cards[0]["evidence"] == "src/agents/graph.py, src/main.py"
+    assert cards[0]["evidence"] == "K-ismyname/da_agent: src/agents/graph.py, src/main.py"
     assert "Supervisor 라우팅" in cards[0]["what_it_shows"]
     assert roadmap[0]["step"] == "LangGraph 보강"
     assert "체크포인트" in roadmap[0]["how"]

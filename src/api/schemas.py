@@ -197,6 +197,16 @@ class RoadmapStep(BaseModel):
     how: str = ""
 
 
+class ProjectBrief(BaseModel):
+    repo: str = ""
+    readme_summary: str = ""
+    architecture: str = ""
+    code_structure: str = ""
+    confirmed_stack: list[str] = Field(default_factory=list)
+    key_files: list[str] = Field(default_factory=list)
+    coaching_angles: list[str] = Field(default_factory=list)
+
+
 class ReportResponse(BaseModel):
     # 이 프로젝트 전체에서 제일 큰 응답 모양 — Layer 1~5의 결과가 전부 여기 한곳에 모임
     report_id: str
@@ -223,6 +233,7 @@ class ReportResponse(BaseModel):
     evidence_cards: list[EvidenceCard] = Field(default_factory=list)
     project_roadmap: list[RoadmapStep] = Field(default_factory=list)
     portfolio_sentences: list[str] = Field(default_factory=list)
+    project_briefs: list[ProjectBrief] = Field(default_factory=list)
     error_detail: str | None = None
     generated_at: str | None = None
     trace: dict | None = None

@@ -576,6 +576,21 @@ def _code_detected_skills(skills: list[dict]) -> list[str]:
     ]
 
 
+def _readme_summary(readme_text: str, limit: int = 420) -> str:
+    """README에서 제목/배지보다 설명 문단을 우선 뽑아 프로젝트 이해 근거로 쓴다."""
+    lines = []
+    for raw in (readme_text or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("---", "title:", "emoji:", "color", "sdk:", "app_port:", "pinned:")):
+            continue
+        if line.startswith(("#", "!", "[!", "<")):
+            continue
+        lines.append(line.lstrip("> ").strip())
+        if len(" ".join(lines)) >= limit:
+            break
+    return " ".join(lines)[:limit].strip()
+
+
 def _fallback_project_context(
     owner: str,
     repo: str,
@@ -585,7 +600,7 @@ def _fallback_project_context(
 ) -> dict:
     """심층 LLM 분석이 실패해도 1차 GitHub 감지 결과로 최소 코칭 컨텍스트를 만든다."""
     lang_names = list(languages.keys()) if isinstance(languages, dict) else []
-    readme_line = " ".join((readme_text or "").split())[:180]
+    readme_line = _readme_summary(readme_text, limit=240)
     summary_parts = []
     if lang_names:
         summary_parts.append(f"주요 언어는 {', '.join(lang_names[:4])}입니다.")
@@ -612,6 +627,7 @@ def _fallback_project_context(
     return {
         "repo": f"{owner}/{repo}",
         "project_type": "GitHub 분석 기반 프로젝트",
+        "readme_summary": readme_line,
         "structure_summary": " ".join(summary_parts) or f"{owner}/{repo}에서 감지된 기술 스택 기반 프로젝트입니다.",
         "skill_assessments": assessments[:12],
     }
@@ -847,6 +863,10 @@ def create_github_evaluator(neo4j: "Neo4jClient", openai=None) -> Callable[["App
         project_context = _validate_project_context(project_context, all_paths, file_contents)
         if not project_context or not project_context.get("skill_assessments"):
             project_context = _fallback_project_context(owner, repo, languages, skills, readme_text)
+        if project_context:
+            project_context["readme_summary"] = project_context.get("readme_summary") or _readme_summary(readme_text)
+            project_context["confirmed_stack"] = _code_detected_skills(skills)[:12]
+            project_context["key_files"] = list(file_contents.keys())[:10]
 
         # 레포 전체 경로를 context에 실어 보냄 — finalize_coach가 코칭 텍스트의
         # 파일 경로 환각을 대조·제거하는 데 사용. LLM 프롬프트 직렬화 시에는 제외됨.

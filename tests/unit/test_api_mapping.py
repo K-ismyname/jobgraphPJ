@@ -87,6 +87,15 @@ def test_map_final_report_passes_rich_coaching_fields():
                 "data_flow": "PDF → 분석 → 리포트",
                 "core_design_choices": ["LangGraph로 분기 제어"],
             },
+            "project_briefs": [{
+                "repo": "me/app",
+                "readme_summary": "README 기반 분석 서비스",
+                "architecture": "FastAPI + LangGraph",
+                "code_structure": "src/agent와 src/api로 구성",
+                "confirmed_stack": ["Python", "LangGraph"],
+                "key_files": ["src/agent/supervisor.py"],
+                "coaching_angles": ["LangGraph: supervisor.py 근거로 구현 경험 설명"],
+            }],
             "evidence_cards": [{
                 "skill": "LangGraph",
                 "evidence": "src/agent/supervisor.py",
@@ -103,6 +112,8 @@ def test_map_final_report_passes_rich_coaching_fields():
     }
     resp = _map_final_report("rid", "owner", "Software Engineer", final)
     assert resp.project_understanding.one_liner.startswith("me/app")
+    assert resp.project_briefs[0].repo == "me/app"
+    assert resp.project_briefs[0].confirmed_stack == ["Python", "LangGraph"]
     assert resp.evidence_cards[0].skill == "LangGraph"
     assert resp.project_roadmap[0].step == "테스트 보강"
     assert "LangGraph" in resp.portfolio_sentences[0]

@@ -244,6 +244,15 @@ strength 최소 2개 최대 3개, gap 최대 3개. 임팩트 높은 것부터.
     "data_flow": "입력 → 처리 → 출력 흐름",
     "core_design_choices": ["면접에서 설명할 설계 선택 1", "설계 선택 2"]
   }},
+  "project_briefs": [
+    {{"repo": "owner/repo",
+      "readme_summary": "README에서 파악한 프로젝트 목적",
+      "architecture": "README와 파일 구조에서 파악한 아키텍처",
+      "code_structure": "실제 코드 레이어 요약",
+      "confirmed_stack": ["코드·의존성으로 확인된 기술"],
+      "key_files": ["실제 읽은 핵심 파일"],
+      "coaching_angles": ["면접/포트폴리오에서 강조할 관점"]}}
+  ],
   "evidence_cards": [
     {{"skill": "스킬명",
       "evidence": "실제 파일 또는 레포 단위 근거",
@@ -509,11 +518,64 @@ def build_project_understanding(project_contexts: list[dict]) -> dict:
             break
 
     return {
-        "one_liner": f"{first_repo}는 {first_summary}" if first_summary else f"{first_repo} 분석 기반 프로젝트입니다.",
+        "one_liner": f"{first_repo}는 {first_summary}" if len(contexts) == 1 and first_summary else f"입력된 GitHub 프로젝트 {len(contexts)}개를 README·파일 구조·의존성 근거로 분석했습니다.",
         "architecture": " / ".join(summaries[:3]),
         "data_flow": "GitHub 소스와 README를 읽어 구조를 요약하고, skill_assessments의 실제 파일·패턴 근거로 역량과 보강 방향을 산출합니다.",
         "core_design_choices": choices,
     }
+
+
+def build_project_briefs(project_contexts: list[dict], max_briefs: int = 5) -> list[dict]:
+    """README 이해와 코드 검증 결과를 repo별 카드로 분리한다."""
+    briefs: list[dict] = []
+    for ctx in project_contexts or []:
+        if not isinstance(ctx, dict):
+            continue
+        repo = str(ctx.get("repo") or "").strip()
+        if not repo:
+            continue
+        assessments = [sa for sa in (ctx.get("skill_assessments") or []) if isinstance(sa, dict)]
+        confirmed = _as_nonempty_strings(ctx.get("confirmed_stack"), limit=10)
+        if not confirmed:
+            confirmed = [
+                normalize_skill(sa.get("skill") or "")
+                for sa in assessments
+                if sa.get("skill") and str(sa.get("current_usage") or "") != "언급 확인"
+            ][:10]
+        key_files = _as_nonempty_strings(ctx.get("key_files"), limit=8)
+        if not key_files:
+            for sa in assessments:
+                for path in _as_nonempty_strings(sa.get("relevant_files"), limit=3):
+                    if path not in key_files:
+                        key_files.append(path)
+                    if len(key_files) >= 8:
+                        break
+                if len(key_files) >= 8:
+                    break
+        readme_summary = str(ctx.get("readme_summary") or "").strip()
+        structure = str(ctx.get("structure_summary") or "").strip()
+        project_type = str(ctx.get("project_type") or "").strip()
+        angles: list[str] = []
+        for sa in assessments[:4]:
+            skill = normalize_skill(sa.get("skill") or "")
+            patterns = _as_nonempty_strings(sa.get("used_patterns"), limit=2)
+            files = _as_nonempty_strings(sa.get("relevant_files"), limit=2)
+            if skill and files:
+                angles.append(f"{skill}: {repo}의 {', '.join(files)} 근거로 구현 경험 설명")
+            elif skill and patterns:
+                angles.append(f"{skill}: {', '.join(patterns)} 기반으로 프로젝트 역할 설명")
+        briefs.append({
+            "repo": repo,
+            "readme_summary": readme_summary or structure,
+            "architecture": project_type or structure,
+            "code_structure": structure,
+            "confirmed_stack": confirmed,
+            "key_files": key_files,
+            "coaching_angles": angles,
+        })
+        if len(briefs) >= max_briefs:
+            break
+    return briefs
 
 
 def build_evidence_cards(project_contexts: list[dict], max_cards: int = 6) -> list[dict]:
@@ -532,7 +594,7 @@ def build_evidence_cards(project_contexts: list[dict], max_cards: int = 6) -> li
             usage = str(sa.get("current_usage") or "").strip()
             if not skill or not (files or patterns or usage):
                 continue
-            evidence = ", ".join(files) if files else repo
+            evidence = f"{repo}: {', '.join(files)}" if files else repo
             what = "; ".join(patterns) if patterns else usage
             cards.append({
                 "skill": skill,
@@ -576,12 +638,17 @@ def build_project_roadmap(project_contexts: list[dict], max_steps: int = 5) -> l
 
 def build_portfolio_sentences(project_contexts: list[dict], verification: dict) -> list[str]:
     """분석 결과를 포트폴리오 문장으로 쓸 수 있게 짧게 재구성한다."""
+    briefs = build_project_briefs(project_contexts)
     understanding = build_project_understanding(project_contexts)
     skills = [
         s.get("skill") for s in (verification.get("skills") or [])
         if isinstance(s, dict) and s.get("verification") in ("Verified", "Corroborated") and s.get("skill")
     ][:4]
     sentences: list[str] = []
+    for brief in briefs[:2]:
+        stack = brief.get("confirmed_stack") or []
+        stack_text = f" 코드·의존성으로 확인된 기술은 {', '.join(stack[:4])}입니다." if stack else ""
+        sentences.append(f"{brief['repo']}는 {brief.get('readme_summary') or brief.get('code_structure')}{stack_text}")
     if understanding.get("one_liner"):
         tail = f" 특히 {', '.join(skills)} 역량이 코드·복수 출처로 검증되었습니다." if skills else ""
         sentences.append(f"{understanding['one_liner']}{tail}")
@@ -594,8 +661,10 @@ def enrich_coaching_with_project_context(coaching: dict, project_contexts: list[
     """LLM 코칭이 비어 있거나 얕으면 GitHub 분석 결과로 풍부한 섹션을 채운다."""
     if not isinstance(coaching, dict) or coaching.get("error"):
         return coaching
-    if not isinstance(coaching.get("project_understanding"), dict) or not any(coaching.get("project_understanding", {}).values()):
+    if project_contexts or not isinstance(coaching.get("project_understanding"), dict) or not any(coaching.get("project_understanding", {}).values()):
         coaching["project_understanding"] = build_project_understanding(project_contexts)
+    if project_contexts or not coaching.get("project_briefs"):
+        coaching["project_briefs"] = build_project_briefs(project_contexts)
     if not coaching.get("evidence_cards"):
         coaching["evidence_cards"] = build_evidence_cards(project_contexts)
     if not coaching.get("project_roadmap"):

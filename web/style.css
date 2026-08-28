@@ -50,9 +50,12 @@ button.ghost:hover { color:#dc2626; border-color:#fecaca; }
   font-size:.85rem; white-space:pre-wrap; }
 .rich-section .head { margin-bottom:6px; }
 .evidence-card { border-left:3px solid var(--verified); }
+.project-brief { border-left:3px solid var(--accent-2); }
 .interview-card.strength { border-left:3px solid var(--accent); }
 .interview-card.gap { border-left:3px solid var(--corroborated); }
 .compact-list { margin:8px 0 0; padding-left:18px; color:var(--muted); font-size:.82rem; }
+.mini-title { margin-top:8px; font-size:.74rem; font-weight:700; color:var(--fg); }
+.stack-row { margin-top:8px; }
 .sentence-box { display:grid; gap:8px; }
 .sentence { padding:10px 12px; background:#f8fafc; border:1px solid var(--line);
   border-radius:8px; font-size:.86rem; }
