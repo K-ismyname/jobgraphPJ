@@ -113,6 +113,23 @@ def test_project_reason_grounded_in_relevant_files():
     assert "OpenAI 함수 호출" in reason
 
 
+def test_project_reason_keeps_repo_specific_keys_for_duplicate_skills():
+    contexts = [
+        {"repo": "me/one", "skill_assessments": [
+            {"skill": "LangChain", "current_usage": "기본 패턴",
+             "used_patterns": ["도구 호출"], "relevant_files": ["one.py"]},
+        ]},
+        {"repo": "me/two", "skill_assessments": [
+            {"skill": "LangChain", "current_usage": "중급 패턴",
+             "used_patterns": ["체인 구성"], "relevant_files": ["two.py"]},
+        ]},
+    ]
+    out = build_deterministic_project_reasons(contexts)
+    assert "LangChain" not in out
+    assert "one.py" in out["me/one::LangChain"]
+    assert "two.py" in out["me/two::LangChain"]
+
+
 def test_project_reason_skips_no_files_skill():
     # code_anchor=false(relevant_files 없음) 스킬은 제외 — LLM why 유지 경로
     contexts = [{"repo": "me/app", "skill_assessments": [
@@ -146,6 +163,36 @@ def test_finalize_coach_overwrites_project_suggestion_why(monkeypatch):
     assert "supervisor.py" in rec["why"]
     assert "고급 패턴" in rec["why"]
     assert rec["why"] != "추가하면 강화됩니다."
+
+
+def test_finalize_coach_uses_repo_specific_project_suggestion_reason(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-fake")
+    from langchain_core.messages import AIMessage
+    from src.agent.nodes import create_coach_nodes
+
+    _, finalize = create_coach_nodes([])
+    coaching = {"project_suggestions": [
+        {"repo": "me/one", "add_skill": "LangChain", "why": "추가하면 강화됩니다.", "how": "확장하세요."},
+    ]}
+    state = {
+        "coach_messages": [AIMessage(content=json.dumps(coaching, ensure_ascii=False))],
+        "gap_result": {},
+        "consensus": {},
+        "project_contexts": [
+            {"repo": "me/one", "skill_assessments": [
+                {"skill": "LangChain", "current_usage": "기본 패턴",
+                 "used_patterns": ["도구 호출"], "relevant_files": ["one.py"]},
+            ]},
+            {"repo": "me/two", "skill_assessments": [
+                {"skill": "LangChain", "current_usage": "중급 패턴",
+                 "used_patterns": ["체인 구성"], "relevant_files": ["two.py"]},
+            ]},
+        ],
+    }
+    out = finalize(state)
+    rec = out["coaching_result"]["project_suggestions"][0]
+    assert "one.py" in rec["why"]
+    assert "two.py" not in rec["why"]
 
 
 def test_finalize_coach_enriches_sparse_coaching(monkeypatch):

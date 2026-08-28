@@ -464,8 +464,9 @@ def build_deterministic_project_reasons(project_contexts: list[dict]) -> dict[st
     project_suggestions 후보에서 빠져야 하는 것들이라, 여기서도 LLM why를 유지한다.
     """
     reasons: dict[str, str] = {}
+    seen_by_skill: dict[str, int] = {}
     for ctx in project_contexts or []:
-        repo = ctx.get("repo", "")
+        repo = str(ctx.get("repo") or "").strip()
         for sa in ctx.get("skill_assessments") or []:
             files = sa.get("relevant_files") or []
             name = normalize_skill(sa.get("skill") or "")
@@ -479,7 +480,14 @@ def build_deterministic_project_reasons(project_contexts: list[dict]) -> dict[st
             patterns = [p for p in (sa.get("used_patterns") or []) if p][:2]
             if patterns:
                 parts.append(f"확인된 패턴: {'; '.join(patterns)}.")
-            reasons[name] = " ".join(parts)
+            reason = " ".join(parts)
+            if repo:
+                reasons[f"{repo}::{name}"] = reason
+            seen_by_skill[name] = seen_by_skill.get(name, 0) + 1
+            if seen_by_skill[name] == 1:
+                reasons[name] = reason
+            else:
+                reasons.pop(name, None)
             # gap_agent.py의 build_deterministic_reasons()와 같은 철학 — "왜 필요한가"를 LLM의
             # 창작에 맡기지 않고, 이미 검증된 사실(github_eval의 결과)을 그대로 문장 템플릿에 꽂아 만듦
     return reasons
@@ -1242,7 +1250,11 @@ def create_coach_nodes(coach_tools: list["BaseTool"]):
                 if not isinstance(rec, dict):
                     continue
                 key = normalize_skill(rec.get("add_skill") or rec.get("skill") or "")
-                if key in det_project_reasons:
+                repo = str(rec.get("repo") or "").strip()
+                repo_key = f"{repo}::{key}" if repo and key else ""
+                if repo_key in det_project_reasons:
+                    rec["why"] = det_project_reasons[repo_key]
+                elif key in det_project_reasons:
                     rec["why"] = det_project_reasons[key]
         # 4개 소스(이력서·포폴·GitHub·배포) 교차검증 결과를 신뢰도 축 산출물로 surface한다.
         from src.agent.consensus import build_verification_summary
