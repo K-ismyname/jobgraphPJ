@@ -27,6 +27,69 @@ if TYPE_CHECKING:
     from src.storage.neo4j_client import Neo4jClient
 
 
+def _looks_like_llm_capacity_error(exc: Exception) -> bool:
+    """OpenAI quota/rate-limit 계열 오류인지 문자열로 보수적으로 판별한다."""
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(
+        marker in text
+        for marker in (
+            "openai",
+            "ratelimit",
+            "rate limit",
+            "insufficient_quota",
+            "credit_balance_exhausted",
+            "quota",
+            "429",
+        )
+    )
+
+
+def _build_llm_fallback_report(state: dict, job_family: str) -> dict:
+    """LLM 단계가 막혀도 이미 끝난 평가자 결과로 최소 리포트를 만든다."""
+    from src.agent.consensus import build_consensus, build_verification_summary
+    from src.agent.nodes import (
+        build_evidence_cards,
+        build_portfolio_sentences,
+        build_project_briefs,
+        build_project_roadmap,
+        build_project_understanding,
+    )
+
+    consensus = state.get("consensus")
+    if not consensus:
+        outputs = [state.get(k) for k in ("resume_eval", "github_eval", "portfolio_eval", "deploy_eval") if state.get(k)]
+        consensus = build_consensus([out for out in outputs if isinstance(out, dict)])
+    verification = build_verification_summary(consensus or {})
+    project_contexts = (state.get("github_eval") or {}).get("project_contexts") or state.get("project_contexts") or []
+    coaching = {
+        "summary": "LLM 코칭 단계가 일시적으로 실패해, GitHub 코드·README·배포 URL에서 확인된 근거 중심으로 리포트를 구성했습니다.",
+        "project_understanding": build_project_understanding(project_contexts),
+        "project_briefs": build_project_briefs(project_contexts),
+        "evidence_cards": build_evidence_cards(project_contexts),
+        "project_roadmap": build_project_roadmap(project_contexts),
+        "portfolio_sentences": build_portfolio_sentences(project_contexts, verification),
+        "project_suggestions": [],
+        "learning_recommendations": [],
+        "interview_coaching": [],
+    }
+    return {
+        "gap": {
+            "match_rate": 0.0,
+            "confidence_level": "partial",
+            "advice": "LLM 기반 적합도 산출은 건너뛰었지만, 코드 기반 검증과 프로젝트 이해는 확인했습니다.",
+        },
+        "verification": verification,
+        "coaching": coaching,
+        "trace": {
+            "fallback": "llm_capacity_error",
+            "completed_sources": [
+                name for name in ("resume_eval", "github_eval", "portfolio_eval", "deploy_eval", "consensus")
+                if state.get(name)
+            ],
+        },
+    }
+
+
 def evaluator_dispatch(state: AppState) -> list[Send]:
     """입력에 있는 소스의 평가자만 Send로 fan-out."""
     # 이 함수가 CLAUDE.md 그래프의 "dispatch: 입력에 있는 소스만 Send로 fan-out" 부분의 실제 구현.
@@ -244,7 +307,19 @@ def run_supervisor(
     # AppState의 모든 필드를 여기서 명시적으로 초기화 — TypedDict는 pydantic과 달리 "필드 기본값"을
     # 자동으로 채워주지 않으므로, 그래프 실행 전에 이렇게 전부 초기값을 채운 dict를 직접 만들어야 함
     final_state: dict = dict(initial)
-    for chunk in graph.stream(initial, config, stream_mode="updates"):
+    stream = iter(graph.stream(initial, config, stream_mode="updates"))
+    while True:
+        try:
+            chunk = next(stream)
+        except StopIteration:
+            break
+        except Exception as exc:
+            if not _looks_like_llm_capacity_error(exc) or not (
+                final_state.get("consensus") or final_state.get("github_eval")
+            ):
+                raise
+            final_state["final_report"] = _build_llm_fallback_report(final_state, job_family)
+            break
         # graph.invoke()(gap_agent.py 관련 다른 곳에서 볼 수 있듯 결과를 한 번에 받는 방식)와 달리,
         # .stream()은 그래프가 진행되는 "과정"을 노드 하나 끝날 때마다 조금씩(chunk) 받을 수 있게 해줌.
         # stream_mode="updates" → 각 chunk가 "이번에 어느 노드가 실행됐고, 무엇이 바뀌었는지"만 담음
