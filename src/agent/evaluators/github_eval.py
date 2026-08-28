@@ -590,7 +590,9 @@ def _readme_summary(readme_text: str, limit: int = 420) -> str:
         if "http" in lower and lower.startswith(("live", "backend", "frontend", "demo", "deploy", "deployment")):
             continue
         line = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line)
+        line = re.sub(r"(?:🔗\s*)?라이브\s*데모\s*:\s*\S*(?:\s*·\s*관측\s*:\s*\S+)?", "", line)
         line = re.sub(r"https?://\S+", "", line)
+        line = re.sub(r"\s*·\s*(?:관측|observe)\s*:\s*\S+", "", line, flags=re.IGNORECASE)
         line = re.sub(r"[*_`]+", "", line).strip()
         if not line or re.fullmatch(r"[-| :]+", line):
             continue

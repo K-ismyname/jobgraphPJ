@@ -282,6 +282,7 @@ sdk: docker
 
 **FastAPI**와 `LangGraph` 기반으로 이력서, 공고, 저장소 근거를 통합합니다.
 라이브 데모: https://gaheelee-job-graph.hf.space · 관측: /observe
+타겟 직무: AI/LLM 애플리케이션 엔지니어 🔗 라이브 데모: https://gaheelee-job-graph.hf.space · 관측: /observe 이력서와 GitHub 근거를 분리합니다.
 """
     out = _readme_summary(text)
     assert "title:" not in out
@@ -289,9 +290,12 @@ sdk: docker
     assert "Job Skill Analyzer" not in out
     assert "https://example.com" not in out
     assert "https://gaheelee-job-graph.hf.space" not in out
+    assert "라이브 데모" not in out
+    assert "관측: /observe" not in out
     assert "**" not in out and "`" not in out
     assert "채용공고와 GitHub 프로젝트" in out
     assert "FastAPI와 LangGraph" in out
+    assert "이력서와 GitHub 근거를 분리합니다" in out
 
 
 def test_read_repo_manifests_reads_nested_paths(monkeypatch):
