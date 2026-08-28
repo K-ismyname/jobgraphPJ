@@ -585,7 +585,15 @@ def _readme_summary(readme_text: str, limit: int = 420) -> str:
             continue
         if line.startswith(("#", "!", "[!", "<")):
             continue
-        lines.append(line.lstrip("> ").strip())
+        line = line.lstrip("> ").strip()
+        lower = line.lower().strip("* ")
+        if "http" in lower and lower.startswith(("live", "backend", "frontend", "demo", "deploy", "deployment")):
+            continue
+        line = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line)
+        line = re.sub(r"[*_`]+", "", line).strip()
+        if not line or re.fullmatch(r"[-| :]+", line):
+            continue
+        lines.append(line)
         if len(" ".join(lines)) >= limit:
             break
     return " ".join(lines)[:limit].strip()
